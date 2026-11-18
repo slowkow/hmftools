@@ -7,7 +7,7 @@ use std::collections::HashMap;
 const FLAGS: &[&str] = &[
     "include_mt", "panel_only", "no_fragment_sync", "skip_bqr", "skip_msi_jitter", "high_depth_mode",
     "log_candidates", "log_debug", "germline", "disable_soft_filter", "disable_hard_filter", "write_frag_lengths",
-    "bqr_write_plot", "log_evidence",
+    "bqr_write_plot", "log_evidence", "run_tinc", "write_tinc_vcf", "write_fit_variants",
 ];
 
 #[derive(Clone, Debug)]
@@ -54,6 +54,13 @@ pub struct Config {
     pub disable_soft_filter: bool,
     pub disable_hard_filter: bool,
     pub filtered_max_germline_alt_support: i32,
+    /// SageCallConfig.RunTinc: -run_tinc with exactly one reference sample
+    pub run_tinc: bool,
+    pub write_tinc_vcf: bool,
+    pub write_fit_variants: bool,
+    pub pon_file: Option<String>,
+    pub gnomad_freq_dir: Option<String>,
+    pub gnomad_freq_file: Option<String>,
 }
 
 fn list(v: Option<&String>) -> Vec<String> {
@@ -86,7 +93,7 @@ impl Config {
                 bail!("sequencing_type {seq} is not supported; only ILLUMINA is implemented");
             }
         }
-        for unsupported in ["run_tinc", "germline", "high_depth_mode"] {
+        for unsupported in ["germline", "high_depth_mode"] {
             if flag(unsupported) || get(unsupported).is_some() {
                 bail!("-{unsupported} is not implemented yet");
             }
@@ -160,7 +167,14 @@ impl Config {
             min_avg_base_qual_hotspot: int("min_avg_base_qual_hotspot", 18)?,
             disable_soft_filter: flag("disable_soft_filter"),
             disable_hard_filter: flag("disable_hard_filter"),
-            filtered_max_germline_alt_support: int("filtered_max_germline_alt_support", 3)?,
+            // FilterConfig: the limit is relaxed when TINC will run, and TINC re-applies the default afterwards
+            filtered_max_germline_alt_support: int("filtered_max_germline_alt_support", if flag("run_tinc") { 10 } else { 3 })?,
+            run_tinc: flag("run_tinc") && list(get("reference")).len() == 1,
+            write_tinc_vcf: flag("write_tinc_vcf"),
+            write_fit_variants: flag("write_fit_variants"),
+            pon_file: get("pon_file").cloned(),
+            gnomad_freq_dir: get("gnomad_freq_dir").cloned(),
+            gnomad_freq_file: get("gnomad_freq_file").cloned(),
         })
     }
 

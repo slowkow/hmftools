@@ -17,8 +17,12 @@ mod repeat;
 mod select;
 mod stats;
 mod sync;
+mod tinc;
 mod types;
 mod vcfout;
+
+#[cfg(test)]
+mod tests;
 
 use anyhow::{anyhow, Result};
 use candidate::*;
@@ -308,7 +312,31 @@ struct Queue {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(|a| a.as_str()) == Some("tinc") {
+        return tinc::run_standalone(&args[1..]);
+    }
     let mut cfg = Config::from_args(&args)?;
+    let tinc_cfg = if cfg.run_tinc {
+        // callerTincConfig: fail before the run rather than after it
+        let exists = |p: &Option<String>| p.as_ref().is_some_and(|p| std::path::Path::new(p).exists());
+        if !(exists(&cfg.gnomad_freq_file) || exists(&cfg.gnomad_freq_dir)) || !exists(&cfg.pon_file) {
+            anyhow::bail!("missing PON files for TINC analyser");
+        }
+        Some(tinc::TincConfig {
+            v38: cfg.v38,
+            input_vcf: cfg.output_vcf.clone(),
+            tumor_id: cfg.tumor_ids[0].clone(),
+            reference_id: cfg.reference_ids[0].clone(),
+            pon_file: cfg.pon_file.clone(),
+            gnomad_dir: cfg.gnomad_freq_dir.clone(),
+            gnomad_file: cfg.gnomad_freq_file.clone(),
+            threads: cfg.threads,
+            write_fit_variants: cfg.write_fit_variants,
+            fit_variants_file: None,
+        })
+    } else {
+        None
+    };
     if cfg.tumor_ids.len() != 1 || cfg.reference_ids.len() > 1 {
         anyhow::bail!("only one tumor and at most one reference sample are supported so far");
     }
@@ -364,7 +392,7 @@ fn main() -> Result<()> {
             (n, len)
         })
         .collect();
-    let mut vcf = vcfout::VcfWriter::create(&cfg.output_vcf, &contigs, &cfg.reference_ids, &cfg.tumor_ids)?;
+    let mut vcf = vcfout::VcfWriter::create(&cfg.output_vcf, &contigs, &cfg.reference_ids, &cfg.tumor_ids, cfg.run_tinc)?;
 
     // every region task, in the order the sequence dictionary lists the chromosomes
     let dictionary_bam = main_worker.ref_bam.as_ref().unwrap_or(&main_worker.tumor_bam);
@@ -460,5 +488,11 @@ fn main() -> Result<()> {
     });
     result?;
     vcf.close()?;
+    if let Some(tinc_cfg) = tinc_cfg {
+        let output = if cfg.write_tinc_vcf { tinc::generate_tinc_vcf_filename(&cfg.output_vcf) } else { cfg.output_vcf.clone() };
+        let mut analyser = tinc::TincAnalyser::new(tinc_cfg);
+        analyser.run(true, true)?;
+        analyser.write_vcf(&output)?;
+    }
     Ok(())
 }

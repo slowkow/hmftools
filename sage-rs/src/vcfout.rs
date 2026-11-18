@@ -193,6 +193,44 @@ pub fn record(chr: &str, v: &SageVariant) -> String {
     line
 }
 
+/// Header lines in the order htsjdk writes them: the file format first, then the rest sorted as
+/// strings without duplicates, with the contig lines kept together in their own order.
+pub fn sorted_header_lines(lines: Vec<String>) -> Vec<String> {
+    let mut format: Option<String> = None;
+    let mut contigs: Vec<String> = Vec::new();
+    let mut others: Vec<String> = Vec::new();
+    for line in lines {
+        if line.starts_with("##fileformat=") {
+            format.get_or_insert(line);
+        } else if line.starts_with("##contig=") {
+            if !contigs.contains(&line) {
+                contigs.push(line);
+            }
+        } else {
+            others.push(line);
+        }
+    }
+    others.sort();
+    others.dedup();
+    let split = others.partition_point(|x| x.as_str() < "##contig=");
+    let tail = others.split_off(split);
+    let mut out: Vec<String> = format.into_iter().collect();
+    out.extend(others);
+    out.extend(contigs);
+    out.extend(tail);
+    out
+}
+
+/// tabix index, as htsjdk writes alongside a .vcf.gz
+pub fn index_vcf(path: &str) -> Result<()> {
+    let c_path = std::ffi::CString::new(path)?;
+    let ret = unsafe { rust_htslib::htslib::tbx_index_build(c_path.as_ptr(), 0, &rust_htslib::htslib::tbx_conf_vcf) };
+    if ret != 0 {
+        anyhow::bail!("failed to build tabix index for {path}");
+    }
+    Ok(())
+}
+
 pub struct VcfWriter {
     path: String,
     out: bgzf::Writer,
@@ -201,19 +239,27 @@ pub struct VcfWriter {
 }
 
 impl VcfWriter {
-    pub fn create(path: &str, contigs: &[(String, i32)], reference_ids: &[String], tumor_ids: &[String]) -> Result<Self> {
+    pub fn create(
+        path: &str, contigs: &[(String, i32)], reference_ids: &[String], tumor_ids: &[String], run_tinc: bool,
+    ) -> Result<Self> {
         let mut out = bgzf::Writer::from_path(path).with_context(|| format!("creating {path}"))?;
-        let mut h = String::from("##fileformat=VCFv4.2\n##FILTER=<ID=PASS,Description=\"All filters passed\">\n");
-        let mut filters: Vec<(&str, &str)> = ALL_FILTERS.iter().map(|(_, n, d)| (*n, *d)).collect();
-        filters.sort();
-        for (name, desc) in filters {
-            h.push_str(&format!("##FILTER=<ID={name},Description=\"{desc}\">\n"));
+        let mut lines: Vec<String> = vec![
+            "##fileformat=VCFv4.2".to_string(),
+            "##FILTER=<ID=PASS,Description=\"All filters passed\">".to_string(),
+        ];
+        for (_, name, desc) in ALL_FILTERS.iter() {
+            lines.push(format!("##FILTER=<ID={name},Description=\"{desc}\">"));
         }
-        h.push_str(HEADER_FIELDS);
+        lines.extend(HEADER_FIELDS.lines().map(|x| x.to_string()));
+        if run_tinc {
+            lines.extend(crate::tinc::TINC_HEADER_LINES.iter().map(|x| x.to_string()));
+        }
         for (name, len) in contigs {
-            h.push_str(&format!("##contig=<ID={name},length={len}>\n"));
+            lines.push(format!("##contig=<ID={name},length={len}>"));
         }
-        h.push_str(&format!("##sageVersion={SAGE_VERSION}\n"));
+        lines.push(format!("##sageVersion={SAGE_VERSION}"));
+        let mut h = sorted_header_lines(lines).join("\n");
+        h.push('\n');
         h.push_str("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");
         for s in reference_ids.iter().chain(tumor_ids.iter()) {
             h.push('\t');
@@ -266,12 +312,7 @@ impl VcfWriter {
         self.out.flush()?;
         let path = self.path.clone();
         drop(self.out);
-        let c_path = std::ffi::CString::new(path.clone())?;
-        // tabix index, as htsjdk writes alongside a .vcf.gz
-        let ret = unsafe { rust_htslib::htslib::tbx_index_build(c_path.as_ptr(), 0, &rust_htslib::htslib::tbx_conf_vcf) };
-        if ret != 0 {
-            anyhow::bail!("failed to build tabix index for {path}");
-        }
+        index_vcf(&path)?;
         Ok(())
     }
 }

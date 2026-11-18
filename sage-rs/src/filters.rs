@@ -111,7 +111,7 @@ pub const HIGH_CONFIDENCE_FILTER: SoftFilterConfig = SoftFilterConfig {
 };
 pub const LOW_CONFIDENCE_FILTER: SoftFilterConfig = SoftFilterConfig { qual_p_score: 1e-14, ..HIGH_CONFIDENCE_FILTER };
 
-fn tier_config(tier: Tier) -> &'static SoftFilterConfig {
+pub fn tier_config(tier: Tier) -> &'static SoftFilterConfig {
     match tier {
         Tier::Hotspot => &HOTSPOT_FILTER,
         Tier::Panel => &PANEL_FILTER,
@@ -547,16 +547,7 @@ impl<'a> VariantFilters<'a> {
             if t.is_long_indel() {
                 adjusted_ref_alt += r.jitter.shortened + r.jitter.lengthened;
             }
-            let mut max_germline_vaf = config.max_germline_vaf;
-            if matches!(tier, Tier::Panel | Tier::Hotspot) {
-                let mut threshold = tumor_vaf;
-                if tier == Tier::Panel {
-                    threshold /= 2.0;
-                }
-                max_germline_vaf = jmax(jmin(threshold, max_germline_vaf * 2.0), max_germline_vaf);
-            }
-            let adjusted_ref_vaf = adjusted_ref_alt as f64 / r.counts.total as f64;
-            if d_greater_than(adjusted_ref_vaf, max_germline_vaf) {
+            if above_max_germline_vaf(tier, tumor_vaf, adjusted_ref_alt, r.counts.total, config.max_germline_vaf) {
                 filters.insert(SoftFilter::MaxGermlineVaf);
             }
         }
@@ -600,6 +591,38 @@ fn below_min_tumor_vaf_probability(t: &ReadContextCounter) -> bool {
     } else {
         p_value > 1e-14
     }
+}
+
+/// VariantFilters.aboveMaxGermlineVaf (static form, also used by TINC); Illumina only.
+pub fn above_max_germline_vaf(
+    tier: Tier, tumor_vaf: f64, adjusted_ref_alt: i32, ref_total: i32, mut max_germline_vaf: f64,
+) -> bool {
+    if tumor_vaf == 0.0 {
+        return false;
+    }
+    if matches!(tier, Tier::Panel | Tier::Hotspot) {
+        let mut threshold = tumor_vaf;
+        if tier == Tier::Panel {
+            threshold /= 2.0;
+        }
+        max_germline_vaf = jmax(jmin(threshold, max_germline_vaf * 2.0), max_germline_vaf);
+    }
+    let adjusted_ref_vaf = adjusted_ref_alt as f64 / ref_total as f64;
+    d_greater_than(adjusted_ref_vaf, max_germline_vaf)
+}
+
+/// VariantFilters.aboveMaxMnvIndelGermlineAltSupport (static form)
+pub fn above_max_mnv_indel_germline_alt_support(
+    tier: Tier, is_mnv: bool, is_long_insert: bool, ref_depth: i32, ref_alt_support: i32,
+) -> bool {
+    if tier == Tier::Hotspot {
+        return false;
+    }
+    if is_mnv || is_long_insert {
+        let perc = if ref_depth > 0 { ref_alt_support as f64 / ref_depth as f64 } else { 0.0 };
+        return perc >= 0.01;
+    }
+    false
 }
 
 #[allow(clippy::too_many_arguments)]
