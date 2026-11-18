@@ -5,14 +5,16 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 source "$here/env.local.sh"
 name=$1; threads=$2; shift 2
+# SAGE_TUMOR_ONLY=1 leaves the reference sample out
+reference=(-reference "$SAGE_NORMAL" -reference_bam "$SAGE_BAM_DIR/$SAGE_NORMAL.redux.bam" -ref_sample_count 1)
+if [ -n "${SAGE_TUMOR_ONLY:-}" ]; then reference=(-ref_sample_count 0); fi
 bin=${SAGE_RS_BIN:-$here/../target/release/sage-rs}
 out=$SAGE_OUT_DIR/rust/$name
 mkdir -p "$out"
 v=$SAGE_RESOURCES/dna/variants
 /usr/bin/time -l "$bin" \
     -tumor "$SAGE_TUMOR" -tumor_bam "$SAGE_BAM_DIR/$SAGE_TUMOR.redux.bam" \
-    -reference "$SAGE_NORMAL" -reference_bam "$SAGE_BAM_DIR/$SAGE_NORMAL.redux.bam" \
-    -ref_sample_count 1 \
+    "${reference[@]}" \
     -jitter_bqr_dir "$SAGE_BAM_DIR" \
     -ref_genome "$SAGE_REF_GENOME" -ref_genome_version 38 \
     -hotspots "$v/KnownHotspots.somatic.38.vcf.gz" \

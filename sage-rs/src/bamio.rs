@@ -2,69 +2,145 @@
 
 use crate::types::*;
 use anyhow::{Context, Result};
-use rust_htslib::bam::{self, record::Aux, record::Cigar, Read as BamRead};
+use rust_htslib::bam::{self, record::Aux, Read as BamRead};
 
 pub struct BamSlicer {
     reader: bam::IndexedReader,
     record: bam::Record,
+    /// reused by `slice_ref`
+    scratch: Read,
 }
 
-fn convert(rec: &bam::Record) -> Read {
-    let cigar: Vec<CigarEl> = rec
-        .cigar()
-        .iter()
-        .map(|c| match *c {
-            Cigar::Match(l) => CigarEl::new(l as i32, Op::M),
-            Cigar::Ins(l) => CigarEl::new(l as i32, Op::I),
-            Cigar::Del(l) => CigarEl::new(l as i32, Op::D),
-            Cigar::RefSkip(l) => CigarEl::new(l as i32, Op::N),
-            Cigar::SoftClip(l) => CigarEl::new(l as i32, Op::S),
-            Cigar::HardClip(l) => CigarEl::new(l as i32, Op::H),
-            Cigar::Pad(l) => CigarEl::new(l as i32, Op::P),
-            Cigar::Equal(l) => CigarEl::new(l as i32, Op::Eq),
-            Cigar::Diff(l) => CigarEl::new(l as i32, Op::X),
-        })
-        .collect();
-    let ref_len: i32 = cigar.iter().filter(|c| c.op.consumes_ref()).map(|c| c.len).sum();
-    let start = rec.pos() as i32 + 1;
-    let nm = match rec.aux(b"NM") {
-        Ok(Aux::U8(v)) => Some(v as i32),
-        Ok(Aux::I8(v)) => Some(v as i32),
-        Ok(Aux::U16(v)) => Some(v as i32),
-        Ok(Aux::I16(v)) => Some(v as i32),
-        Ok(Aux::U32(v)) => Some(v as i32),
-        Ok(Aux::I32(v)) => Some(v),
-        _ => None,
-    };
-    let mate_cigar = match rec.aux(b"MC") {
-        Ok(Aux::String(s)) => Some(s.to_string()),
-        _ => None,
-    };
-    // SamRecordUtils.extractConsensusType: UT tag, set by REDUX
-    let (consensus, has_consensus_tag) = match rec.aux(b"UT") {
-        Ok(Aux::String(s)) if s == "DUAL" => (ConsensusType::Dual, true),
-        Ok(Aux::String(s)) if s == "SINGLE" => (ConsensusType::Single, true),
-        Ok(Aux::String(_)) => (ConsensusType::None, true),
-        _ => (ConsensusType::None, false),
-    };
-    Read {
-        name: String::from_utf8_lossy(rec.qname()).into_owned(),
-        flags: rec.flags(),
-        tid: rec.tid(),
-        start,
-        end: start + ref_len - 1,
-        mapq: rec.mapq() as i32,
-        cigar,
-        bases: rec.seq().as_bytes(),
-        quals: rec.qual().to_vec(),
-        mate_tid: rec.mtid(),
-        mate_start: rec.mpos() as i32 + 1,
-        insert_size: rec.insert_size() as i32,
-        nm,
-        mate_cigar,
-        consensus,
-        has_consensus_tag,
+/// The 16 four-bit base codes of the BAM format, as htslib's seq_nt16_str.
+const NT16: &[u8; 16] = b"=ACMGRSVTWYHKDBN";
+
+/// Both bases of every packed sequence byte.
+static BASE_PAIRS: [[u8; 2]; 256] = {
+    let mut t = [[0u8; 2]; 256];
+    let mut i = 0;
+    while i < 256 {
+        t[i] = [NT16[i >> 4], NT16[i & 15]];
+        i += 1;
     }
+    t
+};
+
+fn decode_bases(encoded: &[u8], len: usize, out: &mut Vec<u8>) {
+    out.clear();
+    out.reserve(len + 1);
+    for b in &encoded[..len.div_ceil(2)] {
+        out.extend_from_slice(&BASE_PAIRS[*b as usize]);
+    }
+    out.truncate(len);
+}
+
+fn blank_read() -> Read {
+    Read {
+        name: String::new(),
+        flags: 0,
+        tid: -1,
+        start: 0,
+        end: 0,
+        mapq: 0,
+        cigar: Vec::new(),
+        bases: Vec::new(),
+        quals: Vec::new(),
+        mate_tid: -1,
+        mate_start: 0,
+        insert_size: 0,
+        nm: None,
+        mate_cigar: None,
+        consensus: ConsensusType::None,
+        has_consensus_tag: false,
+    }
+}
+
+/// Fill `read` from a BAM record, reusing its buffers.
+fn fill(rec: &bam::Record, read: &mut Read) {
+    read.cigar.clear();
+    let mut ref_len = 0;
+    for c in rec.raw_cigar() {
+        let len = (c >> 4) as i32;
+        let op = match c & 0xf {
+            0 => Op::M,
+            1 => Op::I,
+            2 => Op::D,
+            3 => Op::N,
+            4 => Op::S,
+            5 => Op::H,
+            6 => Op::P,
+            7 => Op::Eq,
+            _ => Op::X,
+        };
+        if op.consumes_ref() {
+            ref_len += len;
+        }
+        read.cigar.push(CigarEl::new(len, op));
+    }
+    let start = rec.pos() as i32 + 1;
+    // one pass over the tags: NM, MC and UT (SamRecordUtils.extractConsensusType; UT is set by REDUX)
+    read.nm = None;
+    read.consensus = ConsensusType::None;
+    read.has_consensus_tag = false;
+    let mut has_mate_cigar = false;
+    for (tag, value) in rec.aux_iter().flatten() {
+        match tag {
+            b"NM" => {
+                read.nm = match value {
+                    Aux::U8(v) => Some(v as i32),
+                    Aux::I8(v) => Some(v as i32),
+                    Aux::U16(v) => Some(v as i32),
+                    Aux::I16(v) => Some(v as i32),
+                    Aux::U32(v) => Some(v as i32),
+                    Aux::I32(v) => Some(v),
+                    _ => None,
+                }
+            }
+            b"MC" => {
+                if let Aux::String(s) = value {
+                    has_mate_cigar = true;
+                    match read.mate_cigar.as_mut() {
+                        Some(mc) => {
+                            mc.clear();
+                            mc.push_str(s);
+                        }
+                        None => read.mate_cigar = Some(s.to_string()),
+                    }
+                }
+            }
+            b"UT" => {
+                if let Aux::String(s) = value {
+                    read.has_consensus_tag = true;
+                    read.consensus = match s {
+                        "DUAL" => ConsensusType::Dual,
+                        "SINGLE" => ConsensusType::Single,
+                        _ => ConsensusType::None,
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+    if !has_mate_cigar {
+        read.mate_cigar = None;
+    }
+    read.name.clear();
+    match std::str::from_utf8(rec.qname()) {
+        Ok(name) => read.name.push_str(name),
+        Err(_) => read.name.push_str(&String::from_utf8_lossy(rec.qname())),
+    }
+    read.flags = rec.flags();
+    read.tid = rec.tid();
+    read.start = start;
+    read.end = start + ref_len - 1;
+    read.mapq = rec.mapq() as i32;
+    let seq = rec.seq();
+    decode_bases(seq.encoded, seq.len(), &mut read.bases);
+    read.quals.clear();
+    read.quals.extend_from_slice(rec.qual());
+    read.mate_tid = rec.mtid();
+    read.mate_start = rec.mpos() as i32 + 1;
+    read.insert_size = rec.insert_size() as i32;
 }
 
 impl BamSlicer {
@@ -73,7 +149,7 @@ impl BamSlicer {
         if threads > 1 {
             reader.set_threads(threads)?;
         }
-        Ok(BamSlicer { reader, record: bam::Record::new() })
+        Ok(BamSlicer { reader, record: bam::Record::new(), scratch: blank_read() })
     }
 
     pub fn sequence_names(&self) -> Vec<String> {
@@ -84,6 +160,27 @@ impl BamSlicer {
     /// Reads overlapping any of the sorted regions, each returned once, in coordinate order.
     /// Filters as BamSlicerFilter(minMapQual=0, keepDuplicates=false, keepSupplementaries, keepSecondaries=false).
     pub fn slice<F: FnMut(Read)>(
+        &mut self, chr: &str, regions: &[BaseRegion], keep_supplementaries: bool, mut consumer: F,
+    ) -> Result<()> {
+        self.slice_impl(chr, regions, keep_supplementaries, |rec, _| {
+            let mut read = blank_read();
+            fill(rec, &mut read);
+            consumer(read);
+        })
+    }
+
+    /// As `slice`, but lends each read to the consumer from one reused buffer, so nothing is
+    /// allocated per read.
+    pub fn slice_ref<F: FnMut(&Read)>(
+        &mut self, chr: &str, regions: &[BaseRegion], keep_supplementaries: bool, mut consumer: F,
+    ) -> Result<()> {
+        self.slice_impl(chr, regions, keep_supplementaries, |rec, scratch| {
+            fill(rec, scratch);
+            consumer(scratch);
+        })
+    }
+
+    fn slice_impl<F: FnMut(&bam::Record, &mut Read)>(
         &mut self, chr: &str, regions: &[BaseRegion], keep_supplementaries: bool, mut consumer: F,
     ) -> Result<()> {
         let tid = self.reader.header().tid(chr.as_bytes()).with_context(|| format!("unknown contig {chr}"))?;
@@ -100,12 +197,11 @@ impl BamSlicer {
                 if flags & FLAG_SUPPLEMENTARY != 0 && !keep_supplementaries {
                     continue;
                 }
-                let read = convert(rec);
                 // already returned by an earlier interval
-                if prev_end > 0 && read.start <= prev_end {
+                if prev_end > 0 && rec.pos() as i32 + 1 <= prev_end {
                     continue;
                 }
-                consumer(read);
+                consumer(rec, &mut self.scratch);
             }
             prev_end = region.end;
         }

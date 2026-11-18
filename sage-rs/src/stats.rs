@@ -3,6 +3,27 @@
 //! probabilities compared against thresholds come out as they do in Java. The remaining difference is
 //! Java's FastMath exp/log/log1p against the platform libm, which is at the level of the last bit.
 
+/// Correctly rounded exp / log / log1p. Java's FastMath is accurate to well under one ulp, so correct
+/// rounding reproduces it far more often than the platform libm does. This matters where a result is
+/// subtracted from 1: BinomialDistribution(54, 0.5).cumulativeProbability(0) is exactly 0 in Java.
+trait CorrectlyRounded {
+    fn cr_ln(self) -> f64;
+    fn cr_exp(self) -> f64;
+    fn cr_ln_1p(self) -> f64;
+}
+
+impl CorrectlyRounded for f64 {
+    fn cr_ln(self) -> f64 {
+        core_math::log(self)
+    }
+    fn cr_exp(self) -> f64 {
+        core_math::exp(self)
+    }
+    fn cr_ln_1p(self) -> f64 {
+        core_math::log1p(self)
+    }
+}
+
 const HALF_LOG_TWO_PI: f64 = 0.918_938_533_204_672_7;
 
 // --- Gamma ---
@@ -123,7 +144,7 @@ fn inv_gamma_1p_m1(x: f64) -> f64 {
 }
 
 fn log_gamma_1p(x: f64) -> f64 {
-    -inv_gamma_1p_m1(x).ln_1p()
+    -inv_gamma_1p_m1(x).cr_ln_1p()
 }
 
 /// Gamma.logGamma
@@ -131,7 +152,7 @@ pub fn log_gamma(x: f64) -> f64 {
     if x.is_nan() || x <= 0.0 {
         f64::NAN
     } else if x < 0.5 {
-        log_gamma_1p(x) - x.ln()
+        log_gamma_1p(x) - x.cr_ln()
     } else if x <= 2.5 {
         log_gamma_1p((x - 0.5) - 0.5)
     } else if x <= 8.0 {
@@ -140,11 +161,11 @@ pub fn log_gamma(x: f64) -> f64 {
         for i in 1..=n {
             prod *= x - i as f64;
         }
-        log_gamma_1p(x - (n + 1) as f64) + prod.ln()
+        log_gamma_1p(x - (n + 1) as f64) + prod.cr_ln()
     } else {
         let sum = lanczos(x);
         let tmp = x + LANCZOS_G + 0.5;
-        ((x + 0.5) * tmp.ln()) - tmp + HALF_LOG_TWO_PI + (sum / x).ln()
+        ((x + 0.5) * tmp.cr_ln()) - tmp + HALF_LOG_TWO_PI + (sum / x).cr_ln()
     }
 }
 
@@ -174,9 +195,9 @@ fn log_gamma_sum(a: f64, b: f64) -> f64 {
     if x <= 0.5 {
         log_gamma_1p(1.0 + x)
     } else if x <= 1.5 {
-        log_gamma_1p(x) + x.ln_1p()
+        log_gamma_1p(x) + x.cr_ln_1p()
     } else {
-        log_gamma_1p(x - 1.0) + (x * (1.0 + x)).ln()
+        log_gamma_1p(x - 1.0) + (x * (1.0 + x)).cr_ln()
     }
 }
 
@@ -203,8 +224,8 @@ fn delta_minus_delta_sum(a: f64, b: f64) -> f64 {
 /// for a >= 0, b >= 10
 fn log_gamma_minus_log_gamma_sum(a: f64, b: f64) -> f64 {
     let (d, w) = if a <= b { (b + (a - 0.5), delta_minus_delta_sum(a, b)) } else { (a + (b - 0.5), delta_minus_delta_sum(b, a)) };
-    let u = d * (a / b).ln_1p();
-    let v = a * (b.ln() - 1.0);
+    let u = d * (a / b).cr_ln_1p();
+    let v = a * (b.cr_ln() - 1.0);
     if u <= v {
         (w - u) - v
     } else {
@@ -236,12 +257,12 @@ pub fn log_beta(p: f64, q: f64) -> f64 {
         let w = sum_delta_minus_delta_sum(a, b);
         let h = a / b;
         let c = h / (1.0 + h);
-        let u = -(a - 0.5) * c.ln();
-        let v = b * h.ln_1p();
+        let u = -(a - 0.5) * c.cr_ln();
+        let v = b * h.cr_ln_1p();
         if u <= v {
-            (((-0.5 * b.ln() + HALF_LOG_TWO_PI) + w) - u) - v
+            (((-0.5 * b.cr_ln() + HALF_LOG_TWO_PI) + w) - u) - v
         } else {
-            (((-0.5 * b.ln() + HALF_LOG_TWO_PI) + w) - v) - u
+            (((-0.5 * b.cr_ln() + HALF_LOG_TWO_PI) + w) - v) - u
         }
     } else if a > 2.0 {
         if b > 1000.0 {
@@ -252,7 +273,7 @@ pub fn log_beta(p: f64, q: f64) -> f64 {
                 ared -= 1.0;
                 prod *= ared / (1.0 + ared / b);
             }
-            (prod.ln() - n as f64 * b.ln()) + (log_gamma(ared) + log_gamma_minus_log_gamma_sum(ared, b))
+            (prod.cr_ln() - n as f64 * b.cr_ln()) + (log_gamma(ared) + log_gamma_minus_log_gamma_sum(ared, b))
         } else {
             let mut prod1 = 1.0;
             let mut ared = a;
@@ -268,9 +289,9 @@ pub fn log_beta(p: f64, q: f64) -> f64 {
                     bred -= 1.0;
                     prod2 *= bred / (ared + bred);
                 }
-                prod1.ln() + prod2.ln() + (log_gamma(ared) + (log_gamma(bred) - log_gamma_sum(ared, bred)))
+                prod1.cr_ln() + prod2.cr_ln() + (log_gamma(ared) + (log_gamma(bred) - log_gamma_sum(ared, bred)))
             } else {
-                prod1.ln() + log_gamma(ared) + log_gamma_minus_log_gamma_sum(ared, b)
+                prod1.cr_ln() + log_gamma(ared) + log_gamma_minus_log_gamma_sum(ared, b)
             }
         }
     } else if a >= 1.0 {
@@ -282,7 +303,7 @@ pub fn log_beta(p: f64, q: f64) -> f64 {
                     bred -= 1.0;
                     prod *= bred / (a + bred);
                 }
-                prod.ln() + (log_gamma(a) + (log_gamma(bred) - log_gamma_sum(a, bred)))
+                prod.cr_ln() + (log_gamma(a) + (log_gamma(bred) - log_gamma_sum(a, bred)))
             } else {
                 log_gamma(a) + log_gamma_minus_log_gamma_sum(a, b)
             }
@@ -350,7 +371,7 @@ pub fn regularized_beta(x: f64, a: f64, b: f64) -> f64 {
         h_prev = h_n;
         n += 1;
     }
-    (a * x.ln() + b * (-x).ln_1p() - a.ln() - log_beta(a, b)).exp() * 1.0 / h_n
+    (a * x.cr_ln() + b * (-x).cr_ln_1p() - a.cr_ln() - log_beta(a, b)).cr_exp() * 1.0 / h_n
 }
 
 /// BinomialDistribution(n, p).cumulativeProbability(x)
@@ -406,7 +427,7 @@ fn stirling_error(z: f64) -> f64 {
         if z2.floor() == z2 {
             EXACT_STIRLING_ERRORS[z2 as usize]
         } else {
-            log_gamma(z + 1.0) - (z + 0.5) * z.ln() + z - HALF_LOG_TWO_PI
+            log_gamma(z + 1.0) - (z + 0.5) * z.cr_ln() + z - HALF_LOG_TWO_PI
         }
     } else {
         let z2 = z * z;
@@ -437,7 +458,7 @@ fn deviance_part(x: f64, mu: f64) -> f64 {
         }
         s1
     } else {
-        x * (x / mu).ln() + mu - x
+        x * (x / mu).cr_ln() + mu - x
     }
 }
 
@@ -447,20 +468,20 @@ fn log_binomial_probability(x: i32, n: i32, p: f64, q: f64) -> f64 {
         if p < 0.1 {
             -deviance_part(nf, nf * q) - nf * p
         } else {
-            nf * q.ln()
+            nf * q.cr_ln()
         }
     } else if x == n {
         if q < 0.1 {
             -deviance_part(nf, nf * p) - nf * q
         } else {
-            nf * p.ln()
+            nf * p.cr_ln()
         }
     } else {
         let ret = stirling_error(nf) - stirling_error(xf) - stirling_error(nf - xf)
             - deviance_part(xf, nf * p)
             - deviance_part(nf - xf, nf * q);
         let f = (2.0 * std::f64::consts::PI * xf * (nf - xf)) / nf;
-        -0.5 * f.ln() + ret
+        -0.5 * f.cr_ln() + ret
     }
 }
 
@@ -473,7 +494,7 @@ pub fn binomial_probability(n: i32, p: f64, x: i32) -> f64 {
     } else {
         log_binomial_probability(x, n, p, 1.0 - p)
     };
-    if log_p == f64::NEG_INFINITY { 0.0 } else { log_p.exp() }
+    if log_p == f64::NEG_INFINITY { 0.0 } else { log_p.cr_exp() }
 }
 
 #[cfg(test)]
@@ -543,9 +564,19 @@ mod tests {
         // exp/log/lgamma are not the same implementations as Java's FastMath, so allow a few ulps
         for (n, p, x, prob, cdf) in JAVA_BINOMIAL {
             let got = binomial_probability(n, p, x);
-            assert!(ulps(got, prob) <= 8, "probability({n}, {p}, {x}) = {got:e}, Java {:e}", f64::from_bits(prob));
+            assert!(ulps(got, prob) <= 0, "probability({n}, {p}, {x}) = {got:e}, Java {:e}", f64::from_bits(prob));
             let got = binomial_cdf(n, p, x);
-            assert!(ulps(got, cdf) <= 8, "cdf({n}, {p}, {x}) = {got:e}, Java {:e}", f64::from_bits(cdf));
+            assert!(ulps(got, cdf) <= 0, "cdf({n}, {p}, {x}) = {got:e}, Java {:e}", f64::from_bits(cdf));
+        }
+    }
+
+    #[test]
+    fn cdf_at_zero_matches_java() {
+        // Java: new BinomialDistribution(n, 0.5).cumulativeProbability(0), which is 0.5^n up to n = 53
+        // and exactly zero from n = 54, where 1 - 0.5^n rounds to 1
+        for n in 44..=58 {
+            let expected = if n <= 53 { 0.5f64.powi(n) } else { 0.0 };
+            assert_eq!(binomial_cdf(n, 0.5, 0), expected, "n = {n}");
         }
     }
 }

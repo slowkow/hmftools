@@ -10,9 +10,10 @@ are reproduced deliberately.
 
 Tumor/normal somatic calling on Illumina BAMs with REDUX outputs
 (`<sample>.redux.bqr.tsv`, `.redux.jitter_params.tsv`, `.redux.ms_table.tsv.gz`).
-Tumor-only runs are implemented but have not been compared with Java.
-Not yet: TINC, append mode, CRAM, germline mode, `high_depth_mode`, more than one tumor or reference
-sample, SBX, Ultima, the visualiser. Unsupported options stop with an error rather than being ignored.
+Also: tumor-only runs, `-panel_only`, `-high_depth_mode`, `-germline`, and TINC (`-run_tinc` with
+`-pon_file` and `-gnomad_freq_dir`, or standalone as `sage-rs tinc -input_vcf ...`).
+Not yet: append mode, CRAM, more than one tumor or reference sample, samples REDUX predicts as MSI,
+split (RNA) reads, SBX, Ultima, the visualiser. Unsupported options stop with an error rather than being ignored.
 
 ## Build and run
 
@@ -44,3 +45,15 @@ diff <(gzip -dc $SAGE_OUT_DIR/java/chr21/chr21.sage.vcf.gz) <(gzip -dc $SAGE_OUT
 ```
 
 Run Java with one thread when comparing: its phase set ids depend on thread scheduling.
+`bench/compare_vcf.py` compares two VCFs field by field and reports phase-set-id-only differences
+separately, for runs where Java used more than one thread. `SAGE_TUMOR_ONLY=1` makes both run scripts
+leave out the reference sample.
+
+TINC: `bench/run_tinc_pair.sh <name> <sage.vcf.gz>` runs the standalone Java and Rust analysers on the
+same VCF and compares the results; `bench/simulate_tinc.py` adds simulated contamination to a VCF so
+that the recovery path is exercised.
+
+## Tests
+
+`cargo test --release` runs the unit tests, including the Java SAGE unit tests ported to `src/tests`
+(one module per Java test class).

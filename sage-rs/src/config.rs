@@ -54,6 +54,9 @@ pub struct Config {
     pub disable_soft_filter: bool,
     pub disable_hard_filter: bool,
     pub filtered_max_germline_alt_support: i32,
+    /// -germline: germline filters are not applied
+    pub germline: bool,
+    pub high_depth_mode: bool,
     /// SageCallConfig.RunTinc: -run_tinc with exactly one reference sample
     pub run_tinc: bool,
     pub write_tinc_vcf: bool,
@@ -93,12 +96,6 @@ impl Config {
                 bail!("sequencing_type {seq} is not supported; only ILLUMINA is implemented");
             }
         }
-        for unsupported in ["germline", "high_depth_mode"] {
-            if flag(unsupported) || get(unsupported).is_some() {
-                bail!("-{unsupported} is not implemented yet");
-            }
-        }
-
         let tumor_bams = list(get("tumor_bam"));
         let reference_bams = list(get("reference_bam"));
         let dir_of = |p: &String| {
@@ -169,6 +166,8 @@ impl Config {
             disable_hard_filter: flag("disable_hard_filter"),
             // FilterConfig: the limit is relaxed when TINC will run, and TINC re-applies the default afterwards
             filtered_max_germline_alt_support: int("filtered_max_germline_alt_support", if flag("run_tinc") { 10 } else { 3 })?,
+            germline: flag("germline"),
+            high_depth_mode: flag("high_depth_mode"),
             run_tinc: flag("run_tinc") && list(get("reference")).len() == 1,
             write_tinc_vcf: flag("write_tinc_vcf"),
             write_fit_variants: flag("write_fit_variants"),

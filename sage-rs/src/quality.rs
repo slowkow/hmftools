@@ -128,7 +128,7 @@ impl JitterParams {
     }
 }
 
-fn default_illumina_params() -> Vec<JitterParams> {
+fn default_illumina_params(high_depth: bool) -> Vec<JitterParams> {
     let mut out = Vec::new();
     let mut add = |units: &[&str], o4: f64, o5: f64, o6: f64, gradient: f64| {
         let intercept = o6 - 6.0 * gradient;
@@ -145,9 +145,15 @@ fn default_illumina_params() -> Vec<JitterParams> {
             });
         }
     };
-    add(&["A/T", "C/G"], 0.105, 0.115, 0.125, 0.04);
-    add(&["AT/TA", "AC/CA/GT/TG", "AG/GA/CT/TC", "CG/GC"], 0.11, 0.15, 0.19, 0.04);
-    add(&["3-5bp repeat"], 0.14, 0.18, 0.22, 0.02);
+    if high_depth {
+        add(&["A/T", "C/G"], 0.1, 0.15, 0.2, 0.06);
+        add(&["AT/TA", "AC/CA/GT/TG", "AG/GA/CT/TC", "CG/GC"], 0.15, 0.2, 0.25, 0.06);
+        add(&["3-5bp repeat"], 0.2, 0.25, 0.3, 0.06);
+    } else {
+        add(&["A/T", "C/G"], 0.105, 0.115, 0.125, 0.04);
+        add(&["AT/TA", "AC/CA/GT/TG", "AG/GA/CT/TC", "CG/GC"], 0.11, 0.15, 0.19, 0.04);
+        add(&["3-5bp repeat"], 0.14, 0.18, 0.22, 0.02);
+    }
     out
 }
 
@@ -187,9 +193,9 @@ pub struct MsiJitter {
 }
 
 impl MsiJitter {
-    pub fn load(dir: Option<&str>, sample: &str) -> Result<MsiJitter> {
+    pub fn load(dir: Option<&str>, sample: &str, high_depth: bool) -> Result<MsiJitter> {
         let Some(dir) = dir else {
-            return Ok(MsiJitter { params: default_illumina_params(), probable_msi: false });
+            return Ok(MsiJitter { params: default_illumina_params(high_depth), probable_msi: false });
         };
         let param_file = format!("{dir}/{sample}.redux.jitter_params.tsv");
         let count_file = format!("{dir}/{sample}.redux.ms_table.tsv.gz");

@@ -107,7 +107,7 @@ fn sample_read_length(cfg: &Config, ref_data: &RefData, bam: &mut bamio::BamSlic
     for (chr, region) in regions {
         let mut count = 0;
         let mut max_len = 0;
-        bam.slice(&chr, &[BaseRegion::new(region.start.max(1), region.end)], false, |read| {
+        bam.slice_ref(&chr, &[BaseRegion::new(region.start.max(1), region.end)], false, |read| {
             if count < 1000 {
                 count += 1;
                 max_len = max_len.max(read.len());
@@ -177,7 +177,13 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion) ->
 
     let ref_seq = RefSequence::new(&w.genome, chr, region.start, region.end)?;
     let mut finder = CandidateFinder::new(cfg, chr, region, &ref_seq, &hotspots, &panel, ref_data);
-    w.tumor_bam.slice(chr, &[region], true, |read| finder.process_read(&read))?;
+    // CandidateStage: in panel-only mode only the panel parts of the region are read
+    let slice_regions: Vec<BaseRegion> = if cfg.panel_only {
+        panel.iter().map(|p| BaseRegion::new(p.start.max(region.start), p.end.min(region.end))).collect()
+    } else {
+        vec![region]
+    };
+    w.tumor_bam.slice_ref(chr, &slice_regions, true, |read| finder.process_read(read))?;
     let candidates = build_candidates(finder.finish(), &hotspots, &panel, &high_conf);
     if candidates.is_empty() {
         return Ok(None);
@@ -364,7 +370,7 @@ fn main() -> Result<()> {
             quality::BqrMap::load(&format!("{}/{}.redux.bqr.tsv", cfg.jitter_bqr_dir, sample))?
         });
         let dir = if cfg.skip_msi_jitter { None } else { Some(cfg.jitter_bqr_dir.as_str()) };
-        msi.push(quality::MsiJitter::load(dir, sample)?);
+        msi.push(quality::MsiJitter::load(dir, sample, cfg.high_depth_mode)?);
     }
 
     let mut cand_out: Option<Box<dyn Write>> = if cfg.log_candidates {

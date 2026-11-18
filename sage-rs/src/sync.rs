@@ -352,8 +352,32 @@ fn java_string_hash(s: &str) -> i32 {
     h
 }
 
+/// A multiply-rotate hasher for read names (as rustc's FxHasher). The cache is only ever looked up by
+/// name, and is ordered explicitly when it is emptied, so the hash function does not affect output.
+#[derive(Default, Clone, Copy)]
+pub struct FastHasher(u64);
+
+impl std::hash::Hasher for FastHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        const K: u64 = 0x517c_c1b7_2722_0a95;
+        let mut chunks = bytes.chunks_exact(8);
+        for c in &mut chunks {
+            let v = u64::from_le_bytes(c.try_into().unwrap());
+            self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(K);
+        }
+        for b in chunks.remainder() {
+            self.0 = (self.0.rotate_left(5) ^ *b as u64).wrapping_mul(K);
+        }
+    }
+}
+
+type FastHash = std::hash::BuildHasherDefault<FastHasher>;
+
 pub struct FragmentSync {
-    cached: HashMap<String, (Read, u64)>,
+    cached: HashMap<String, (Read, u64), FastHash>,
     seq: u64,
     /// the Java HashMap never shrinks, so its capacity follows the peak size over its lifetime
     peak: usize,
@@ -364,7 +388,7 @@ pub type SyncOutput = Vec<(Read, Option<FragmentData>)>;
 
 impl FragmentSync {
     pub fn new() -> Self {
-        FragmentSync { cached: HashMap::new(), seq: 0, peak: 0, counts: [0; 6] }
+        FragmentSync { cached: HashMap::default(), seq: 0, peak: 0, counts: [0; 6] }
     }
 
     /// handleOverlappingReads: Some(read) when the caller should process the read itself; otherwise

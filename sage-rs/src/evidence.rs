@@ -45,6 +45,7 @@ pub enum ReadMatchType {
     SoftClip,
     InSplit,
     MapQual,
+    Chimeric,
     MaxCoverage,
 }
 
@@ -939,6 +940,13 @@ impl ReadContextCounter {
         if self.tier != Tier::Hotspot && read.mapq < EVIDENCE_MIN_MAP_QUAL {
             return MapQual;
         }
+        let high_depth = qc.cfg.high_depth_mode;
+        if high_depth && fragment.is_none() && is_chimeric_read(read) {
+            return Chimeric;
+        }
+        // belowQualThreshold
+        let below_qual_threshold =
+            |qual_cache: &QualCache, q: f64| high_depth && !qual_cache.uses_msi_indel_error_qual() && !is_high_base_qual(q);
         let ctx = self.ctx.clone();
         let variant = &ctx.variant;
         let (read_var_index, pos_type) = raw_context(variant, read);
@@ -993,6 +1001,17 @@ impl ReadContextCounter {
                 return Unrelated;
             }
             seq_tech_qual = q.seq_tech_base_quality;
+            if below_qual_threshold(&self.qual_cache, seq_tech_qual) {
+                if pos_type != PosType::Deleted {
+                    let info = self.matcher.determine_read_match(&ctx, read, read_var_index);
+                    if info.kind.supports_alt() {
+                        self.count_alt_support_metrics(read, fragment);
+                        self.qual_counters.alt_seq_tech_base_quality_total += jround(q.seq_tech_base_quality) as i32;
+                        self.qual_counters.low_qual_alt_support_count += 1;
+                    }
+                }
+                return Unrelated;
+            }
             combined_quality = q.combined_quality;
             if pos_type != PosType::Deleted {
                 match_info = self.matcher.determine_read_match(&ctx, read, read_var_index);
@@ -1041,6 +1060,9 @@ impl ReadContextCounter {
                 }
                 seq_tech_qual = q.seq_tech_base_quality;
                 combined_quality = q.combined_quality;
+                if below_qual_threshold(&self.qual_cache, seq_tech_qual) {
+                    return Unrelated;
+                }
                 if matches!(realigned_type, Realigned::Exact | Realigned::LowQualMismatches) {
                     self.register_read_support(read, Some(Support::Realigned), combined_quality, seq_tech_qual, q.is_medium_qual);
                     self.qual_counters.update(&q, read.mapq, MatchType::Realigned);
@@ -1241,6 +1263,22 @@ pub(crate) fn average_core_quality(ctx: &VariantReadContext, read: &Read, read_v
     }
     let total: f64 = (s..=e).map(|i| read.quals[i as usize] as f64).sum();
     jround(total / len as f64) as i32 as f64
+}
+
+/// FilterUtils.isChimericRead
+pub fn is_chimeric_read(read: &Read) -> bool {
+    if read.paired() {
+        if read.flag(FLAG_MATE_UNMAPPED) {
+            return true;
+        }
+        if read.tid != read.mate_tid {
+            return true;
+        }
+        if read.negative_strand() == read.flag(FLAG_MATE_REVERSE) {
+            return true;
+        }
+    }
+    read.insert_size.abs() > 1000
 }
 
 pub fn is_high_base_qual(q: f64) -> bool {

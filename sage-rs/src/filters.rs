@@ -342,7 +342,7 @@ impl<'a> VariantFilters<'a> {
         for ti in 0..v.tumor_counters.len() {
             let mut filters = HashSet::new();
             self.apply_tumor_filters(near_multi, tier, config, &mut v.tumor_counters[ti], &mut filters);
-            for ri in 0..max_ref {
+            for ri in 0..if self.cfg.germline { 0 } else { max_ref } {
                 self.apply_tumor_germline_filters(tier, config, &v.ref_counters[ri], &v.tumor_counters[ti], &mut filters);
             }
             if filters.is_empty() {
@@ -468,7 +468,15 @@ impl<'a> VariantFilters<'a> {
         }
         let min_qual = if t.qual_cache.is_msi_sample_and_variant { 20 } else { 15 };
         let floored = qual_per_read.max(min_qual) as i8;
-        let prob = 1.0 - binomial_cdf(depth, phred_to_prob(floored), adjusted_strong - 1);
+        let mut prob = 1.0 - binomial_cdf(depth, phred_to_prob(floored), adjusted_strong - 1);
+        if self.cfg.germline {
+            // GERMLINE_HET_MIN_EXPECTED_VAF, GERMLINE_HET_MIN_SAMPLING_PROB
+            let het_prob = binomial_cdf(depth, 0.4, t.alt_support());
+            if het_prob < prob {
+                prob /= jmax(het_prob, 1e-3);
+                prob = jmin(prob, 1.0);
+            }
+        }
         t.tumor_qual_probability = prob;
         prob >= config.qual_p_score
     }
@@ -514,7 +522,7 @@ impl<'a> VariantFilters<'a> {
         let skip_edge = t.variant().is_long_insert() && !near_multi;
         if !polymorphic && ratio < 2.0 * read_edge_distance_threshold(tier) && !skip_edge {
             edge_penalty = 10.0 * alt_support as f64 * (avg_edge / jmax(avg_alt_edge, 0.001)).log10();
-            if !near_multi {
+            if !near_multi && !self.cfg.high_depth_mode {
                 edge_penalty = jmin(edge_penalty, 10.0);
             }
         }
@@ -728,7 +736,7 @@ pub fn check_final_filters(v: &SageVariant, passing_phase_sets: &[i32], cfg: &Co
     if v.mixed_impact > 0 {
         return true;
     }
-    if !v.ref_counters.is_empty() && !is_mito(chr) && !v.has_matching_lps(passing_phase_sets) {
+    if !cfg.germline && !v.ref_counters.is_empty() && !is_mito(chr) && !v.has_matching_lps(passing_phase_sets) {
         if v.ref_counters[0].alt_support() > cfg.filtered_max_germline_alt_support {
             return false;
         }

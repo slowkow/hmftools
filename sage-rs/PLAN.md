@@ -16,9 +16,10 @@ VCF. On every region tested so far the decompressed VCF is byte-identical to Jav
 | 2. Candidate stage | Done. |
 | 3. Evidence stage | Done, including fragment sync, BQR and the MSI jitter model. |
 | 4. Filters, phasing, dedup | Done. |
-| 5. Parity sweep | Whole genome compared (below), plus chr21, HLA region, chrM and part of chrX against single-threaded Java. Panel / `high_depth_mode` sample and tumor-only not tested. Java unit tests not ported. |
-| 6. Optimisation | Multi-threading done. Nothing else yet: the tumor BAM is still read twice and every read is copied. |
-| 7. Later | TINC, append mode, CRAM, germline mode, `high_depth_mode`, multiple tumor / reference samples, SBX, Ultima. Each is rejected with an error if requested. |
+| 5. Parity sweep | Whole genome compared with and without TINC (below), plus chr21, HLA region, chrM and part of chrX against single-threaded Java. chr21 is also byte-identical in `-high_depth_mode`, `-germline`, tumor-only and `-panel_only` runs. 86 Java unit tests are ported (`src/tests`). |
+| 6. Optimisation | Multi-threading; table-based base decoding, one pass over BAM tags and a reused read buffer in the candidate stage (about 25% less CPU). Still to do: the tumor BAM is read twice, and the evidence stage copies every read. |
+| 7. TINC | Done: `-run_tinc` and the standalone `sage-rs tinc`. |
+| 8. Later | Append mode, CRAM, multiple tumor / reference samples, MSI-specific jitter parameters, split (RNA) reads, SBX, Ultima, the visualiser. Each is rejected with an error if requested. |
 
 Regions compared (records identical / total), tumor and normal WGS BAMs on an external volume, 20-core machine:
 
@@ -37,6 +38,17 @@ predicts); the Rust output is the same at 1, 8 and 16 threads.
 Whole genome, 16 threads each (Java with `-Xmx24g`): Java 2,450 s and 26.9 GB peak; Rust 812 s and 0.9 GB.
 Both write the same 360,440 records. 355,867 lines are identical; the other 4,573 differ only in the
 `LPS` id numbers, which is the Java thread-order effect (`bench/compare_vcf.py`). No other field differs.
+
+With `-run_tinc` (the oncoanalyser setting), whole genome, 16 threads each: Java 3,407 s, Rust 764 s
+(both measured while other jobs were running, so only the ratio is meaningful). The pre-TINC VCFs have
+the same 611,876 records and the TINC-rewritten VCFs the same 365,286; in both, the only differing
+lines are the 4,704 with thread-order `LPS` ids. The sample's TINC level is 0, so recovery was checked
+separately: `bench/simulate_tinc.py` adds simulated contamination to a VCF, and the standalone Java and
+Rust analysers give byte-identical output at 2%, 10% and 50% (5,132 to 14,381 variants recovered).
+Standalone TINC on the whole-genome VCF takes 113 s and 17 GB in Java, 14 s and 0.5 GB in Rust.
+
+Rust CPU profile after the first optimisation round (12 Mb of chr21, one thread): BAM decompression
+and reading about 30%, allocation about 20%, fragment sync 11%, candidate read processing 10%.
 
 Java CPU by stage on chr21 (flight recorder): candidate stage 63%, evidence stage 34%, everything after
 that under 1%. BAM decoding inside htsjdk is about 20% of the total.
@@ -188,5 +200,7 @@ flat arrays in place of hash lookups, phasing data structures. Parity suite runs
 - Baseline sample: a WGS tumor/normal pair (REDUX BAMs). Paths live in `bench/env.local.sh`, which is
   not committed; outputs go to a directory outside the repository.
 - The port lives in this fork under `sage-rs/`. CRAM is deferred.
-- Open: whether the production pipeline needs TINC (`-run_tinc`), which changes which filtered
-  variants are kept and is the main gap before this can replace SAGE in oncoanalyser.
+- Test data for SBX and Ultima: the public GIAB HG008 tumor/normal pair
+  (`https://giab.s3.amazonaws.com/data_somatic/HG008/Liss_lab/`), sliced by chromosome and run through
+  Java REDUX. REDUX 2.1 at this commit crashes during BQR because `BaseQualityResults.addPerfCounter`
+  merges a counter into itself; the baseline was made with that one line patched locally.
