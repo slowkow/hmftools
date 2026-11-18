@@ -1,0 +1,14 @@
+[package]
+name = "sage-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+flate2 = "1.1.11"
+libm = "0.2.16"
+rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate"] }
+
+[profile.release]
+panic = "abort"
+debug = 1

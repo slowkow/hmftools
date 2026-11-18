@@ -1,0 +1,39 @@
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
+##FORMAT=<ID=AED,Number=2,Type=Float,Description="Average edge distance as percent of read length [alt,total]">
+##FORMAT=<ID=AF,Number=1,Type=Float,Description="Allelic frequency calculated from read context counts as (Full + Partial + Core + Realigned + Alt) / Coverage">
+##FORMAT=<ID=AFBQ,Number=1,Type=Integer,Description="Average final base quality">
+##FORMAT=<ID=AFMQ,Number=1,Type=Integer,Description="Average alt support final map quality">
+##FORMAT=<ID=ARCBQ,Number=2,Type=Integer,Description="Average recalibrated base quality (all,alt)">
+##FORMAT=<ID=ARMQ,Number=2,Type=Integer,Description="Average read map quality (all,alt)">
+##FORMAT=<ID=ASBQ,Number=1,Type=Integer,Description="Average sequencing-tech base quality in alt reads">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth (reads with MQ=255 or with bad mates are filtered)">
+##FORMAT=<ID=FSB,Number=2,Type=Float,Description="Fragment strand bias - percentage of forward-orientation fragments (ref,alt)">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=MUC,Number=1,Type=Integer,Description="Min unique fragment coordinates in alt reads">
+##FORMAT=<ID=RC_CNT,Number=6,Type=Integer,Description="Read context counts [Full, PartialCore, Core, Realigned, Reference, Total]">
+##FORMAT=<ID=RC_IPC,Number=1,Type=Integer,Description="Read context improper pair count">
+##FORMAT=<ID=RC_JIT,Number=3,Type=Integer,Description="Read context jitter [Shortened, Lengthened, QualityPenalty]">
+##FORMAT=<ID=RC_QUAL,Number=6,Type=Integer,Description="Read context quality [Full, PartialCore, Core, Realigned, Reference, Total]">
+##FORMAT=<ID=RSB,Number=2,Type=Float,Description="Read strand bias - percentage of forward-orientation reads (ref,alt)">
+##FORMAT=<ID=SAC,Number=1,Type=Integer,Description="Simple alt match count">
+##FORMAT=<ID=UMI_CNT,Number=6,Type=Integer,Description="UMI type counts [TotalNone,TotalSingle,TotalDualStrand,AltNone,AltSingle,AltDualStrand]">
+##INFO=<ID=HOTSPOT,Number=0,Type=Flag,Description="Site is at a known hotspot location">
+##INFO=<ID=LPS,Number=.,Type=Integer,Description="Local Phase Set">
+##INFO=<ID=LPS_RC,Number=.,Type=Integer,Description="Local Phase Set Read Count">
+##INFO=<ID=MED,Number=1,Type=Float,Description="Max read edge distance">
+##INFO=<ID=MH,Number=1,Type=String,Description="Microhomology">
+##INFO=<ID=MQF,Number=1,Type=Float,Description="Map qual heuristic as used in min tumor quality filter">
+##INFO=<ID=MSG,Number=1,Type=Integer,Description="Mixed Somatic and Germline variants">
+##INFO=<ID=NEARBY_INDEL,Number=0,Type=Flag,Description="Variant has an INDEL overlapping its core">
+##INFO=<ID=NEAR_HOTSPOT,Number=0,Type=Flag,Description="Variant within 5 of hotspot">
+##INFO=<ID=RC_INFO,Number=1,Type=String,Description="Read context: alignment start, variant index, left-flank, core, right-flank, read cigar">
+##INFO=<ID=RC_MH,Number=1,Type=String,Description="Microhomology from read context">
+##INFO=<ID=RC_NM,Number=1,Type=Integer,Description="Minimum number of events in read">
+##INFO=<ID=RC_REPC,Number=1,Type=Integer,Description="Repeat count from read context">
+##INFO=<ID=RC_REPS,Number=1,Type=String,Description="Repeat sequence from read context">
+##INFO=<ID=REP_C,Number=1,Type=Integer,Description="Repeat sequence count">
+##INFO=<ID=REP_S,Number=1,Type=String,Description="Repeat sequence">
+##INFO=<ID=TIER,Number=1,Type=String,Description="Tier: [HOTSPOT, PANEL, HIGH_CONFIDENCE, LOW_CONFIDENCE]">
+##INFO=<ID=TINC_RECOVERED,Number=0,Type=Flag,Description="Variant recovered from germline filters by TINC detection">
+##INFO=<ID=TNC,Number=1,Type=String,Description="Tri-nucleotide context">
+##INFO=<ID=TQP,Number=1,Type=Float,Description="Probability as used in min tumor quality filter">
