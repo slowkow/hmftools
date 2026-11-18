@@ -103,6 +103,12 @@ pub struct Read {
     pub has_consensus_tag: bool,
     /// SBX: the YX tag, the read index where the duplex region starts; -1 if absent
     pub duplex_index: i32,
+    /// Ultima: the tp tag, the homopolymer length change each base quality refers to; empty if absent
+    pub tp: Vec<i8>,
+    /// Ultima: the t0 tag as quals (the tag string less the phred offset); empty if absent
+    pub t0: Vec<i8>,
+    /// Ultima: the UQ tag set by REDUX, "count=index,start-end,..." of the low-qual read indices
+    pub low_qual_tag: Option<String>,
 }
 
 impl Read {

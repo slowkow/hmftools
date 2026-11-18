@@ -94,8 +94,17 @@ impl Config {
         if let Some(seq) = get("sequencing_type") {
             if seq.eq_ignore_ascii_case("SBX") {
                 set_sequencing_type(SequencingType::Sbx);
+            } else if seq.eq_ignore_ascii_case("ULTIMA") {
+                set_sequencing_type(SequencingType::Ultima);
             } else if !seq.eq_ignore_ascii_case("ILLUMINA") {
-                bail!("sequencing_type {seq} is not supported; ILLUMINA and SBX are implemented");
+                bail!("sequencing_type {seq} is not supported; ILLUMINA, SBX and ULTIMA are implemented");
+            }
+        }
+        if is_ultima() {
+            // UltimaQualRecalibration.CFG_FILENAME and FilterConfig.ULTIMA_CANDIDATE_MIN_HIGH_BQ
+            crate::ultima::load_bqr_cache(get("ultima_bqr_file").map(|s| s.as_str()))?;
+            if let Some(v) = get("ultima_cand_min_high_bq") {
+                crate::ultima::set_candidate_min_high_bq_threshold(v.parse()?);
             }
         }
         let tumor_bams = list(get("tumor_bam"));
@@ -143,8 +152,8 @@ impl Config {
             log_candidates: flag("log_candidates"),
             specific_chr,
             specific_regions,
-            // SBX reads are long and variable, so the length is not sampled from the BAM
-            read_length: int("read_length", if is_sbx() { NON_ILLUMINA_MAX_READ_LENGTH } else { 0 })?,
+            // SBX and Ultima reads are long and variable, so the length is not sampled from the BAM
+            read_length: int("read_length", if is_sbx() || is_ultima() { NON_ILLUMINA_MAX_READ_LENGTH } else { 0 })?,
             min_map_quality: int("min_map_quality", DEFAULT_MIN_MAP_QUALITY)?,
             max_read_depth: int("max_read_depth", DEFAULT_MAX_READ_DEPTH)?,
             max_read_depth_panel: int("max_read_depth_panel", DEFAULT_MAX_READ_DEPTH_PANEL)?,

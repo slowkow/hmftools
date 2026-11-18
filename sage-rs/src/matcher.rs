@@ -385,6 +385,8 @@ fn match_type(
     if base_index_end >= bases.len() as i32 || read_index_end >= read_bases.len() as i32 {
         return BaseMatch::Incomplete;
     }
+    // standard base quals cannot be used for Ultima
+    let quals = if is_ultima() { None } else { quals };
     let mut mismatches = 0;
     let (mut i, mut j) = (base_index_start, read_index_start);
     while i <= base_index_end && j <= read_index_end {

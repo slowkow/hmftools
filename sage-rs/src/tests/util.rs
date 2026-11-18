@@ -136,6 +136,9 @@ pub fn build_sam_record_quals(alignment_start: i32, cigar: &str, read_bases: &st
         consensus: ConsensusType::None,
         has_consensus_tag: false,
         duplex_index: -1,
+        tp: Vec::new(),
+        t0: Vec::new(),
+        low_qual_tag: None,
     }
 }
 
@@ -156,4 +159,48 @@ pub fn create_sam_record(read_id: &str, read_start: i32, read_bases: &str, cigar
     read.nm = Some(1);
     read.insert_size = 0;
     read
+}
+
+/// SamRecordTestUtils.createSamRecordUnpaired(readId, chr, readStart, readBases, cigar, false, false, null)
+pub fn create_sam_record_unpaired(read_id: &str, read_start: i32, read_bases: &str, cigar: &str) -> Read {
+    let mut read = build_sam_record(read_start, cigar, read_bases);
+    read.name = read_id.to_string();
+    read.flags = 0;
+    read.nm = Some(1);
+    read.insert_size = 0;
+    read
+}
+
+/// SeqTechTestUtils.buildUltimaRead: unpaired, forward strand, with the tp and t0 tags
+pub fn build_ultima_read(read_start: i32, read_bases: &str, qualities: &[u8], tp_values: &[i8], t0_values: &[u8]) -> Read {
+    let cigar = format!("{}M", qualities.len());
+    let mut read = build_sam_record_quals(read_start, &cigar, read_bases, qualities.to_vec());
+    read.flags = 0;
+    read.insert_size = 0;
+    read.tp = tp_values.to_vec();
+    read.t0 = t0_values.iter().map(|&q| q as i8).collect();
+    read
+}
+
+/// MockRefGenome(true): one-based positions on a single chromosome; a request outside the bases gives
+/// an empty array, as the Java mock does
+pub struct MockRefGenome {
+    pub bases: String,
+}
+
+impl MockRefGenome {
+    pub fn new(bases: &str) -> Self {
+        MockRefGenome { bases: bases.to_string() }
+    }
+}
+
+impl crate::ultima::RefBases for MockRefGenome {
+    fn get_bases(&self, pos_start: i32, pos_end: i32) -> Option<Vec<u8>> {
+        let (start, end) = (pos_start - 1, pos_end - 1);
+        if start >= 0 && end >= start && (self.bases.len() as i32) > end {
+            Some(self.bases.as_bytes()[start as usize..=end as usize].to_vec())
+        } else {
+            Some(Vec::new())
+        }
+    }
 }

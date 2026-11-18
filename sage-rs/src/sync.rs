@@ -342,10 +342,13 @@ pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
         consensus: first.consensus,
         has_consensus_tag: first.has_consensus_tag,
         duplex_index: first.duplex_index,
+        tp: first.tp.clone(),
+        t0: first.t0.clone(),
+        low_qual_tag: first.low_qual_tag.clone(),
     })
 }
 
-fn java_string_hash(s: &str) -> i32 {
+pub(crate) fn java_string_hash(s: &str) -> i32 {
     let mut h: i32 = 0;
     for c in s.encode_utf16() {
         h = h.wrapping_mul(31).wrapping_add(c as i32);

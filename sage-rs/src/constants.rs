@@ -135,6 +135,9 @@ pub fn is_illumina() -> bool {
 pub fn is_sbx() -> bool {
     sequencing_type() == SequencingType::Sbx as u8
 }
+pub fn is_ultima() -> bool {
+    sequencing_type() == SequencingType::Ultima as u8
+}
 
 pub const NON_ILLUMINA_MAX_READ_LENGTH: i32 = 800;
 pub const MATCHING_BASE_QUALITY_SBX: u8 = 10;
@@ -160,6 +163,8 @@ pub fn is_medium_base_qual(q: i8) -> bool {
 pub fn is_high_base_qual_byte(q: i8) -> bool {
     if is_sbx() {
         q > SBX_MEDIUM_QUAL_UPPER
+    } else if is_ultima() {
+        q >= crate::ultima::ULTIMA_MAX_QUAL
     } else {
         q >= ILLUMINA_HIGH_BASE_QUAL as i8
     }

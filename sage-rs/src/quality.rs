@@ -73,6 +73,11 @@ impl BqrMap {
         Ok(BqrMap { map, enabled: true })
     }
 
+    /// BqrCache.maxRawQual for one sample's records: the highest original qual, 0 if there are none
+    pub fn max_raw_qual(&self) -> i8 {
+        self.map.keys().map(|k| k.3 as i32).max().unwrap_or(0) as i8
+    }
+
     fn quality_adjustment(&self, ref_: u8, alt: u8, tnc: [u8; 3], qual: u8, read_type: ConsensusType) -> f64 {
         self.map.get(&(ref_, alt, tnc, qual, read_type as u8)).copied().unwrap_or(qual as f64)
     }
@@ -149,6 +154,10 @@ fn default_illumina_params(high_depth: bool) -> Vec<JitterParams> {
         add(&["A/T", "C/G"], 0.14, 0.155, 0.17, 0.02);
         add(&["AT/TA", "AC/CA/GT/TG", "AG/GA/CT/TC", "CG/GC"], 0.11, 0.15, 0.19, 0.02);
         add(&["3-5bp repeat"], 0.14, 0.18, 0.22, 0.06);
+    } else if is_ultima() {
+        add(&["A/T", "C/G"], 0.26, 0.29, 0.32, 0.06);
+        add(&["AT/TA", "AC/CA/GT/TG", "AG/GA/CT/TC", "CG/GC"], 0.19, 0.195, 0.20, 0.01);
+        add(&["3-5bp repeat"], 0.28, 0.29, 0.30, 0.01);
     } else if high_depth {
         add(&["A/T", "C/G"], 0.1, 0.15, 0.2, 0.06);
         add(&["AT/TA", "AC/CA/GT/TG", "AG/GA/CT/TC", "CG/GC"], 0.15, 0.2, 0.25, 0.06);

@@ -53,6 +53,9 @@ fn blank_read() -> Read {
         consensus: ConsensusType::None,
         has_consensus_tag: false,
         duplex_index: -1,
+        tp: Vec::new(),
+        t0: Vec::new(),
+        low_qual_tag: None,
     }
 }
 
@@ -84,6 +87,10 @@ fn fill(rec: &bam::Record, read: &mut Read) {
     read.consensus = ConsensusType::None;
     read.has_consensus_tag = false;
     read.duplex_index = -1;
+    read.tp.clear();
+    read.t0.clear();
+    read.low_qual_tag = None;
+    let ultima = crate::constants::is_ultima();
     let mut has_mate_cigar = false;
     for (tag, value) in rec.aux_iter().flatten() {
         match tag {
@@ -119,6 +126,22 @@ fn fill(rec: &bam::Record, read: &mut Read) {
                     Aux::U32(v) => v as i32,
                     Aux::I32(v) => v,
                     _ => -1,
+                }
+            }
+            // UltimaBamUtils: tp (B:c), t0 (a quality string) and UQ (low-qual indices, set by REDUX)
+            b"tp" if ultima => match value {
+                Aux::ArrayI8(a) => read.tp.extend(a.iter()),
+                Aux::ArrayU8(a) => read.tp.extend(a.iter().map(|v| v as i8)),
+                _ => {}
+            },
+            b"t0" if ultima => {
+                if let Aux::String(s) = value {
+                    read.t0.extend(s.bytes().map(|b| (b as i32 - 33) as i8));
+                }
+            }
+            b"UQ" if ultima => {
+                if let Aux::String(s) = value {
+                    read.low_qual_tag = Some(s.to_string());
                 }
             }
             b"UT" => {

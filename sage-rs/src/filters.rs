@@ -413,8 +413,14 @@ impl<'a> VariantFilters<'a> {
         // belowMinStrongSupport
         {
             let threshold = if tier == Tier::Hotspot { 2 } else { 3 };
-            let strong =
-                if t.use_msi_error_rate() { t.jitter.valid_qual_full_support } else { t.high_qual_strong_support };
+            let strong = if t.use_msi_error_rate() {
+                t.jitter.valid_qual_full_support
+            } else if is_ultima() {
+                // depending on HP lengths, may not have any high qual reads
+                t.strong_alt_support()
+            } else {
+                t.high_qual_strong_support
+            };
             if strong < threshold {
                 filters.insert(SoftFilter::MinTumorSupport);
             }
@@ -439,8 +445,17 @@ impl<'a> VariantFilters<'a> {
         if t.ctx.max_repeat.is_some() && t.jitter.filter_on_noise {
             filters.insert(SoftFilter::Jitter);
         }
-        // belowMinAverageBaseQuality
-        {
+        if is_ultima() {
+            let panel_indel_repeat =
+                is_panel_indel_repeat_variant(t.tier, phred_qual(t), t.ctx.variant.is_indel(), t.ctx.max_repeat_count());
+            if crate::ultima::below_expected_hp_quals(t, self.cfg.germline, panel_indel_repeat) {
+                filters.insert(SoftFilter::MinAvgHpQual);
+            }
+            if crate::ultima::below_expected_t0_quals(t, all_one_side(&t.alt_read_strand_bias)) {
+                filters.insert(SoftFilter::MinAvgT0Qual);
+            }
+        } else {
+            // belowMinAverageBaseQuality
             let threshold = if tier == Tier::Hotspot { self.cfg.min_avg_base_qual_hotspot } else { self.cfg.min_avg_base_qual };
             if !t.use_msi_error_rate() && d_less_than(t.average_alt_seq_tech_base_quality(), threshold as f64) {
                 filters.insert(SoftFilter::MinAvgBaseQuality);
@@ -558,7 +573,12 @@ impl<'a> VariantFilters<'a> {
         let tumor_vaf = t.vaf();
         if tumor_vaf != 0.0 {
             let mut adjusted_ref_alt = r.counts.alt_support() + r.simple_alt_matches;
-            if t.is_long_indel() {
+            let max_repeat_bases: &[u8] = t.ctx.max_repeat.as_ref().map_or(&[], |r| &r.bases);
+            if t.is_long_indel()
+                || include_ref_jitter_in_msi_indel(
+                    t.ctx.max_repeat_count(), max_repeat_bases.len() as i32, t.variant().indel_length_abs(),
+                )
+            {
                 adjusted_ref_alt += r.jitter.shortened + r.jitter.lengthened;
             }
             if above_max_germline_vaf(tier, valid_indel_repeat, tumor_vaf, adjusted_ref_alt, r.counts.total, config.max_germline_vaf) {
@@ -605,14 +625,34 @@ fn below_min_tumor_vaf_probability(t: &ReadContextCounter) -> bool {
     }
 }
 
-/// VariantFilters.aboveMaxGermlineVaf (static form, also used by TINC); Illumina only.
-/// VariantFilters.isPanelOrLongIndelRepeatVariant: only affects the SBX (and Ultima) germline thresholds
+/// VariantFilters.includeRefJitterInMsiIndel: Ultima only. Takes the length of the read context's max
+/// repeat unit (0 if there is no repeat) and the absolute indel length.
+pub fn include_ref_jitter_in_msi_indel(rc_repeat_count: i32, rc_repeat_bases_length: i32, indel_length_abs: i32) -> bool {
+    // a repeat count without repeat bases (possible for TINC, which reads both from the VCF) divides by
+    // zero in Java
+    if !is_ultima() || indel_length_abs == 0 || rc_repeat_count == 0 || rc_repeat_bases_length == 0 {
+        return false;
+    }
+    // DOUBLE_JITTER_MIN_REPEAT_CHANGE, JITTER_MIN_REPEAT_CHANGE
+    let min_repeat_change = if rc_repeat_count >= DEFAULT_DOUBLE_JITTER_REPEAT_COUNT { 4 } else { 3 };
+    indel_length_abs / rc_repeat_bases_length >= min_repeat_change
+}
+
+/// VariantFilters.isPanelIndelRepeatVariant
+pub fn is_panel_indel_repeat_variant(tier: Tier, qual: f64, is_indel: bool, repeat_length: i32) -> bool {
+    // PANEL_REPEAT_MIN_QUAL
+    matches!(tier, Tier::Panel | Tier::Hotspot) && qual >= 100.0 && is_indel && repeat_length > 0
+}
+
+/// VariantFilters.isPanelOrLongIndelRepeatVariant: only affects the SBX and Ultima germline thresholds
 pub fn is_panel_or_long_indel_repeat_variant(tier: Tier, qual: f64, is_indel: bool, repeat_length: i32) -> bool {
     // PANEL_REPEAT_MIN_QUAL, LONG_INDEL_REPEAT_MIN, LONG_INDEL_REPEAT_MAX
     let is_indel_repeat = qual >= 100.0 && is_indel && repeat_length > 0;
     (matches!(tier, Tier::Panel | Tier::Hotspot) && is_indel_repeat)
         || ((7..=18).contains(&repeat_length) && is_indel_repeat)
 }
+
+/// VariantFilters.aboveMaxGermlineVaf (static form, also used by TINC)
 
 pub fn above_max_germline_vaf(
     tier: Tier, is_valid_indel_repeat: bool, tumor_vaf: f64, adjusted_ref_alt: i32, ref_total: i32,
@@ -621,12 +661,20 @@ pub fn above_max_germline_vaf(
     if tumor_vaf == 0.0 {
         return false;
     }
+    let is_valid_ultima_indel_repeat = is_ultima() && is_valid_indel_repeat;
     if matches!(tier, Tier::Panel | Tier::Hotspot) {
         let mut threshold = tumor_vaf;
         if tier == Tier::Panel {
-            threshold /= 2.0;
+            // MAX_GERMLINE_VAF_PANEL_INDEL_REPEAT_VAF_FACTOR, MAX_GERMLINE_VAF_PANEL_VAF_FACTOR
+            threshold /= if is_valid_ultima_indel_repeat { 1.5 } else { 2.0 };
         }
-        max_germline_vaf = jmax(jmin(threshold, max_germline_vaf * 2.0), max_germline_vaf);
+        // MAX_GERMLINE_VAF_PANEL_INDEL_REPEAT_THRESHOLD_FACTOR, MAX_GERMLINE_VAF_THRESHOLD_FACTOR
+        let min_threshold_factor = if is_valid_ultima_indel_repeat { 5.0 } else { 2.0 };
+        max_germline_vaf = jmax(jmin(threshold, max_germline_vaf * min_threshold_factor), max_germline_vaf);
+    } else if is_valid_ultima_indel_repeat {
+        let threshold = tumor_vaf / crate::ultima::GERMLINE_VAF_INDEL_REPEAT_THRESHOLD;
+        let min_threshold_factor = crate::ultima::GERMLINE_VAF_INDEL_REPEAT_MIN_THRESHOLD_FACTOR;
+        max_germline_vaf = jmax(jmin(threshold, max_germline_vaf * min_threshold_factor), max_germline_vaf);
     } else if is_sbx() && is_valid_indel_repeat {
         // SbxUtils.GERMLINE_VAF_INDEL_REPEAT_THRESHOLD, GERMLINE_VAF_INDEL_REPEAT_MIN_THRESHOLD_FACTOR
         let threshold = tumor_vaf / 3.5;
@@ -676,6 +724,8 @@ pub fn above_max_germline_relative_qual(
         0.5
     } else if is_sbx() && is_valid_indel_repeat {
         0.2 // SbxUtils.GERMLINE_VAF_REL_QUAL_RATIO_THRESHOLD
+    } else if is_ultima() && is_valid_indel_repeat {
+        crate::ultima::GERMLINE_VAF_REL_QUAL_RATIO_THRESHOLD
     } else {
         0.12
     };

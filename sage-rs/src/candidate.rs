@@ -94,6 +94,10 @@ struct AltContext {
     above_min_alt_support: bool,
     unique_read_ids: Vec<String>,
     has_sufficient_qual_core_support: bool,
+    /// Ultima: mCheckCoreQualSupport, decided on the first read (None until then)
+    ultima_check_core_qual_support: Option<bool>,
+    /// Ultima: mHighQualCoreSupport, the reads without low-qual bases in the core
+    high_qual_core_support: i32,
 }
 
 /// IlluminaUtils.lowQualInVariantCore
@@ -118,8 +122,15 @@ impl AltContext {
             candidates: Vec::new(),
             above_min_alt_support: false,
             unique_read_ids: Vec::new(),
-            // only Illumina checks for high-quality core support
-            has_sufficient_qual_core_support: !is_illumina(),
+            // Illumina and Ultima check for high-quality core support
+            has_sufficient_qual_core_support: !is_illumina()
+                && !(is_ultima() && crate::ultima::candidate_min_high_bq_threshold() > 0),
+            ultima_check_core_qual_support: if is_ultima() && crate::ultima::candidate_min_high_bq_threshold() <= 0 {
+                Some(false)
+            } else {
+                None
+            },
+            high_qual_core_support: 0,
         }
     }
 
@@ -137,7 +148,28 @@ impl AltContext {
     ) {
         let mut full_match_count = 0;
         let mut has_full_match = false;
-        // mCheckCoreQualSupport flips to false exactly when sufficient support is found
+        let ultima = is_ultima();
+        // Ultima: the read's low-qual indices, only while they are still needed (null in Java otherwise)
+        let mut low_qual_indices: Option<Vec<i32>> = None;
+        let mut ultima_check = false;
+        if ultima {
+            ultima_check = match self.ultima_check_core_qual_support {
+                Some(check) => check,
+                None => {
+                    // whether this variant ought to check low-qual bases for this and subsequent reads.
+                    // An out of range read index throws in Java, which ends the run.
+                    let check = !crate::ultima::has_long_homopolymer_in_context(&self.variant, read, var_read_index)
+                        .expect("variant read index within the read");
+                    self.ultima_check_core_qual_support = Some(check);
+                    self.has_sufficient_qual_core_support = !check;
+                    check
+                }
+            };
+            if ultima_check && !self.has_sufficient_qual_core_support {
+                low_qual_indices = Some(crate::ultima::extract_low_qual_indices(read));
+            }
+        }
+        // Illumina: mCheckCoreQualSupport flips to false exactly when sufficient support is found
         for i in 0..self.candidates.len() {
             let info = {
                 let c = &self.candidates[i];
@@ -157,25 +189,56 @@ impl AltContext {
                 }
                 _ => {}
             }
-            if !self.has_sufficient_qual_core_support && matches!(info.kind, MatchType::Full | MatchType::Core) {
+            if ultima {
+                if ultima_check && matches!(info.kind, MatchType::Full | MatchType::Core) {
+                    if let Some(low_qual_indices) = &low_qual_indices {
+                        if !crate::ultima::low_qual_in_read_context_core(var_read_index, low_qual_indices, &self.candidates[i].ctx)
+                        {
+                            self.high_qual_core_support += 1;
+                        }
+                    }
+                }
+            } else if !self.has_sufficient_qual_core_support && matches!(info.kind, MatchType::Full | MatchType::Core) {
                 let ctx = self.candidates[i].ctx.clone();
                 self.check_qual_status(&ctx, var_read_index, read);
             }
         }
 
         if !has_full_match {
-            let Some(ctx) = create_context(&self.variant, read, var_read_index, ref_seq, DEFAULT_FLANK_LENGTH) else {
-                return;
-            };
-            self.check_qual_status(&ctx, var_read_index, read);
-            let matcher = Matcher::new(&ctx, false, false);
-            self.candidates.push(ReadContextCandidate {
-                ctx: Rc::new(ctx),
-                matcher,
-                full_match: 0,
-                core_match: full_match_count,
-                min_events: num_events,
-            });
+            // Ultima: skip creating a candidate if this variant checks low-quals in the core and finds them
+            let skip_context_creation = ultima
+                && ultima_check
+                && crate::ultima::low_qual_in_read_core(&self.variant, var_read_index, low_qual_indices.as_deref());
+            let mut new_ctx = None;
+            if !skip_context_creation {
+                let Some(ctx) = create_context(&self.variant, read, var_read_index, ref_seq, DEFAULT_FLANK_LENGTH) else {
+                    return;
+                };
+                new_ctx = Some(ctx);
+            }
+            let mut has_valid_core = new_ctx.is_some();
+            if let Some(ctx) = &new_ctx {
+                // now the core has been established, check again
+                if let Some(low_qual_indices) = &low_qual_indices {
+                    if crate::ultima::low_qual_in_read_context_core(var_read_index, low_qual_indices, ctx) {
+                        has_valid_core = false;
+                    } else {
+                        self.high_qual_core_support += 1;
+                    }
+                } else if !ultima {
+                    self.check_qual_status(ctx, var_read_index, read);
+                }
+            }
+            if let (true, Some(ctx)) = (has_valid_core, new_ctx) {
+                let matcher = Matcher::new(&ctx, false, false);
+                self.candidates.push(ReadContextCandidate {
+                    ctx: Rc::new(ctx),
+                    matcher,
+                    full_match: 0,
+                    core_match: full_match_count,
+                    min_events: num_events,
+                });
+            }
         }
 
         if !self.above_min_alt_support && (self.unique_read_ids.len() as i32) < min_alt_support {
@@ -186,6 +249,11 @@ impl AltContext {
                 self.above_min_alt_support = true;
                 self.unique_read_ids.clear();
             }
+        }
+
+        if ultima && !self.has_sufficient_qual_core_support {
+            self.has_sufficient_qual_core_support =
+                self.high_qual_core_support >= crate::ultima::candidate_min_high_bq_threshold();
         }
     }
 

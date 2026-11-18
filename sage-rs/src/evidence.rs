@@ -1,8 +1,7 @@
 //! Evidence stage: ReadContextCounter and its per-read helpers (RawContext, QualityCalculator,
 //! JitterMatch, Realignment, strand bias, fragment coordinates, edge distance).
 //!
-//! Not ported: SplitReadSegment (reads with N in the CIGAR, RNA only), the visualiser hooks,
-//! high-depth mode, SBX and Ultima branches.
+//! Not ported: SplitReadSegment (reads with N in the CIGAR, RNA only) and the visualiser hooks.
 
 use crate::candidate::{calc_event_penalty, calc_soft_clip_adjustment, calc_with_mnv_raw};
 use crate::config::Config;
@@ -245,6 +244,8 @@ pub(crate) fn has_jitter_match_type(
     let mut permitted_low_qual_mismatches = 1;
     let lower = ctx.var_index;
     let upper = alt_index_upper + lengthened_extra;
+    // checkJitter passes null base quals for Ultima
+    let use_quals = !is_ultima();
     // Java: for(; readIndex <= flankReadIndexEnd; ++readIndex, ++readContextIndex)
     while read_index <= flank_end {
         if read_index < 0 {
@@ -271,15 +272,15 @@ pub(crate) fn has_jitter_match_type(
         let within_core = ctx_index >= ctx.core_index_start && ctx_index <= ctx.core_index_end;
         let within_permitted = within_core && ctx_index >= lower && ctx_index <= upper;
         let q = read_quals[read_index as usize];
-        if within_permitted && is_uncertain_base_qual(q) {
+        if use_quals && within_permitted && is_uncertain_base_qual(q) {
             return false;
         }
-        if within_core && is_medium_base_qual(q as i8) {
+        if use_quals && within_core && is_medium_base_qual(q as i8) {
             return false;
         }
         if read_bases[read_index as usize] != ctx_base {
             let mut permitted = false;
-            if q < matching_base_quality() {
+            if use_quals && q < matching_base_quality() {
                 if within_core {
                     if permitted_low_qual_mismatches > 0 && !within_permitted {
                         permitted_low_qual_mismatches -= 1;
@@ -708,6 +709,11 @@ pub struct ReadContextCounter {
     pub fragment_coords: FragmentCoords,
     pub tumor_qual_probability: f64,
     pub map_qual_factor: f64,
+    /// mUltimaData: only for Ultima
+    pub ultima: Option<crate::ultima::UltimaVariantData>,
+    /// the counter ReadContextCounterFactory builds when the Ultima models cannot be built for a variant
+    /// near the start of a chromosome or on a non-standard one: it has no matcher and counts nothing
+    pub no_matcher: bool,
 }
 
 impl ReadContextCounter {
@@ -767,6 +773,8 @@ impl ReadContextCounter {
             fragment_coords: FragmentCoords::new(REQUIRED_UNIQUE_FRAG_COORDS_2 as usize),
             tumor_qual_probability: 0.0,
             map_qual_factor: 0.0,
+            ultima: if is_ultima() && !ctx.marked_invalid { Some(crate::ultima::UltimaVariantData::new(&ctx)) } else { None },
+            no_matcher: false,
             ctx,
         }
     }
@@ -876,6 +884,11 @@ impl ReadContextCounter {
         if matches!(support, Some(Support::Full | Support::PartialCore)) && (read.improper_pair() || read.supplementary()) {
             self.improper_pair_count += 1;
         }
+        if support == Some(Support::Full) {
+            if let Some(ultima) = self.ultima.as_mut() {
+                ultima.add_read_support_info(&self.ctx, read, read_var_index);
+            }
+        }
     }
 
     /// StrandBiasData.registerRead(record, fragment, counter)
@@ -945,6 +958,9 @@ impl ReadContextCounter {
         &mut self, read: &Read, number_of_events: i32, fragment: Option<&FragmentData>, qc: &QualityCalculator,
     ) -> ReadMatchType {
         use ReadMatchType::*;
+        if self.no_matcher {
+            return Unrelated;
+        }
         if self.exceeds_max_coverage() {
             return MaxCoverage;
         }
@@ -1155,7 +1171,10 @@ impl<'a> QualityCalculator<'a> {
         // calcSequencingTechBaseQuality
         let artefact_qual: f64 =
             ctx.artefact.as_ref().map_or(INVALID_BASE_QUAL, |a| a.find_applicable_base_qual(read, read_var_index) as f64);
-        let seq_tech = if rc.is_indel {
+        let seq_tech = if is_ultima() {
+            let models = rc.ultima.as_ref().and_then(|u| u.qual_models.as_ref()).expect("Ultima qual models");
+            models.calculate_qual(uses_msi, rc.qual_cache.msi_indel_error_qual, rc.is_indel, read_var_index, read)
+        } else if rc.is_indel {
             let mut msi_qual = rc.qual_cache.msi_indel_error_qual as f64;
             let mut early: Option<f64> = None;
             if uses_msi {
@@ -1197,7 +1216,14 @@ impl<'a> QualityCalculator<'a> {
         }
 
         let mut recalibrated = seq_tech;
-        if !rc.is_indel && ctx.artefact.is_none() {
+        if is_ultima() {
+            if ctx.variant.is_snv() {
+                let bqr_qual = rc.qual_cache.get_qual(
+                    self, crate::ultima::max_raw_qual() as u8, read.consensus, 0, !read.negative_strand(),
+                );
+                recalibrated = jmin(seq_tech, bqr_qual);
+            }
+        } else if !rc.is_indel && ctx.artefact.is_none() {
             recalibrated = self.recalibrated_base_quality(rc, read_var_index, read);
             // don't boost the recalibrated qual of SBX artefacts
             if is_sbx()

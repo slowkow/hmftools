@@ -5,6 +5,7 @@
 
 pub mod util;
 
+mod artefacts; // seqtech/ArtefactsTest
 mod candidate_creation; // candidate/CandidateCreationTest
 mod candidate_serialisation; // candidate/CandidateSerialisationTest
 mod evicting_array; // common/EvictingArrayTest
@@ -23,6 +24,11 @@ mod repeat_info; // common/RepeatInfoTest
 mod sbx; // seqtech/SbxTest
 mod soft_filter; // filters/SoftFilterTest
 mod split_read; // evidence/SplitReadTest
+mod ultima_evidence; // not from Java: the Ultima evidence and filter path end to end
+mod ultima_misc_utils; // seqtech/UltimaMiscUtilsTest
+mod ultima_qual_model; // seqtech/UltimaQualModelTest
+mod ultima_realigned_qual_model; // seqtech/UltimaRealignedQualModelTest
+mod ultima_routines; // seqtech/UltimaRoutinesTest
 mod variant_dedup; // dedup/VariantDedupTest
 mod variant_read_context; // common/VariantReadContextTest
 mod variant_selectors; // common/VariantSelectorsTest

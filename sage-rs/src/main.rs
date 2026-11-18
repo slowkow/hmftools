@@ -19,6 +19,7 @@ mod stats;
 mod sync;
 mod tinc;
 mod types;
+mod ultima;
 mod vcfout;
 
 #[cfg(test)]
@@ -118,6 +119,36 @@ fn sample_read_length(cfg: &Config, ref_data: &RefData, bam: &mut bamio::BamSlic
         }
     }
     Ok(constants::DEFAULT_READ_LENGTH)
+}
+
+/// SageApplication: UltimaUtils.setMaxRawQual(bqrCache.maxRawQual()). BqrCache.loadBqrFiles overwrites
+/// its maximum for each sample while iterating a HashMap keyed by sample id, so the value is that of
+/// the sample which comes last in that map (reference ids are inserted first), and 0 with -skip_bqr.
+fn ultima_max_raw_qual(cfg: &Config, bqr: &[quality::BqrMap]) -> i8 {
+    if cfg.skip_bqr {
+        return 0;
+    }
+    // `bqr` is ordered tumor ids then reference ids
+    let tumors = cfg.tumor_ids.len();
+    let mut entries: Vec<(&String, usize)> = Vec::new();
+    for (id, index) in cfg.reference_ids.iter().enumerate().map(|(i, id)| (id, tumors + i)).chain(cfg.tumor_ids.iter().zip(0..)) {
+        match entries.iter_mut().find(|(k, _)| *k == id) {
+            Some(e) => e.1 = index,
+            None => entries.push((id, index)),
+        }
+    }
+    // the table doubles from 16 while it is more than three quarters full
+    let mut capacity = 16usize;
+    while entries.len() * 4 > capacity * 3 {
+        capacity *= 2;
+    }
+    let bucket = |id: &str| {
+        let h = sync::java_string_hash(id) as u32;
+        ((h ^ (h >> 16)) as usize) & (capacity - 1)
+    };
+    // stable: entries sharing a bucket stay in insertion order
+    entries.sort_by_key(|(id, _)| bucket(id));
+    entries.last().map_or(0, |(_, index)| bqr[*index].max_raw_qual())
 }
 
 /// State shared by every region task.
@@ -357,6 +388,10 @@ fn main() -> Result<()> {
     let mut main_worker = Worker::open(&cfg)?;
     if cfg.read_length == 0 {
         cfg.read_length = sample_read_length(&cfg, &ref_data, &mut main_worker.tumor_bam)?;
+        if constants::is_ultima() {
+            // SageConfig.setReadLength
+            cfg.read_length = cfg.read_length.max(constants::NON_ILLUMINA_MAX_READ_LENGTH);
+        }
         eprintln!("max observed read length set({})", cfg.read_length);
     }
     let cfg = cfg;
@@ -371,6 +406,9 @@ fn main() -> Result<()> {
         });
         let dir = if cfg.skip_msi_jitter { None } else { Some(cfg.jitter_bqr_dir.as_str()) };
         msi.push(quality::MsiJitter::load(dir, sample, cfg.high_depth_mode)?);
+    }
+    if constants::is_ultima() {
+        ultima::set_max_raw_qual(ultima_max_raw_qual(&cfg, &bqr));
     }
 
     let mut cand_out: Option<Box<dyn Write>> = if cfg.log_candidates {

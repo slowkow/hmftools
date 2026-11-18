@@ -9,6 +9,7 @@
 use crate::constants::{jround, LONG_INSERT_LENGTH};
 use crate::filters::{
     above_max_germline_relative_qual, above_max_germline_vaf, above_max_mnv_indel_germline_alt_support,
+    include_ref_jitter_in_msi_indel,
     is_panel_or_long_indel_repeat_variant, tier_config,
     ALL_FILTERS,
 };
@@ -112,6 +113,8 @@ pub struct VariantData {
     /// QUAL and RC_REPC, for the indel repeat test in the SBX germline thresholds
     pub qual: f64,
     pub repeat_count: i32,
+    /// the length of RC_REPS, for the Ultima reference jitter test
+    pub repeat_bases_length: i32,
     pub map_qual_factor: f64,
     pub nearby_indel: bool,
     pub has_lps: bool,
@@ -204,6 +207,7 @@ impl VariantData {
                 "TIER" => v.tier = tier_from_str(value),
                 "MQF" => v.map_qual_factor = value.parse().unwrap_or(0.0),
                 "RC_REPC" => v.repeat_count = value.parse().unwrap_or(0),
+                "RC_REPS" => v.repeat_bases_length = value.len() as i32,
                 "NEARBY_INDEL" => v.nearby_indel = true,
                 "LPS" => v.has_lps = true,
                 _ => {}
@@ -407,8 +411,8 @@ fn recheck_max_germline_vaf(v: &mut VariantData) {
         return;
     }
     let mut adjusted_ref_alt = alt_support(&v.ref_counts) + v.ref_simple_alt;
-    // the Ultima MSI indel case of includeRefJitterInMsiIndel is not ported
-    if v.is_long_indel() {
+    let indel_length_abs = (v.ref_.len() as i32 - v.alt.len() as i32).abs();
+    if v.is_long_indel() || include_ref_jitter_in_msi_indel(v.repeat_count, v.repeat_bases_length, indel_length_abs) {
         adjusted_ref_alt += v.ref_jitter[0] + v.ref_jitter[1];
     }
     adjusted_ref_alt = v.calc_reduced_alt_count(adjusted_ref_alt);

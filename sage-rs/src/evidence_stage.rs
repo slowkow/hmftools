@@ -3,13 +3,15 @@
 use crate::bamio::BamSlicer;
 use crate::candidate::{calc_adjusted_num_mutations, Candidate};
 use crate::config::Config;
+use crate::constants::{is_ultima, DEFAULT_FLANK_LENGTH};
 use crate::evidence::*;
 use crate::quality::*;
 use crate::refdata::RefData;
 use crate::refseq::{RefGenome, RefSequence};
 use crate::sync::{FragmentSync, SyncOutput};
 use crate::types::*;
-use anyhow::Result;
+use crate::ultima::{build_read_context_ultima_models, RefBases};
+use anyhow::{bail, Result};
 
 const SLICE_SOFT_CLIP_BUFFER: i32 = 30;
 
@@ -120,6 +122,60 @@ impl<'a> Collector<'a> {
     }
 }
 
+/// The reference genome for the Ultima qual models (RefGenomeSource.getBases), answered from the region's
+/// reference sequence where it covers the request.
+struct GenomeBases<'a> {
+    genome: &'a RefGenome,
+    chr: &'a str,
+    ref_seq: &'a RefSequence,
+}
+
+impl RefBases for GenomeBases<'_> {
+    fn get_bases(&self, pos_start: i32, pos_end: i32) -> Option<Vec<u8>> {
+        if pos_start < 1 || pos_end < pos_start {
+            return None;
+        }
+        if let Some(bases) = self.ref_seq.base_range(pos_start, pos_end) {
+            return Some(bases.to_vec());
+        }
+        if pos_end > self.genome.chromosome_length(self.chr) {
+            return None;
+        }
+        self.genome.bases(self.chr, pos_start, pos_end).ok()
+    }
+}
+
+/// UltimaQualModelBuilder.setReadContextUltimaModels, with the handling ReadContextCounterFactory gives a
+/// failure: an error for a standard chromosome away from its start, otherwise a counter that counts nothing.
+pub fn set_read_context_ultima_models(ref_genome: &dyn RefBases, chr: &str, rc: &mut ReadContextCounter) -> Result<()> {
+    if rc.ctx.marked_invalid {
+        return Ok(());
+    }
+    match build_read_context_ultima_models(ref_genome, &rc.ctx) {
+        Ok(models) => {
+            if let Some(ultima) = rc.ultima.as_mut() {
+                ultima.qual_models = Some(models);
+            }
+        }
+        Err(()) => {
+            let is_non_standard_chromosome = !is_human_chromosome(chr);
+            let is_low_boundary_position = rc.position() < DEFAULT_FLANK_LENGTH * 3;
+            if !is_non_standard_chromosome && !is_low_boundary_position {
+                bail!(
+                    "var({}:{} {}>{}) error building counter from readContext",
+                    chr,
+                    rc.position(),
+                    rc.variant().ref_str(),
+                    rc.variant().alt_str()
+                );
+            }
+            rc.ultima = None;
+            rc.no_matcher = true;
+        }
+    }
+    Ok(())
+}
+
 /// ReadContextEvidence.collectEvidence
 #[allow(clippy::too_many_arguments)]
 pub fn collect_evidence(
@@ -144,6 +200,12 @@ pub fn collect_evidence(
             ReadContextCounter::new(c.ctx.clone(), c.tier, max_coverage(cfg, c.tier), c.min_events, &qc, sample.is_reference)
         })
         .collect();
+    if is_ultima() {
+        let ref_bases = GenomeBases { genome, chr, ref_seq: &ref_seq };
+        for rc in counters.iter_mut() {
+            set_read_context_ultima_models(&ref_bases, chr, rc)?;
+        }
+    }
 
     let deletes: Vec<(i32, i32)> =
         candidates.iter().filter(|c| c.variant().is_delete()).map(|c| (c.position(), c.variant().ref_len() - 1)).collect();

@@ -297,6 +297,7 @@ impl VariantReadContext {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ReadCigarInfo {
     pub cigar: Vec<CigarEl>,
     pub read_alignment_start: i32,
@@ -549,10 +550,21 @@ pub fn build_context(
         Some(a) => (a.alignment_start, &a.cigar),
         None => (read.start, &read.cigar),
     };
-    let info =
+    let mut info =
         ReadCigarInfo::build(cigar_start, cigar_elements, read_flank_start, read_core_start, read_core_end, read_flank_end);
     if !info.is_valid() {
         return None;
+    }
+
+    // for Ultima the core is expanded so that homopolymers are not cut off in the read or the ref
+    if is_ultima() {
+        // no valid extension, or an exception that createContext catches, gives no context (append mode,
+        // where a long insert may keep its unextended core, is not ported)
+        let extended = crate::ultima::extend_ultima_core(
+            read_bases, ref_seq, cigar_start, cigar_elements, &info, flank_size, false,
+        );
+        info = extended.ok()??;
+        (read_core_start, read_core_end) = crate::ultima::extended_core_indices(&info);
     }
 
     let read_position_start = info.read_alignment_start;
@@ -571,6 +583,13 @@ pub fn build_context(
     let core_index_start = read_core_start - offset;
     let read_var_index = var_index_in_read - offset;
     let core_index_end = read_core_end - offset;
+
+    if is_ultima()
+        && crate::ultima::has_long_homopolymer_in_range(read_core_start, read_core_end, crate::ultima::ULTIMA_MAX_HP_LEN - 1, read)
+            .ok()?
+    {
+        return None;
+    }
 
     let ref_bases = ref_seq.base_range(core_position_start, core_position_end)?.to_vec();
 
