@@ -139,6 +139,32 @@ pub fn is_ultima() -> bool {
     sequencing_type() == SequencingType::Ultima as u8
 }
 
+// --- append mode (SageConfig.AppendMode, a static in Java too) ---
+
+static APPEND_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_append_mode(on: bool) {
+    APPEND_MODE.store(on, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_APPEND_MODE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub fn set_test_append_mode(on: Option<bool>) {
+    TEST_APPEND_MODE.with(|c| c.set(on));
+}
+
+pub fn is_append_mode() -> bool {
+    #[cfg(test)]
+    if let Some(on) = TEST_APPEND_MODE.with(|c| c.get()) {
+        return on;
+    }
+    APPEND_MODE.load(Ordering::Relaxed)
+}
+
 pub const NON_ILLUMINA_MAX_READ_LENGTH: i32 = 800;
 pub const MATCHING_BASE_QUALITY_SBX: u8 = 10;
 // SbxBamUtils: quals assigned by REDUX

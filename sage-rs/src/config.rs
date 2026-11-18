@@ -7,7 +7,7 @@ use std::collections::HashMap;
 const FLAGS: &[&str] = &[
     "include_mt", "panel_only", "no_fragment_sync", "skip_bqr", "skip_msi_jitter", "high_depth_mode",
     "log_candidates", "log_debug", "germline", "disable_soft_filter", "disable_hard_filter", "write_frag_lengths",
-    "bqr_write_plot", "log_evidence", "run_tinc", "write_tinc_vcf", "write_fit_variants",
+    "bqr_write_plot", "log_evidence", "run_tinc", "write_tinc_vcf", "write_fit_variants", "require_gene",
 ];
 
 #[derive(Clone, Debug)]
@@ -64,6 +64,9 @@ pub struct Config {
     pub pon_file: Option<String>,
     pub gnomad_freq_dir: Option<String>,
     pub gnomad_freq_file: Option<String>,
+    /// SageAppendConfig.InputVcf and FilterToGenes (-require_gene): append mode only
+    pub input_vcf: Option<String>,
+    pub require_gene: bool,
 }
 
 fn list(v: Option<&String>) -> Vec<String> {
@@ -72,6 +75,15 @@ fn list(v: Option<&String>) -> Vec<String> {
 
 impl Config {
     pub fn from_args(args: &[String]) -> Result<Config> {
+        Self::parse(args, false)
+    }
+
+    /// SageAppendConfig: the common options plus -input_vcf and -require_gene; there are no tumor samples
+    pub fn from_append_args(args: &[String]) -> Result<Config> {
+        Self::parse(args, true)
+    }
+
+    fn parse(args: &[String], append: bool) -> Result<Config> {
         let mut vals: HashMap<String, String> = HashMap::new();
         let mut i = 0;
         while i < args.len() {
@@ -132,7 +144,7 @@ impl Config {
             }
         }
         Ok(Config {
-            tumor_ids: list(Some(&req("tumor")?)),
+            tumor_ids: if append { Vec::new() } else { list(Some(&req("tumor")?)) },
             tumor_bams,
             reference_ids: list(get("reference")),
             reference_bams,
@@ -155,7 +167,12 @@ impl Config {
             // SBX and Ultima reads are long and variable, so the length is not sampled from the BAM
             read_length: int("read_length", if is_sbx() || is_ultima() { NON_ILLUMINA_MAX_READ_LENGTH } else { 0 })?,
             min_map_quality: int("min_map_quality", DEFAULT_MIN_MAP_QUALITY)?,
-            max_read_depth: int("max_read_depth", DEFAULT_MAX_READ_DEPTH)?,
+            // when append runs in high depth mode the panel depth limit applies to every tier
+            max_read_depth: if append && flag("high_depth_mode") && get("max_read_depth").is_none() {
+                int("max_read_depth_panel", DEFAULT_MAX_READ_DEPTH_PANEL)?
+            } else {
+                int("max_read_depth", DEFAULT_MAX_READ_DEPTH)?
+            },
             max_read_depth_panel: int("max_read_depth_panel", DEFAULT_MAX_READ_DEPTH_PANEL)?,
             region_slice_size: int("slice_size", DEFAULT_SLICE_SIZE)?,
             max_partition_slices: int("max_partition_slices", DEFAULT_MAX_PARTITION_SLICES)?,
@@ -186,6 +203,8 @@ impl Config {
             pon_file: get("pon_file").cloned(),
             gnomad_freq_dir: get("gnomad_freq_dir").cloned(),
             gnomad_freq_file: get("gnomad_freq_file").cloned(),
+            input_vcf: if append { Some(req("input_vcf")?) } else { None },
+            require_gene: flag("require_gene"),
         })
     }
 

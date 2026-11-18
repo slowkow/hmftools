@@ -3,7 +3,7 @@
 use crate::bamio::BamSlicer;
 use crate::candidate::{calc_adjusted_num_mutations, Candidate};
 use crate::config::Config;
-use crate::constants::{is_ultima, DEFAULT_FLANK_LENGTH};
+use crate::constants::{is_append_mode, is_ultima, DEFAULT_FLANK_LENGTH};
 use crate::evidence::*;
 use crate::quality::*;
 use crate::refdata::RefData;
@@ -160,7 +160,7 @@ pub fn set_read_context_ultima_models(ref_genome: &dyn RefBases, chr: &str, rc: 
         Err(()) => {
             let is_non_standard_chromosome = !is_human_chromosome(chr);
             let is_low_boundary_position = rc.position() < DEFAULT_FLANK_LENGTH * 3;
-            if !is_non_standard_chromosome && !is_low_boundary_position {
+            if !is_append_mode() && !is_non_standard_chromosome && !is_low_boundary_position {
                 bail!(
                     "var({}:{} {}>{}) error building counter from readContext",
                     chr,
@@ -217,6 +217,21 @@ pub fn collect_evidence(
         }
     }
 
+    // read contexts are always valid for calling, but may be invalid for appending evidence: Java
+    // processes reads against the valid ones only and returns all of them
+    let mut invalid: Vec<(usize, ReadContextCounter)> = Vec::new();
+    if is_append_mode() && counters.iter().any(|rc| !rc.ctx.is_valid()) {
+        let mut valid = Vec::with_capacity(counters.len());
+        for (i, rc) in counters.into_iter().enumerate() {
+            if rc.ctx.is_valid() {
+                valid.push(rc);
+            } else {
+                invalid.push((i, rc));
+            }
+        }
+        counters = valid;
+    }
+
     let mut collector = Collector { counters, last_index: 0, selected: Vec::new(), ref_seq: &ref_seq, qc: &qc };
     let mut out: SyncOutput = Vec::new();
     let sync_fragments = cfg.sync_fragments;
@@ -241,6 +256,9 @@ pub fn collect_evidence(
     let mut counters = collector.counters;
     for rc in counters.iter_mut() {
         set_jitter_qual_filter_state(sample.msi, rc);
+    }
+    for (i, rc) in invalid {
+        counters.insert(i, rc);
     }
     Ok(counters)
 }

@@ -74,12 +74,12 @@ fn create_read_context_var(variant: &SimpleVariant) -> VariantReadContext {
 }
 
 /// VariantUtils.createReadContext(position, ref, alt)
-fn create_read_context(position: i32, ref_: &str, alt: &str) -> VariantReadContext {
+pub(super) fn create_read_context(position: i32, ref_: &str, alt: &str) -> VariantReadContext {
     create_read_context_var(&create_simple_variant(position, ref_, alt))
 }
 
 /// VariantUtils.createReadCounter(0, readContext)
-fn create_read_counter(ctx: &VariantReadContext, fixture: &Fixture) -> ReadContextCounter {
+pub(super) fn create_read_counter(ctx: &VariantReadContext, fixture: &Fixture) -> ReadContextCounter {
     ReadContextCounter::new(Arc::new(ctx.clone()), Tier::LowConfidence, DEFAULT_MAX_READ_DEPTH, 1, &fixture.qc(), false)
 }
 

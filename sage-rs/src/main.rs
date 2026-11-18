@@ -1,3 +1,4 @@
+mod append;
 mod bamio;
 mod candidate;
 mod config;
@@ -36,7 +37,7 @@ use std::sync::{Condvar, Mutex};
 use types::*;
 
 /// ChromosomePartition
-fn partition(cfg: &Config, chr: &str, chr_length: i32) -> Vec<BaseRegion> {
+pub(crate) fn partition(cfg: &Config, chr: &str, chr_length: i32) -> Vec<BaseRegion> {
     let threads = cfg.threads.min(4) as i32;
     let mut out = Vec::new();
     let regions: Vec<BaseRegion> =
@@ -124,7 +125,7 @@ fn sample_read_length(cfg: &Config, ref_data: &RefData, bam: &mut bamio::BamSlic
 /// SageApplication: UltimaUtils.setMaxRawQual(bqrCache.maxRawQual()). BqrCache.loadBqrFiles overwrites
 /// its maximum for each sample while iterating a HashMap keyed by sample id, so the value is that of
 /// the sample which comes last in that map (reference ids are inserted first), and 0 with -skip_bqr.
-fn ultima_max_raw_qual(cfg: &Config, bqr: &[quality::BqrMap]) -> i8 {
+pub(crate) fn ultima_max_raw_qual(cfg: &Config, bqr: &[quality::BqrMap]) -> i8 {
     if cfg.skip_bqr {
         return 0;
     }
@@ -162,19 +163,20 @@ struct Shared<'a> {
 /// Per-thread file handles.
 struct Worker {
     genome: RefGenome,
-    tumor_bam: bamio::BamSlicer,
-    ref_bam: Option<bamio::BamSlicer>,
+    /// one per tumor sample, then one per reference sample, as in the configuration
+    tumor_bams: Vec<bamio::BamSlicer>,
+    ref_bams: Vec<bamio::BamSlicer>,
 }
 
 impl Worker {
     fn open(cfg: &Config) -> Result<Worker> {
+        let open_all = |paths: &[String]| -> Result<Vec<bamio::BamSlicer>> {
+            paths.iter().map(|p| bamio::BamSlicer::open(p, 1)).collect()
+        };
         Ok(Worker {
             genome: RefGenome::open(&cfg.ref_genome)?,
-            tumor_bam: bamio::BamSlicer::open(&cfg.tumor_bams[0], 1)?,
-            ref_bam: match cfg.reference_bams.first() {
-                Some(p) => Some(bamio::BamSlicer::open(p, 1)?),
-                None => None,
-            },
+            tumor_bams: open_all(&cfg.tumor_bams)?,
+            ref_bams: open_all(&cfg.reference_bams)?,
         })
     }
 }
@@ -214,8 +216,19 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion) ->
     } else {
         vec![region]
     };
-    w.tumor_bam.slice_ref(chr, &slice_regions, true, |read| finder.process_read(read))?;
-    let candidates = build_candidates(finder.finish(), &hotspots, &panel, &high_conf);
+    // CandidateStage.findCandidates: each tumor sample is read with its own RefContextCache
+    w.tumor_bams[0].slice_ref(chr, &slice_regions, true, |read| finder.process_read(read))?;
+    let candidates = if w.tumor_bams.len() == 1 {
+        build_candidates(finder.finish(), &hotspots, &panel, &high_conf)
+    } else {
+        let mut sample_candidates = vec![finder.finish()];
+        for bam in w.tumor_bams[1..].iter_mut() {
+            let mut finder = CandidateFinder::new(cfg, chr, region, &ref_seq, &hotspots, &panel, ref_data);
+            bam.slice_ref(chr, &slice_regions, true, |read| finder.process_read(read))?;
+            sample_candidates.push(finder.finish());
+        }
+        build_candidates_of_multiple_samples(sample_candidates, &hotspots, &panel, &high_conf)
+    };
     if candidates.is_empty() {
         return Ok(None);
     }
@@ -248,46 +261,63 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion) ->
 
     // one FragmentSync per region task, shared by the tumor and reference passes
     let mut sync = sync::FragmentSync::new();
-    let mut tumor = evidence_stage::Sample { bam: &mut w.tumor_bam, bqr: &sh.bqr[0], msi: &sh.msi[0], is_reference: false };
-    let tumor_counters = evidence_stage::collect_evidence(
-        cfg, chr, &candidates, &w.genome, ref_data, &mut tumor, &mut sync, Some(&mut out.phaser),
-    )?;
-    let keep: Vec<usize> =
-        (0..candidates.len()).filter(|&i| evidence_stage::passes_hard_filters(cfg, &tumor_counters[i])).collect();
+    let tumor_count = cfg.tumor_ids.len();
+    // EvidenceStage.findEvidence: phasing groups are collected for the first tumor sample only
+    let mut tumor_counters: Vec<Vec<Option<evidence::ReadContextCounter>>> = Vec::with_capacity(tumor_count);
+    for (s, bam) in w.tumor_bams.iter_mut().enumerate() {
+        let sample_id = &cfg.tumor_ids[s];
+        let mut tumor = evidence_stage::Sample {
+            bam,
+            bqr: &sh.bqr[s],
+            msi: &sh.msi[s],
+            is_reference: cfg.reference_ids.contains(sample_id),
+        };
+        let phaser: Option<&mut dyn evidence_stage::PhaseSink> =
+            if *sample_id == cfg.tumor_ids[0] { Some(&mut out.phaser) } else { None };
+        let counters =
+            evidence_stage::collect_evidence(cfg, chr, &candidates, &w.genome, ref_data, &mut tumor, &mut sync, phaser)?;
+        tumor_counters.push(counters.into_iter().map(Some).collect());
+    }
+    // ReadContextCounters.filterCandidates: a candidate is kept if any tumor sample passes the hard filters
+    let keep: Vec<usize> = (0..candidates.len())
+        .filter(|&i| tumor_counters.iter().any(|c| evidence_stage::passes_hard_filters(cfg, c[i].as_ref().unwrap())))
+        .collect();
     if keep.is_empty() {
         // Java still reports the candidates, but never reaches the variant stage
         out.variant_of.clear();
         return Ok(Some(out));
     }
     let final_candidates: Vec<Candidate> = keep.iter().map(|&i| candidates[i].clone()).collect();
-    let ref_counters = match w.ref_bam.as_mut() {
-        Some(bam) => {
-            let mut reference = evidence_stage::Sample { bam, bqr: &sh.bqr[1], msi: &sh.msi[1], is_reference: true };
-            evidence_stage::collect_evidence(cfg, chr, &final_candidates, &w.genome, ref_data, &mut reference, &mut sync, None)?
-        }
-        None => Vec::new(),
-    };
+    let mut ref_counters: Vec<Vec<Option<evidence::ReadContextCounter>>> = Vec::with_capacity(w.ref_bams.len());
+    for (s, bam) in w.ref_bams.iter_mut().enumerate() {
+        let mut reference = evidence_stage::Sample {
+            bam,
+            bqr: &sh.bqr[tumor_count + s],
+            msi: &sh.msi[tumor_count + s],
+            is_reference: true,
+        };
+        let counters =
+            evidence_stage::collect_evidence(cfg, chr, &final_candidates, &w.genome, ref_data, &mut reference, &mut sync, None)?;
+        ref_counters.push(counters.into_iter().map(Some).collect());
+    }
     if cfg.log_evidence {
         for (j, &i) in keep.iter().enumerate() {
             let c = &candidates[i];
             let mut line = format!("{}\t{}\t{}\t{}", chr, c.position(), c.variant().ref_str(), c.variant().alt_str());
-            if let Some(rc) = ref_counters.get(j) {
+            for rc in ref_counters.iter().map(|c| &c[j]).chain(tumor_counters.iter().map(|c| &c[i])) {
                 line.push('\t');
-                line.push_str(&vcfout::genotype(rc));
+                line.push_str(&vcfout::genotype(rc.as_ref().unwrap()));
             }
-            line.push('\t');
-            line.push_str(&vcfout::genotype(&tumor_counters[i]));
             out.evidence_lines.push(line);
         }
     }
 
     // combine reference and tumor counters into variants
-    let mut tumor_opt: Vec<Option<evidence::ReadContextCounter>> = tumor_counters.into_iter().map(Some).collect();
-    let mut ref_iter = ref_counters.into_iter();
     for (j, &i) in keep.iter().enumerate() {
         out.variant_of[i] = Some(j);
-        let refs: Vec<evidence::ReadContextCounter> = ref_iter.next().into_iter().collect();
-        out.variants.push(filters::SageVariant::new(final_candidates[j].clone(), refs, vec![tumor_opt[i].take().unwrap()]));
+        let refs: Vec<evidence::ReadContextCounter> = ref_counters.iter_mut().map(|c| c[j].take().unwrap()).collect();
+        let tumors: Vec<evidence::ReadContextCounter> = tumor_counters.iter_mut().map(|c| c[i].take().unwrap()).collect();
+        out.variants.push(filters::SageVariant::new(final_candidates[j].clone(), refs, tumors));
     }
 
     filters::set_near_by_indel_status_pre_filter(&mut out.variants);
@@ -352,6 +382,9 @@ fn main() -> Result<()> {
     if args.first().map(|a| a.as_str()) == Some("tinc") {
         return tinc::run_standalone(&args[1..]);
     }
+    if args.first().map(|a| a.as_str()) == Some("append") {
+        return append::run(&args[1..]);
+    }
     let mut cfg = Config::from_args(&args)?;
     let tinc_cfg = if cfg.run_tinc {
         // callerTincConfig: fail before the run rather than after it
@@ -374,8 +407,15 @@ fn main() -> Result<()> {
     } else {
         None
     };
-    if cfg.tumor_ids.len() != 1 || cfg.reference_ids.len() > 1 {
-        anyhow::bail!("only one tumor and at most one reference sample are supported so far");
+    // SageCallConfig.isValid
+    if cfg.reference_ids.len() != cfg.reference_bams.len() {
+        anyhow::bail!("each reference sample must have matching BAM file");
+    }
+    if cfg.tumor_ids.len() != cfg.tumor_bams.len() {
+        anyhow::bail!("Each tumor sample must have matching bam");
+    }
+    if cfg.tumor_ids.is_empty() {
+        anyhow::bail!("At least one tumor must be supplied");
     }
     let ref_data = RefData::load(&RefDataPaths {
         ensembl_dir: cfg.ensembl_data_dir.as_deref(),
@@ -387,7 +427,7 @@ fn main() -> Result<()> {
     })?;
     let mut main_worker = Worker::open(&cfg)?;
     if cfg.read_length == 0 {
-        cfg.read_length = sample_read_length(&cfg, &ref_data, &mut main_worker.tumor_bam)?;
+        cfg.read_length = sample_read_length(&cfg, &ref_data, &mut main_worker.tumor_bams[0])?;
         if constants::is_ultima() {
             // SageConfig.setReadLength
             cfg.read_length = cfg.read_length.max(constants::NON_ILLUMINA_MAX_READ_LENGTH);
@@ -439,7 +479,7 @@ fn main() -> Result<()> {
     let mut vcf = vcfout::VcfWriter::create(&cfg.output_vcf, &contigs, &cfg.reference_ids, &cfg.tumor_ids, cfg.run_tinc)?;
 
     // every region task, in the order the sequence dictionary lists the chromosomes
-    let dictionary_bam = main_worker.ref_bam.as_ref().unwrap_or(&main_worker.tumor_bam);
+    let dictionary_bam = main_worker.ref_bams.first().unwrap_or(&main_worker.tumor_bams[0]);
     let mut tasks: Vec<(String, BaseRegion)> = Vec::new();
     for chr in dictionary_bam.sequence_names() {
         if !cfg.process_chromosome(&chr) {

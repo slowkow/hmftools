@@ -527,6 +527,10 @@ pub fn build_context(
         if let Some(h) = &homology {
             read_core_end += h.length;
         }
+        if read_core_end + flank_size >= n && homology.is_some() && is_append_mode() && variant.is_long_insert() {
+            // most likely a long insert aligned from soft-clip: assume the old core is correct
+            read_core_end = n - flank_size - 1;
+        }
     } else {
         read_core_start = var_index_in_read - MIN_CORE_DISTANCE;
         read_core_end = var_index_in_read + variant.alt_len() - 1 + MIN_CORE_DISTANCE;
@@ -558,13 +562,23 @@ pub fn build_context(
 
     // for Ultima the core is expanded so that homopolymers are not cut off in the read or the ref
     if is_ultima() {
-        // no valid extension, or an exception that createContext catches, gives no context (append mode,
-        // where a long insert may keep its unextended core, is not ported)
+        // long inserts with S elements won't work properly in append mode with core extension
+        let skippable_long_insert = is_append_mode() && variant.is_long_insert();
+        // an exception, which createContext catches, gives no context
         let extended = crate::ultima::extend_ultima_core(
-            read_bases, ref_seq, cigar_start, cigar_elements, &info, flank_size, false,
+            read_bases, ref_seq, cigar_start, cigar_elements, &info, flank_size, is_append_mode(),
         );
-        info = extended.ok()??;
-        (read_core_start, read_core_end) = crate::ultima::extended_core_indices(&info);
+        match extended.ok()? {
+            Some(new_info) => {
+                info = new_info;
+                (read_core_start, read_core_end) = crate::ultima::extended_core_indices(&info);
+            }
+            None => {
+                if !skippable_long_insert {
+                    return None;
+                }
+            }
+        }
     }
 
     let read_position_start = info.read_alignment_start;
@@ -638,7 +652,9 @@ pub fn create_context(
     variant: &SimpleVariant, read: &Read, var_read_index: i32, ref_seq: &RefSequence, flank_size: i32,
 ) -> Option<VariantReadContext> {
     let mut rc = build_context(variant, read, var_read_index, ref_seq, flank_size)?;
-    if rc.left_flank_length() < flank_size || rc.right_flank_length() < flank_size {
+    // enforce full flanks
+    let min_flank_length = if is_ultima() && is_append_mode() { 1 } else { flank_size };
+    if rc.left_flank_length() < min_flank_length || rc.right_flank_length() < min_flank_length {
         return None;
     }
     if !above_min_base_qual(&rc, read, var_read_index) {

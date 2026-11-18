@@ -96,6 +96,8 @@ pub struct JitterParams {
 }
 
 const MAX_SPECIFIC_LENGTH_UNIT: usize = 2;
+/// MicrosatelliteStatus.MSI_THRESHOLD: MSI indels per Mb
+const MSI_THRESHOLD: f64 = 4.0;
 
 impl JitterParams {
     fn repeat_unit_length(&self) -> usize {
@@ -213,24 +215,30 @@ impl MsiJitter {
         let param_file = format!("{dir}/{sample}.redux.jitter_params.tsv");
         let count_file = format!("{dir}/{sample}.redux.ms_table.tsv.gz");
         let prediction_file = format!("{dir}/{sample}.redux.msi_prediction.tsv");
+        // MicrosatelliteStatus.fromIndelsPerMb(MsiModelPrediction.read(file).PredictedMsiIndelsPerMb) == MSI;
+        // a file which cannot be read gives the invalid value -1
+        let mut is_msi_sample = false;
         if std::path::Path::new(&prediction_file).exists() {
-            let lines = read_lines(&prediction_file)?;
-            let idx = lines[0].split('\t').position(|c| c == "PredictedValue");
-            if let (Some(i), Some(row)) = (idx, lines.get(1)) {
-                let v: f64 = row.split('\t').nth(i).unwrap_or("0").parse().unwrap_or(0.0);
-                if v >= 4.0 - 1e-10 {
-                    bail!("sample {sample} is predicted MSI; MSI-specific jitter parameters are not implemented");
-                }
-            }
+            let predicted = read_lines(&prediction_file).ok().and_then(|lines| {
+                let i = lines.first()?.split('\t').position(|c| c == "PredictedValue")?;
+                lines.get(1)?.split('\t').nth(i)?.parse::<f64>().ok()
+            });
+            is_msi_sample = predicted.unwrap_or(-1.0) - MSI_THRESHOLD > -1e-10;
         }
         // selectConsensusType: the type with the most reads in the jitter counts table, ties to NONE
         let lines = read_lines(&count_file).with_context(|| format!("jitter counts file {count_file}"))?;
         let idx: HashMap<&str, usize> = lines[0].split('\t').enumerate().map(|(i, n)| (n, i)).collect();
         let mut totals: Vec<(String, i64)> = Vec::new();
+        // JitterCountsTableFile.read: one table per repeat unit and consensus type, in file order
+        let mut count_tables: Vec<(String, String)> = Vec::new();
         for line in &lines[1..] {
             let v: Vec<&str> = line.split('\t').collect();
             let t = v[idx["consensusType"]].to_string();
             let c: i64 = v[idx["readCount"]].parse()?;
+            let table = (v[idx["unit"]].to_string(), t.clone());
+            if !count_tables.contains(&table) {
+                count_tables.push(table);
+            }
             match totals.iter_mut().find(|(k, _)| *k == t) {
                 Some(e) => e.1 += c,
                 None => totals.push((t, c)),
@@ -274,7 +282,25 @@ impl MsiJitter {
                 skew: v[idx["microsatelliteSkew"]].parse()?,
             });
         }
-        Ok(MsiJitter { params, probable_msi: false })
+        if is_msi_sample {
+            // adjustDefaultParams: for a sample REDUX predicts as MSI, the default parameters of each
+            // repeat unit in the counts table are used with the skew fitted for the sample
+            let defaults = default_illumina_params(high_depth);
+            let mut adjusted = Vec::new();
+            for (unit, _) in count_tables.iter().filter(|(_, c)| *c == consensus) {
+                let repeat_unit = unit.split('/').next().unwrap_or("");
+                // Java fails with a null pointer here, reported as a missing jitter param file
+                let (Some(msi_params), Some(default_params)) = (
+                    find_applicable_params(&params, repeat_unit.as_bytes()),
+                    find_applicable_params(&defaults, repeat_unit.as_bytes()),
+                ) else {
+                    bail!("missing jitter params for repeat unit {unit} in {param_file}");
+                };
+                adjusted.push(JitterParams { skew: msi_params.skew, ..default_params.clone() });
+            }
+            params = adjusted;
+        }
+        Ok(MsiJitter { params, probable_msi: is_msi_sample })
     }
 
     /// MsiJitterCalcs.findRepeat
@@ -528,5 +554,63 @@ pub fn set_jitter_qual_filter_state(msi: &MsiJitter, rc: &mut ReadContextCounter
             }
             j.qual_boost = jmin(j.qual_boost, JITTER_QUAL_BOOST_MAX_PERC);
         }
+    }
+}
+
+#[cfg(test)]
+mod msi_params_tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_sample_files(dir: &std::path::Path, sample: &str, predicted: Option<&str>) {
+        let params = "unit\tconsensusType\toptimalScaleRepeat4\toptimalScaleRepeat5\toptimalScaleRepeat6\tscaleFitGradient\tscaleFitIntercept\tmicrosatelliteSkew\n\
+                      A/T\tNONE\t0.13\t0.15\t0.17\t0.06\t-0.16\t0.6945\n\
+                      AT/TA\tNONE\t0.21\t0.22\t0.23\t0.05\t-0.1\t1.25\n\
+                      3-5bp repeat\tNONE\t0.3\t0.31\t0.32\t0.07\t-0.2\t1.5\n\
+                      A/T\tDUAL\t0.5\t0.5\t0.5\t0.5\t0.5\t9.0\n";
+        std::fs::write(dir.join(format!("{sample}.redux.jitter_params.tsv")), params).unwrap();
+        let counts = "unit\tconsensusType\tnumUnits\treadCount\n\
+                      A/T\tNONE\t4\t100\nA/T\tNONE\t5\t50\n3-5bp repeat\tNONE\t4\t20\nAT/TA\tNONE\t4\t30\nA/T\tDUAL\t4\t10\n";
+        let file = std::fs::File::create(dir.join(format!("{sample}.redux.ms_table.tsv.gz"))).unwrap();
+        let mut gz = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        gz.write_all(counts.as_bytes()).unwrap();
+        gz.finish().unwrap();
+        if let Some(value) = predicted {
+            std::fs::write(dir.join(format!("{sample}.redux.msi_prediction.tsv")), format!("PredictedValue\n{value}\n")).unwrap();
+        }
+    }
+
+    // MsiJitterCalcs.loadSampleJitterParams: a sample REDUX predicts as MSI gets the default scale
+    // parameters, in the order of the units of the jitter counts table, with the sample's skew
+    #[test]
+    fn msi_sample_uses_default_params_with_sample_skew() {
+        let dir = std::env::temp_dir().join(format!("sage_rs_msi_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir_str = dir.to_str().unwrap();
+
+        write_sample_files(&dir, "MSS", Some("3.9999"));
+        let mss = MsiJitter::load(Some(dir_str), "MSS", false).unwrap();
+        assert!(!mss.probable_msi);
+        assert_eq!(3, mss.params.len());
+        assert_eq!(0.13, mss.params[0].scale4);
+
+        write_sample_files(&dir, "NONE", None);
+        assert!(!MsiJitter::load(Some(dir_str), "NONE", false).unwrap().probable_msi);
+
+        write_sample_files(&dir, "MSI", Some("4.0000"));
+        let msi = MsiJitter::load(Some(dir_str), "MSI", false).unwrap();
+        assert!(msi.probable_msi);
+        let defaults = default_illumina_params(false);
+        let units: Vec<&str> = msi.params.iter().map(|p| p.repeat_unit.as_str()).collect();
+        assert_eq!(vec!["A/T", "3-5bp repeat", "AT/TA"], units);
+        let skews: Vec<f64> = msi.params.iter().map(|p| p.skew).collect();
+        assert_eq!(vec![0.6945, 1.5, 1.25], skews);
+        assert_eq!(defaults[0].scale4, msi.params[0].scale4);
+        assert_eq!(defaults[0].gradient, msi.params[0].gradient);
+        assert_eq!(defaults[0].intercept, msi.params[0].intercept);
+        assert_eq!(defaults[2].scale5, msi.params[2].scale5);
+        assert_eq!(defaults[6].scale6, msi.params[1].scale6);
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

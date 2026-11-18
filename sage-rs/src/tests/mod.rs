@@ -14,6 +14,7 @@ mod homology; // common/HomologyTest
 mod indel_dedup; // dedup/IndelDedupTest
 mod jitter; // evidence/JitterTest
 mod misc_evidence; // evidence/MiscEvidenceTest
+mod phase_append; // evidence/PhaseAppendTest
 mod phasing_groups; // evidence/PhasingGroupsTest
 mod read_context_matching; // common/ReadContextMatchingTest
 mod read_context_utils; // common/ReadContextUtilsTest

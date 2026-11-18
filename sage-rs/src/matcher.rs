@@ -190,6 +190,11 @@ impl Matcher {
         Matcher { max_core_low_qual, is_reference, alt_index_lower: lower, alt_index_upper: upper, excl_read, excl_ref }
     }
 
+    /// Stands in for the null matcher of a counter whose read context is marked invalid; never used.
+    pub fn placeholder(is_reference: bool) -> Matcher {
+        Matcher { max_core_low_qual: 0, is_reference, alt_index_lower: 0, alt_index_upper: 0, excl_read: None, excl_ref: None }
+    }
+
     pub fn set_realignment_index_offset(&mut self, offset: i32) {
         if let Some(e) = self.excl_read.as_mut() {
             e.offset = offset;

@@ -1029,3 +1029,46 @@ pub fn build_candidates(
     }
     list
 }
+
+/// Candidates.addOfMultipleSamples + candidates(): the candidates of several tumor samples. Those of a
+/// variant which share a core are merged, keeping the read context with the most full matches.
+pub fn build_candidates_of_multiple_samples(
+    sample_alt_candidates: Vec<Vec<ReadContextCandidate>>, hotspots: &[SimpleVariant], panel: &[BaseRegion],
+    high_conf: &[BaseRegion],
+) -> Vec<Candidate> {
+    // Java keeps a HashMap of variant -> candidates and sorts its values by variant afterwards; the sort
+    // is stable and only candidates of one variant compare equal, so the map's order does not matter
+    let mut index_of: std::collections::HashMap<SimpleVariant, usize> = std::collections::HashMap::new();
+    let mut by_variant: Vec<Vec<Candidate>> = Vec::new();
+    for alt_candidates in sample_alt_candidates {
+        let mut tiers = TierSelector::new(hotspots, panel, high_conf);
+        for alt in alt_candidates {
+            let index = *index_of.entry(alt.ctx.variant.clone()).or_insert_with(|| {
+                by_variant.push(Vec::new());
+                by_variant.len() - 1
+            });
+            let candidates = &mut by_variant[index];
+            let tier = tiers.tier(&alt.ctx.variant);
+            match candidates.iter_mut().find(|c| c.ctx.core_str() == alt.ctx.core_str()) {
+                Some(matching) => {
+                    // Candidate.updateAltCandidate
+                    if alt.full_match > matching.full_match_support {
+                        matching.full_match_support = alt.full_match;
+                        matching.ctx = alt.ctx;
+                        matching.min_events = matching.min_events.min(alt.min_events);
+                    }
+                }
+                None => candidates.push(Candidate {
+                    tier,
+                    ctx: alt.ctx,
+                    min_events: alt.min_events,
+                    full_match_support: alt.full_match,
+                    core_match_support: alt.core_match,
+                }),
+            }
+        }
+    }
+    let mut list: Vec<Candidate> = by_variant.into_iter().flatten().collect();
+    list.sort_by(|a, b| a.variant().compare_full(b.variant()));
+    list
+}

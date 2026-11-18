@@ -16,12 +16,13 @@ VCF. On every region tested so far the decompressed VCF is byte-identical to Jav
 | 2. Candidate stage | Done. |
 | 3. Evidence stage | Done, including fragment sync, BQR and the MSI jitter model. |
 | 4. Filters, phasing, dedup | Done. |
-| 5. Parity sweep | Whole genome compared with and without TINC (below), plus chr21, HLA region, chrM and part of chrX against single-threaded Java. chr21 is also byte-identical in `-high_depth_mode`, `-germline`, tumor-only and `-panel_only` runs. 86 Java unit tests are ported (`src/tests`). |
+| 5. Parity sweep | Whole genome compared with and without TINC (below), plus chr21, HLA region, chrM and part of chrX against single-threaded Java. chr21 is also byte-identical in `-high_depth_mode`, `-germline`, tumor-only and `-panel_only` runs. The Java unit tests are ported (`src/tests`; 150 tests pass). |
 | 6. Optimisation | Multi-threading; table-based base decoding, one pass over BAM tags and a reused read buffer in the candidate stage (about 25% less CPU). Still to do: the tumor BAM is read twice, and the evidence stage copies every read. |
 | 7. TINC | Done: `-run_tinc` and the standalone `sage-rs tinc`. |
 | 8. SBX | Done: `-sequencing_type SBX`. chr21 of the public HG008 tumor/normal pair (119x / 44x, after Java REDUX) is byte-identical to Java, with and without soft filters (3,316 and 68,809 records). |
 | 9. Ultima | Done: `-sequencing_type ULTIMA`. chr21 of the public HG008 ppmSeq tumor/normal pair (157x / 160x, after Java REDUX without `-form_consensus`) is byte-identical to Java, with and without soft filters (2,689 and 87,238 records). One thread: Java 253 s, Rust 172 s; SBX: Java 106 s, Rust 61 s. The non-Illumina paths have not been profiled. |
-| 10. Later | Append mode, CRAM, multiple tumor / reference samples, MSI-specific jitter parameters, split (RNA) reads, the visualiser. Each is rejected with an error if requested. |
+| 10. Append, split reads, MSI samples, multi-sample | Done: `sage-rs append`, `SplitReadSegment`, MSI-specific jitter parameters, several tumor / reference samples. Compared with Java on the public HG008 data (chr21): append onto SBX and Ultima VCFs with and without soft filters, two samples at once, `-high_depth_mode` and an older-format VCF; simulated MSI predictions for SBX, Ultima and the default path; two tumors and/or two references. All byte-identical. Split reads have unit tests only (no RNA BAM compared). |
+| 11. Later | CRAM, the visualiser, `-write_frag_lengths`, `-specific_var_file`, TINC with more than one tumor. |
 
 Regions compared (records identical / total), tumor and normal WGS BAMs on an external volume, 20-core machine:
 

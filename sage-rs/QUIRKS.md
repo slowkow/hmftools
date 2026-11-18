@@ -61,6 +61,21 @@ upstream report rather than a silent fix. File references are to `sage/src/main/
   `getStraddlingReadBases` for inserts. The bases are unused for inserts.
 - The `ReadCigarState` copy constructor resets the valid flag.
 
+## Split reads and append mode
+
+- With a split read segment, `coversVariant` ignores the index it is given and uses the segment's
+  variant index, including for the realigned index; `checkRealignment` subtracts the segment start from
+  the realigned index and then checks jitter with that index against the whole read. Quality scores
+  and edge distance use the whole read.
+- Append rewrites existing records through htsjdk, which re-formats them: `0.000` becomes `0.00`,
+  `0.005` becomes `5.000e-03`, trailing missing genotype values are dropped, and standard header lines
+  with a non-standard number or type are replaced. The appended sample keeps SAGE's own formatting.
+- Append drops records on chromosomes it does not process, and loads no Ensembl data, so the HLA map
+  quality cap never applies there.
+- Java SAGE without `-sequencing_type` fails with a null pointer in the candidate stage on the full
+  public SBX chr21 slice (after "ignoring read with position before prior position"); the port runs
+  through. Default-path comparisons on that data use chr21:20-40 Mb.
+
 ## Where the port differs
 
 - `dedup/IndelDeduper.checkDedupCombinations` enumerates subsets of a `HashSet` whose order comes from
@@ -75,8 +90,9 @@ upstream report rather than a silent fix. File references are to `sage/src/main/
   platform `exp`/`log` gave 1.1e-16 there and changed one `MQF` value in a whole genome.
 - TINC only loads the gnomAD and PON entries at positions present in the VCF, in one pass per file;
   Java loads whole chromosomes. The output is the same.
-- Reads with `N` in the CIGAR (RNA) are skipped: `evidence/SplitReadSegment` is not ported.
 - Ultima: the quality recalibration table is loaded once per process (Java merges into a static on
   each load); a failure to build quality models stops the run for a standard chromosome, where Java
   logs and continues with a counter that counts nothing; missing `tp` / `t0` tags stop the run with a
   message naming the read, where Java fails with a null pointer.
+- Append: header lines are kept as text; the GL to PL conversion, the INFO value-count check and the
+  missing-header-line error of htsjdk are not reproduced.

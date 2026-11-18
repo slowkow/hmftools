@@ -1,7 +1,7 @@
 //! Evidence stage: ReadContextCounter and its per-read helpers (RawContext, QualityCalculator,
 //! JitterMatch, Realignment, strand bias, fragment coordinates, edge distance).
 //!
-//! Not ported: SplitReadSegment (reads with N in the CIGAR, RNA only) and the visualiser hooks.
+//! Not ported: the visualiser hooks.
 
 use crate::candidate::{calc_event_penalty, calc_soft_clip_adjustment, calc_with_mnv_raw};
 use crate::config::Config;
@@ -170,6 +170,75 @@ pub fn read_index_from_position(alignment_start: i32, cigar: &[CigarEl], positio
     INVALID_INDEX
 }
 
+/// SplitReadSegment: the part of a split (RNA) read, between `N` elements, which covers the variant.
+pub struct SplitReadSegment {
+    pub read_var_index: i32,
+    /// indices in the original read
+    pub segment_index_start: i32,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub segment_index_end: i32,
+    pub read_bases: Vec<u8>,
+    pub read_quals: Vec<u8>,
+}
+
+impl SplitReadSegment {
+    pub fn length(&self) -> i32 {
+        self.read_bases.len() as i32
+    }
+
+    /// SplitReadSegment.formSegment
+    pub fn form_segment(read: &Read, position: i32, read_var_index: i32) -> Option<SplitReadSegment> {
+        let mut read_index = 0;
+        let mut ref_position = read.start - read.left_soft_clip();
+        let mut segment_index_start = -1;
+        let mut segment_index_end = -1;
+        for el in &read.cigar {
+            if el.op.consumes_ref() || el.op == Op::S {
+                let ref_end_position = ref_position + el.len - 1;
+                let position_within_section = position_within(position, ref_position, ref_end_position);
+                if position_within_section && (el.op == Op::N || el.op == Op::D) {
+                    return None;
+                }
+                if el.op == Op::N {
+                    if ref_position > position {
+                        break;
+                    }
+                    // reset base capture after any split
+                    segment_index_start = -1;
+                    segment_index_end = -1;
+                } else if (el.op == Op::M || el.op == Op::S) && segment_index_start < 0 {
+                    segment_index_start = read_index;
+                }
+                ref_position += el.len;
+            }
+            if el.op.consumes_read() {
+                if segment_index_start >= 0 {
+                    if segment_index_end == -1 {
+                        segment_index_end = segment_index_start + el.len - 1;
+                    } else {
+                        segment_index_end += el.len;
+                    }
+                }
+                read_index += el.len;
+            }
+        }
+        if segment_index_start < 0 {
+            return None;
+        }
+        // Arrays.copyOfRange pads with zeros past the end of the array
+        let copy = |src: &[u8]| -> Vec<u8> {
+            (segment_index_start..=segment_index_end).map(|i| src.get(i as usize).copied().unwrap_or(0)).collect()
+        };
+        Some(SplitReadSegment {
+            read_var_index: read_var_index - segment_index_start,
+            segment_index_start,
+            segment_index_end,
+            read_bases: copy(&read.bases),
+            read_quals: copy(&read.quals),
+        })
+    }
+}
+
 /// Realignment.realignedReadIndexPosition
 pub(crate) fn realigned_read_index_position(ctx: &VariantReadContext, read: &Read) -> i32 {
     let core_end_index = read_index_from_position(read.start, &read.cigar, ctx.core_position_end);
@@ -336,8 +405,10 @@ pub(crate) enum Realigned {
 
 /// Realignment.checkRealignment
 pub(crate) fn check_realignment(
-    ctx: &VariantReadContext, matcher: &mut Matcher, read: &Read, read_index: i32, realigned_read_index: i32, is_msi: bool,
+    ctx: &VariantReadContext, matcher: &mut Matcher, read: &Read, read_index: i32, realigned_read_index: i32,
+    split: Option<&SplitReadSegment>, is_msi: bool,
 ) -> Realigned {
+    let mut realigned_read_index = realigned_read_index;
     if read_index == realigned_read_index {
         return Realigned::None;
     }
@@ -345,11 +416,20 @@ pub(crate) fn check_realignment(
         return Realigned::None;
     }
     let offset = if ctx.variant.is_delete() { 0 } else { realigned_read_index - read_index };
-    if realigned_read_index < 0 || realigned_read_index >= read.len() {
+    let (bases, quals): (&[u8], &[u8]) = match split {
+        Some(seg) => {
+            // the index stays relative to the segment for the jitter check below, which Java makes
+            // against the whole read
+            realigned_read_index -= seg.segment_index_start;
+            (&seg.read_bases, &seg.read_quals)
+        }
+        None => (&read.bases, &read.quals),
+    };
+    if realigned_read_index < 0 || realigned_read_index >= bases.len() as i32 {
         return Realigned::None;
     }
     matcher.set_realignment_index_offset(offset);
-    let info = matcher.determine(ctx, &read.bases, Some(&read.quals), realigned_read_index, true);
+    let info = matcher.determine(ctx, bases, Some(quals), realigned_read_index, true);
     matcher.clear_realignment_index_offset();
     if matches!(info.kind, MatchType::Full | MatchType::PartialCore) {
         return if info.exact { Realigned::Exact } else { Realigned::LowQualMismatches };
@@ -722,7 +802,9 @@ impl ReadContextCounter {
         is_reference_sample: bool,
     ) -> Self {
         let variant = &ctx.variant;
-        let matcher = Matcher::new(&ctx, true, is_reference_sample);
+        // Java leaves the matcher null for a context marked invalid (append mode only)
+        let matcher =
+            if ctx.marked_invalid { Matcher::placeholder(is_reference_sample) } else { Matcher::new(&ctx, true, is_reference_sample) };
         let qual_cache = QualCache::new(&ctx, qc);
         let is_indel = variant.is_indel();
         let mut allow_uncertain = false;
@@ -774,7 +856,7 @@ impl ReadContextCounter {
             tumor_qual_probability: 0.0,
             map_qual_factor: 0.0,
             ultima: if is_ultima() && !ctx.marked_invalid { Some(crate::ultima::UltimaVariantData::new(&ctx)) } else { None },
-            no_matcher: false,
+            no_matcher: ctx.marked_invalid,
             ctx,
         }
     }
@@ -835,11 +917,15 @@ impl ReadContextCounter {
         self.ctx.variant.indel_length_abs() >= LONG_INSERT_LENGTH
     }
 
-    fn has_uncertain_core_bases(&mut self, read: &Read, read_index: i32) -> bool {
+    fn has_uncertain_core_bases(&mut self, read: &Read, read_index: i32, split: Option<&SplitReadSegment>) -> bool {
         if self.allow_uncertain_core_bases {
             return false;
         }
-        if self.matcher.has_uncertain_core_bases(&self.ctx, &read.quals, read_index) {
+        let uncertain = match split {
+            Some(seg) => self.matcher.has_uncertain_core_bases(&self.ctx, &seg.read_quals, seg.read_var_index),
+            None => self.matcher.has_uncertain_core_bases(&self.ctx, &read.quals, read_index),
+        };
+        if uncertain {
             self.uncertain_core_base_count += 1;
             return true;
         }
@@ -977,10 +1063,19 @@ impl ReadContextCounter {
         let ctx = self.ctx.clone();
         let variant = &ctx.variant;
         let (read_var_index, pos_type) = raw_context(variant, read);
-        if read.has_op(Op::N) {
-            // split reads (RNA) are not supported
-            return InSplit;
-        }
+        let split_segment =
+            if read.has_op(Op::N) { SplitReadSegment::form_segment(read, variant.pos, read_var_index) } else { None };
+        let split = split_segment.as_ref();
+        // coversVariant: with a split segment Java ignores the index passed in
+        let covers = |matcher: &Matcher, index: i32| match split {
+            Some(seg) => matcher.covers_variant(&ctx, seg.length(), seg.read_var_index),
+            None => matcher.covers_variant(&ctx, read.len(), index),
+        };
+        // determineReadContextMatch
+        let determine = |matcher: &Matcher| match split {
+            Some(seg) => matcher.determine(&ctx, &seg.read_bases, Some(&seg.read_quals), seg.read_var_index, false),
+            None => matcher.determine_read_match(&ctx, read, read_var_index),
+        };
         if pos_type == PosType::LowQual {
             return SoftClip;
         }
@@ -999,7 +1094,7 @@ impl ReadContextCounter {
         if pos_type == PosType::Skipped {
             return InSplit;
         }
-        let variant_covered = self.matcher.covers_variant(&ctx, read.len(), read_var_index);
+        let variant_covered = covers(&self.matcher, read_var_index);
         if !variant_covered && !check_realigned {
             return NonCore;
         }
@@ -1020,7 +1115,7 @@ impl ReadContextCounter {
         let mut scores: Option<QualityScores> = None;
 
         if variant_covered {
-            if self.has_uncertain_core_bases(read, read_var_index) {
+            if self.has_uncertain_core_bases(read, read_var_index, split) {
                 return NonCore;
             }
             let q = qc.calculate_quality_scores(self, read_var_index, read, adjusted_events);
@@ -1030,7 +1125,7 @@ impl ReadContextCounter {
             seq_tech_qual = q.seq_tech_base_quality;
             if below_qual_threshold(&self.qual_cache, seq_tech_qual) {
                 if pos_type != PosType::Deleted {
-                    let info = self.matcher.determine_read_match(&ctx, read, read_var_index);
+                    let info = determine(&self.matcher);
                     if info.kind.supports_alt() {
                         self.count_alt_support_metrics(read, fragment);
                         self.qual_counters.alt_seq_tech_base_quality_total += jround(q.seq_tech_base_quality) as i32;
@@ -1041,7 +1136,7 @@ impl ReadContextCounter {
             }
             combined_quality = q.combined_quality;
             if pos_type != PosType::Deleted {
-                match_info = self.matcher.determine_read_match(&ctx, read, read_var_index);
+                match_info = determine(&self.matcher);
                 match_type = match_info.kind;
             }
             if match_type.supports_alt() {
@@ -1072,13 +1167,13 @@ impl ReadContextCounter {
         let mut realigned_type = Realigned::None;
         if match_type != MatchType::Ref || (is_sbx() && !self.is_indel && ctx.has_indel_in_core) {
             let idx = *realigned_read_index.get_or_insert_with(|| realigned_read_index_position(&ctx, read));
-            let can_realign = idx != INVALID_INDEX && self.matcher.covers_variant(&ctx, read.len(), idx);
+            let can_realign = idx != INVALID_INDEX && covers(&self.matcher, idx);
             if can_realign {
                 let is_msi = self.qual_cache.is_msi_sample_and_variant;
-                realigned_type = check_realignment(&ctx, &mut self.matcher, read, read_var_index, idx, is_msi);
+                realigned_type = check_realignment(&ctx, &mut self.matcher, read, read_var_index, idx, split, is_msi);
             }
             if realigned_type != Realigned::None {
-                if self.has_uncertain_core_bases(read, idx) {
+                if self.has_uncertain_core_bases(read, idx, split) {
                     return Unrelated;
                 }
                 let q = qc.calculate_quality_scores(self, idx, read, adjusted_events);

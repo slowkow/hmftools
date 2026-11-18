@@ -226,7 +226,7 @@ fn test_insert_realignment2() {
 
     let realigned_read_index = realigned_read_index_position(&read_context, &realigned_read);
     let mut matcher = create_read_context_matcher(&read_context);
-    let realigned_type = check_realignment(&read_context, &mut matcher, &realigned_read, 16, realigned_read_index, false);
+    let realigned_type = check_realignment(&read_context, &mut matcher, &realigned_read, 16, realigned_read_index, None, false);
 
     // works if realignedReadIndex is 6 rather than 10, since the 1xTATT lengthened jitter causes the realignedIndex to be off
     assert!(realigned_type == Realigned::Lengthened);
@@ -396,7 +396,7 @@ fn test_realignment_index_offset() {
     let (read_var_index, _) = raw_context(&var, &poly_t_var_build_read);
     let realigned_read_index = realigned_read_index_position(&read_context, &poly_t_var_build_read);
     let realigned_type =
-        check_realignment(&read_context, &mut matcher, &poly_t_var_build_read, read_var_index, realigned_read_index, false);
+        check_realignment(&read_context, &mut matcher, &poly_t_var_build_read, read_var_index, realigned_read_index, None, false);
 
     assert!(realigned_type == Realigned::None);
 }

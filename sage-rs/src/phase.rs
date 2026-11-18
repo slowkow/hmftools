@@ -447,7 +447,7 @@ pub struct LpsAssignment {
 }
 
 /// Iteration order of a Java HashMap<Integer, _> / HashSet<Integer> built by inserting `keys` in order.
-fn java_int_hash_order(keys: &[i32]) -> Vec<i32> {
+pub(crate) fn java_int_hash_order(keys: &[i32]) -> Vec<i32> {
     let mut unique: Vec<i32> = Vec::new();
     for k in keys {
         if !unique.contains(k) {

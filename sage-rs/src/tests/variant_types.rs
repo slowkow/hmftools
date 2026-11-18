@@ -120,7 +120,7 @@ impl RegionTaskTester {
 
         let genome = mock_ref_genome(self.test_name, &[(CHR_1, &self.ref_bases)]);
         let tumor_bam = BamSlicer::open(&self.write_tumor_bam(), 1).unwrap();
-        let mut worker = crate::Worker { genome, tumor_bam, ref_bam: None };
+        let mut worker = crate::Worker { genome, tumor_bams: vec![tumor_bam], ref_bams: Vec::new() };
 
         let Some(output) = crate::process_region(&shared, &mut worker, CHR_1, region).unwrap() else {
             return Vec::new();

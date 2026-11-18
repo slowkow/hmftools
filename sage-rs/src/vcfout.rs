@@ -15,6 +15,15 @@ fn ints(v: &[i32]) -> String {
 }
 
 pub fn genotype(c: &ReadContextCounter) -> String {
+    genotype_values(c).join(":")
+}
+
+/// The genotype values of a counter keyed by FORMAT tag, in FORMAT_KEYS order (GT first).
+pub fn genotype_fields(c: &ReadContextCounter) -> Vec<(&'static str, String)> {
+    FORMAT_KEYS.split(':').zip(genotype_values(c)).collect()
+}
+
+fn genotype_values(c: &ReadContextCounter) -> [String; 19] {
     let q = &c.qual_counters;
     let mut depth = c.depth();
     let mut alt_support = c.alt_support();
@@ -84,7 +93,7 @@ pub fn genotype(c: &ReadContextCounter) -> String {
         c.simple_alt_matches.to_string(),
         ints(&umi),
     ];
-    fields.join(":")
+    fields
 }
 
 use crate::filters::{SageVariant, ALL_FILTERS};
@@ -94,6 +103,24 @@ use std::io::Write as IoWrite;
 
 const HEADER_FIELDS: &str = include_str!("../resources/vcf_header_fields.txt");
 pub const SAGE_VERSION: &str = "5.1";
+
+/// ReadContextVcfInfo.toVcfTag
+pub fn read_context_vcf_info(ctx: &crate::read_context::VariantReadContext) -> String {
+    format!(
+        "{}-{}-{}-{}-{}-{}",
+        ctx.alignment_start,
+        ctx.var_index,
+        ctx.left_flank_str(),
+        ctx.core_str(),
+        ctx.right_flank_str(),
+        ctx.read_cigar
+    )
+}
+
+/// The ##INFO and ##FORMAT header lines (FILTER, contig and version lines are added by the writer).
+pub fn header_field_lines() -> impl Iterator<Item = &'static str> {
+    HEADER_FIELDS.lines()
+}
 
 /// One VCF data line, as VariantContextFactory.create + htsjdk's encoder would write it.
 pub fn record(chr: &str, v: &SageVariant) -> String {
@@ -123,18 +150,7 @@ pub fn record(chr: &str, v: &SageVariant) -> String {
     if v.near_indel {
         info.push(("NEARBY_INDEL", None));
     }
-    info.push((
-        "RC_INFO",
-        Some(format!(
-            "{}-{}-{}-{}-{}-{}",
-            ctx.alignment_start,
-            ctx.var_index,
-            ctx.left_flank_str(),
-            ctx.core_str(),
-            ctx.right_flank_str(),
-            ctx.read_cigar
-        )),
-    ));
+    info.push(("RC_INFO", Some(read_context_vcf_info(ctx))));
     info.push(("RC_NM", Some(c.min_events.to_string())));
     if let Some(r) = &ctx.max_repeat {
         info.push(("RC_REPC", Some(r.count.to_string())));
