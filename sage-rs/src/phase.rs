@@ -1,7 +1,7 @@
 //! Local phasing: CandidateVariantPhaser, PhasedGroupCollection, PhasedVariantGroup, PhasingUtils.
 //! Read counters are identified by their index in the tumor counter list; `pos` maps index to position.
 
-use crate::constants::jround;
+use crate::constants::{is_sbx, jround};
 use crate::evidence::ReadContextCounter;
 use crate::evidence_stage::PhaseSink;
 use crate::filters::SageVariant;
@@ -393,7 +393,11 @@ impl Phaser {
         let mut has_groups = false;
         for c in self.collections.iter_mut() {
             c.finalise();
-            let threshold = (jround((c.groups.len() as f64).log10()) as i32 - 2).max(1);
+            let mut threshold = (jround((c.groups.len() as f64).log10()) as i32 - 2).max(1);
+            if is_sbx() {
+                // lower for the sequencing technologies with longer reads
+                threshold = (threshold - 1).max(1);
+            }
             let mut index = 0;
             while index < c.groups.len() {
                 let g = &mut c.groups[index];

@@ -611,7 +611,7 @@ fn above_min_base_qual(rc: &VariantReadContext, read: &Read, var_read_index: i32
     if start < 0 || end >= read.quals.len() as i32 {
         return false;
     }
-    (start..=end).all(|i| !is_uncertain_base_qual(read.quals[i as usize]))
+    (start..=end).all(|i| !is_uncertain_base_qual(read.quals[i as usize]) && !is_medium_base_qual(read.quals[i as usize] as i8))
 }
 
 /// VariantReadContextBuilder.createContext (Illumina)
@@ -641,6 +641,8 @@ pub fn create_context(
         &rc.ref_bases, ref_repeat_index, ref_repeat_index, MAX_REPEAT_LENGTH, MIN_REPEAT_COUNT + 1, false,
         ref_repeat_index,
     );
-    rc.artefact = ArtefactContext::build(&rc).ok()?;
+    if is_illumina() {
+        rc.artefact = ArtefactContext::build(&rc).ok()?;
+    }
     Some(rc)
 }

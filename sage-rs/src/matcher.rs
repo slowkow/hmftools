@@ -137,7 +137,10 @@ impl Matcher {
         } else {
             ctx.var_index + v.alt_len() - 1
         };
-        if !is_reference && !ctx.all_repeats.is_empty() {
+        if is_sbx() && !v.is_indel() && ctx.has_indel_in_core {
+            lower = ctx.core_index_start;
+            upper = ctx.core_index_end;
+        } else if !is_reference && !ctx.all_repeats.is_empty() {
             let mut min_r = ctx.all_repeats[0].index - 1;
             let mut max_r = ctx.all_repeats[0].end_index() + 1;
             for r in &ctx.all_repeats[1..] {
@@ -390,7 +393,7 @@ fn match_type(
             if excl.map_or(false, |e| e.covers(i)) {
                 return BaseMatch::Mismatch;
             }
-            if q[j as usize] < MATCHING_BASE_QUALITY {
+            if q[j as usize] < matching_base_quality() {
                 mismatches += 1;
                 if mismatches > max_low_qual_mismatches {
                     return BaseMatch::Mismatch;

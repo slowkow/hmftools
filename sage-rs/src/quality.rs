@@ -145,7 +145,11 @@ fn default_illumina_params(high_depth: bool) -> Vec<JitterParams> {
             });
         }
     };
-    if high_depth {
+    if is_sbx() {
+        add(&["A/T", "C/G"], 0.14, 0.155, 0.17, 0.02);
+        add(&["AT/TA", "AC/CA/GT/TG", "AG/GA/CT/TC", "CG/GC"], 0.11, 0.15, 0.19, 0.02);
+        add(&["3-5bp repeat"], 0.14, 0.18, 0.22, 0.06);
+    } else if high_depth {
         add(&["A/T", "C/G"], 0.1, 0.15, 0.2, 0.06);
         add(&["AT/TA", "AC/CA/GT/TG", "AG/GA/CT/TC", "CG/GC"], 0.15, 0.2, 0.25, 0.06);
         add(&["3-5bp repeat"], 0.2, 0.25, 0.3, 0.06);

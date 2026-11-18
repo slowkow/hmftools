@@ -19,7 +19,8 @@ VCF. On every region tested so far the decompressed VCF is byte-identical to Jav
 | 5. Parity sweep | Whole genome compared with and without TINC (below), plus chr21, HLA region, chrM and part of chrX against single-threaded Java. chr21 is also byte-identical in `-high_depth_mode`, `-germline`, tumor-only and `-panel_only` runs. 86 Java unit tests are ported (`src/tests`). |
 | 6. Optimisation | Multi-threading; table-based base decoding, one pass over BAM tags and a reused read buffer in the candidate stage (about 25% less CPU). Still to do: the tumor BAM is read twice, and the evidence stage copies every read. |
 | 7. TINC | Done: `-run_tinc` and the standalone `sage-rs tinc`. |
-| 8. Later | Append mode, CRAM, multiple tumor / reference samples, MSI-specific jitter parameters, split (RNA) reads, SBX, Ultima, the visualiser. Each is rejected with an error if requested. |
+| 8. SBX | Done: `-sequencing_type SBX`. chr21 of the public HG008 tumor/normal pair (119x / 44x, after Java REDUX) is byte-identical to Java, with and without soft filters (3,316 and 68,809 records). |
+| 9. Later | Append mode, CRAM, multiple tumor / reference samples, MSI-specific jitter parameters, split (RNA) reads, Ultima, the visualiser. Each is rejected with an error if requested. |
 
 Regions compared (records identical / total), tumor and normal WGS BAMs on an external volume, 20-core machine:
 

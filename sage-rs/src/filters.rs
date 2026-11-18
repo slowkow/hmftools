@@ -325,8 +325,8 @@ pub struct VariantFilters<'a> {
 }
 
 fn boost_novel_indel(t: &ReadContextCounter) -> bool {
-    // (tier == HOTSPOT || tier == PANEL || isIllumina()) is always true here
-    t.is_indel
+    (matches!(t.tier, Tier::Hotspot | Tier::Panel) || is_illumina())
+        && t.is_indel
         && !t.use_msi_error_rate()
         && t.jitter.lengthened + t.jitter.shortened == 0
         && (t.non_alt_nm_count_total as f64) / ((t.depth() - t.alt_support()) as f64) < 0.75
@@ -522,7 +522,7 @@ impl<'a> VariantFilters<'a> {
         let skip_edge = t.variant().is_long_insert() && !near_multi;
         if !polymorphic && ratio < 2.0 * read_edge_distance_threshold(tier) && !skip_edge {
             edge_penalty = 10.0 * alt_support as f64 * (avg_edge / jmax(avg_alt_edge, 0.001)).log10();
-            if !near_multi && !self.cfg.high_depth_mode {
+            if !is_sbx() && !near_multi && !self.cfg.high_depth_mode {
                 edge_penalty = jmin(edge_penalty, 10.0);
             }
         }
@@ -535,7 +535,11 @@ impl<'a> VariantFilters<'a> {
         }
         let mqf = avg_alt_final_map_quality - 25.0 - map_qual_diff_penalty - read_strand_bias_penalty - edge_penalty - repeat_penalty;
         t.map_qual_factor = mqf;
-        mqf < config.map_qual_factor
+        let mut threshold = config.map_qual_factor;
+        if is_sbx() && t.min_number_of_events == 1 {
+            threshold -= 10.0; // SbxUtils.MQF_NM_1_THRESHOLD_DEDUCTION
+        }
+        mqf < threshold
     }
 
     fn apply_tumor_germline_filters(
@@ -548,6 +552,8 @@ impl<'a> VariantFilters<'a> {
         if r.depth() < min_cov {
             filters.insert(SoftFilter::MinGermlineDepth);
         }
+        let valid_indel_repeat =
+            is_panel_or_long_indel_repeat_variant(t.tier, phred_qual(t), t.is_indel, t.ctx.max_repeat_count());
         // aboveMaxGermlineVaf
         let tumor_vaf = t.vaf();
         if tumor_vaf != 0.0 {
@@ -555,7 +561,7 @@ impl<'a> VariantFilters<'a> {
             if t.is_long_indel() {
                 adjusted_ref_alt += r.jitter.shortened + r.jitter.lengthened;
             }
-            if above_max_germline_vaf(tier, tumor_vaf, adjusted_ref_alt, r.counts.total, config.max_germline_vaf) {
+            if above_max_germline_vaf(tier, valid_indel_repeat, tumor_vaf, adjusted_ref_alt, r.counts.total, config.max_germline_vaf) {
                 filters.insert(SoftFilter::MaxGermlineVaf);
             }
         }
@@ -565,10 +571,8 @@ impl<'a> VariantFilters<'a> {
             let ref_avg = jround(r.average_alt_recalibrated_base_quality()) as i32 as f64;
             let tumor_qual = (t.qualities.full + t.qualities.partial_core + t.qualities.realigned) as f64;
             let ref_qual = (r.qualities.full + r.qualities.partial_core + r.qualities.realigned) as f64;
-            // phredQual() is evaluated in Java for the Ultima/SBX repeat test but has no effect for Illumina
-            let _ = phred_qual(t);
             if above_max_germline_relative_qual(
-                tier, tumor_qual, t.vaf(), t.depth(), tumor_avg, ref_qual, r.depth(), r.alt_support(), ref_avg,
+                tier, tumor_qual, t.vaf(), t.depth(), tumor_avg, ref_qual, r.depth(), r.alt_support(), ref_avg, valid_indel_repeat,
             ) {
                 filters.insert(SoftFilter::MaxGermlineRelativeQual);
             }
@@ -602,8 +606,17 @@ fn below_min_tumor_vaf_probability(t: &ReadContextCounter) -> bool {
 }
 
 /// VariantFilters.aboveMaxGermlineVaf (static form, also used by TINC); Illumina only.
+/// VariantFilters.isPanelOrLongIndelRepeatVariant: only affects the SBX (and Ultima) germline thresholds
+pub fn is_panel_or_long_indel_repeat_variant(tier: Tier, qual: f64, is_indel: bool, repeat_length: i32) -> bool {
+    // PANEL_REPEAT_MIN_QUAL, LONG_INDEL_REPEAT_MIN, LONG_INDEL_REPEAT_MAX
+    let is_indel_repeat = qual >= 100.0 && is_indel && repeat_length > 0;
+    (matches!(tier, Tier::Panel | Tier::Hotspot) && is_indel_repeat)
+        || ((7..=18).contains(&repeat_length) && is_indel_repeat)
+}
+
 pub fn above_max_germline_vaf(
-    tier: Tier, tumor_vaf: f64, adjusted_ref_alt: i32, ref_total: i32, mut max_germline_vaf: f64,
+    tier: Tier, is_valid_indel_repeat: bool, tumor_vaf: f64, adjusted_ref_alt: i32, ref_total: i32,
+    mut max_germline_vaf: f64,
 ) -> bool {
     if tumor_vaf == 0.0 {
         return false;
@@ -613,6 +626,10 @@ pub fn above_max_germline_vaf(
         if tier == Tier::Panel {
             threshold /= 2.0;
         }
+        max_germline_vaf = jmax(jmin(threshold, max_germline_vaf * 2.0), max_germline_vaf);
+    } else if is_sbx() && is_valid_indel_repeat {
+        // SbxUtils.GERMLINE_VAF_INDEL_REPEAT_THRESHOLD, GERMLINE_VAF_INDEL_REPEAT_MIN_THRESHOLD_FACTOR
+        let threshold = tumor_vaf / 3.5;
         max_germline_vaf = jmax(jmin(threshold, max_germline_vaf * 2.0), max_germline_vaf);
     }
     let adjusted_ref_vaf = adjusted_ref_alt as f64 / ref_total as f64;
@@ -636,7 +653,7 @@ pub fn above_max_mnv_indel_germline_alt_support(
 #[allow(clippy::too_many_arguments)]
 pub fn above_max_germline_relative_qual(
     tier: Tier, tumor_qual: f64, tumor_vaf: f64, tumor_depth: i32, tumor_avg_base_qual: f64, ref_qual: f64,
-    ref_depth: i32, ref_alt_support: i32, ref_avg_base_qual: f64,
+    ref_depth: i32, ref_alt_support: i32, ref_avg_base_qual: f64, is_valid_indel_repeat: bool,
 ) -> bool {
     if tumor_qual == 0.0 {
         return false;
@@ -655,7 +672,13 @@ pub fn above_max_germline_relative_qual(
         Tier::Panel => 0.00025,
         _ => 1e-7,
     };
-    let ratio_threshold = if tier == Tier::Hotspot { 0.5 } else { 0.12 };
+    let ratio_threshold = if tier == Tier::Hotspot {
+        0.5
+    } else if is_sbx() && is_valid_indel_repeat {
+        0.2 // SbxUtils.GERMLINE_VAF_REL_QUAL_RATIO_THRESHOLD
+    } else {
+        0.12
+    };
     prob > prob_threshold && adjusted_ref_qual_ratio > ratio_threshold
 }
 

@@ -341,6 +341,7 @@ pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
         mate_cigar: first.mate_cigar.clone(),
         consensus: first.consensus,
         has_consensus_tag: first.has_consensus_tag,
+        duplex_index: first.duplex_index,
     })
 }
 

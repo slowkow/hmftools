@@ -118,7 +118,8 @@ impl AltContext {
             candidates: Vec::new(),
             above_min_alt_support: false,
             unique_read_ids: Vec::new(),
-            has_sufficient_qual_core_support: false,
+            // only Illumina checks for high-quality core support
+            has_sufficient_qual_core_support: !is_illumina(),
         }
     }
 

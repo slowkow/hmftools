@@ -3,7 +3,7 @@
 # usage: run_java.sh <name> <threads> [extra sage args, e.g. -specific_regions "chr17:7660000-7700000"]
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-source "$here/env.local.sh"
+source "${SAGE_ENV:-$here/env.local.sh}"   # SAGE_ENV selects another sample set
 name=$1; threads=$2; shift 2
 # SAGE_TUMOR_ONLY=1 leaves the reference sample out
 reference=(-reference "$SAGE_NORMAL" -reference_bam "$SAGE_BAM_DIR/$SAGE_NORMAL.redux.bam" -ref_sample_count 1)

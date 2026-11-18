@@ -8,7 +8,8 @@
 
 use crate::constants::{jround, LONG_INSERT_LENGTH};
 use crate::filters::{
-    above_max_germline_relative_qual, above_max_germline_vaf, above_max_mnv_indel_germline_alt_support, tier_config,
+    above_max_germline_relative_qual, above_max_germline_vaf, above_max_mnv_indel_germline_alt_support,
+    is_panel_or_long_indel_repeat_variant, tier_config,
     ALL_FILTERS,
 };
 use crate::fmt::{java_fixed, vcf_double};
@@ -108,6 +109,9 @@ pub struct VariantData {
     pub has_context: bool,
     pub filters: Vec<String>,
     pub tier: Option<Tier>,
+    /// QUAL and RC_REPC, for the indel repeat test in the SBX germline thresholds
+    pub qual: f64,
+    pub repeat_count: i32,
     pub map_qual_factor: f64,
     pub nearby_indel: bool,
     pub has_lps: bool,
@@ -182,6 +186,7 @@ impl VariantData {
             tumor_depth: dp(tumor_col),
             tumor_alt_frags: ad1(tumor_col),
             has_context: true,
+            qual: f[5].parse().unwrap_or(0.0),
             filters: f[6].split(';').filter(|x| !x.is_empty() && *x != "PASS" && *x != ".").map(|x| x.to_string()).collect(),
             ref_abq: int_list::<2>(geno(ref_col, "ARCBQ"))[1],
             tumor_abq: int_list::<2>(geno(tumor_col, "ARCBQ"))[1],
@@ -198,6 +203,7 @@ impl VariantData {
             match key {
                 "TIER" => v.tier = tier_from_str(value),
                 "MQF" => v.map_qual_factor = value.parse().unwrap_or(0.0),
+                "RC_REPC" => v.repeat_count = value.parse().unwrap_or(0),
                 "NEARBY_INDEL" => v.nearby_indel = true,
                 "LPS" => v.has_lps = true,
                 _ => {}
@@ -407,7 +413,8 @@ fn recheck_max_germline_vaf(v: &mut VariantData) {
     }
     adjusted_ref_alt = v.calc_reduced_alt_count(adjusted_ref_alt);
     let max_germline_vaf = tier_config(v.tier()).max_germline_vaf;
-    if above_max_germline_vaf(v.tier(), v.tumor_af(), adjusted_ref_alt, v.ref_counts[5], max_germline_vaf) {
+    let valid_indel_repeat = is_panel_or_long_indel_repeat_variant(v.tier(), v.qual, v.is_indel(), v.repeat_count);
+    if above_max_germline_vaf(v.tier(), valid_indel_repeat, v.tumor_af(), adjusted_ref_alt, v.ref_counts[5], max_germline_vaf) {
         return;
     }
     v.remove_new_filter(F_VAF);
@@ -429,6 +436,7 @@ fn recheck_max_germline_relative_qual(v: &mut VariantData) {
         v.ref_counts[5],
         alt_support(&v.ref_counts),
         v.ref_abq as f64,
+        is_panel_or_long_indel_repeat_variant(v.tier(), v.qual, v.is_indel(), v.repeat_count),
     ) {
         return;
     }

@@ -101,6 +101,8 @@ pub struct Read {
     pub mate_cigar: Option<String>,
     pub consensus: ConsensusType,
     pub has_consensus_tag: bool,
+    /// SBX: the YX tag, the read index where the duplex region starts; -1 if absent
+    pub duplex_index: i32,
 }
 
 impl Read {

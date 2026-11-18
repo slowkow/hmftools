@@ -8,12 +8,12 @@ are reproduced deliberately.
 
 ## Supported
 
-Tumor/normal somatic calling on Illumina BAMs with REDUX outputs
+Tumor/normal somatic calling on Illumina and SBX (`-sequencing_type SBX`) BAMs with REDUX outputs
 (`<sample>.redux.bqr.tsv`, `.redux.jitter_params.tsv`, `.redux.ms_table.tsv.gz`).
 Also: tumor-only runs, `-panel_only`, `-high_depth_mode`, `-germline`, and TINC (`-run_tinc` with
 `-pon_file` and `-gnomad_freq_dir`, or standalone as `sage-rs tinc -input_vcf ...`).
 Not yet: append mode, CRAM, more than one tumor or reference sample, samples REDUX predicts as MSI,
-split (RNA) reads, SBX, Ultima, the visualiser. Unsupported options stop with an error rather than being ignored.
+split (RNA) reads, Ultima, the visualiser. Unsupported options stop with an error rather than being ignored.
 
 ## Build and run
 
@@ -57,3 +57,6 @@ that the recovery path is exercised.
 
 `cargo test --release` runs the unit tests, including the Java SAGE unit tests ported to `src/tests`
 (one module per Java test class).
+
+`SAGE_ENV=/path/to/other-env.sh` points the run scripts at another sample set, for example the public
+HG008 SBX slices.

@@ -135,6 +135,7 @@ pub fn build_sam_record_quals(alignment_start: i32, cigar: &str, read_bases: &st
         mate_cigar: None,
         consensus: ConsensusType::None,
         has_consensus_tag: false,
+        duplex_index: -1,
     }
 }
 

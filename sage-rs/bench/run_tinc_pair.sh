@@ -3,7 +3,7 @@
 # usage: run_tinc_pair.sh <name> <input.sage.vcf.gz> [threads]
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-source "$here/env.local.sh"
+source "${SAGE_ENV:-$here/env.local.sh}"   # SAGE_ENV selects another sample set
 name=$1; input=$2; threads=${3:-4}
 jar=${SAGE_JAR:-$here/../../sage/target/sage-5.1-jar-with-dependencies.jar}
 v=$SAGE_RESOURCES/dna/variants

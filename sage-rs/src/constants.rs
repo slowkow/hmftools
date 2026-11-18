@@ -92,3 +92,75 @@ pub fn jmin(a: f64, b: f64) -> f64 {
         b
     }
 }
+
+// --- sequencing technology (SageConfig.SEQUENCING_TYPE, a static in Java too) ---
+
+use std::sync::atomic::{AtomicU8, Ordering};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SequencingType {
+    Illumina = 0,
+    Ultima = 1,
+    Sbx = 2,
+}
+
+static SEQUENCING_TYPE: AtomicU8 = AtomicU8::new(0);
+
+pub fn set_sequencing_type(t: SequencingType) {
+    SEQUENCING_TYPE.store(t as u8, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests run in parallel threads, so a test selects its sequencing type for its own thread only.
+    static TEST_SEQUENCING_TYPE: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub fn set_test_sequencing_type(t: Option<SequencingType>) {
+    TEST_SEQUENCING_TYPE.with(|c| c.set(t.map(|t| t as u8)));
+}
+
+fn sequencing_type() -> u8 {
+    #[cfg(test)]
+    if let Some(t) = TEST_SEQUENCING_TYPE.with(|c| c.get()) {
+        return t;
+    }
+    SEQUENCING_TYPE.load(Ordering::Relaxed)
+}
+
+pub fn is_illumina() -> bool {
+    sequencing_type() == SequencingType::Illumina as u8
+}
+pub fn is_sbx() -> bool {
+    sequencing_type() == SequencingType::Sbx as u8
+}
+
+pub const NON_ILLUMINA_MAX_READ_LENGTH: i32 = 800;
+pub const MATCHING_BASE_QUALITY_SBX: u8 = 10;
+// SbxBamUtils: quals assigned by REDUX
+const SBX_MEDIUM_QUAL_LOWER: i8 = 27;
+const SBX_MEDIUM_QUAL_UPPER: i8 = 29;
+
+/// The base quality below which a mismatch against the read context is tolerated.
+pub fn matching_base_quality() -> u8 {
+    if is_sbx() {
+        MATCHING_BASE_QUALITY_SBX
+    } else {
+        MATCHING_BASE_QUALITY
+    }
+}
+
+/// BaseQualAdjustment.isMediumBaseQual: only SBX has a medium band (simplex bases)
+pub fn is_medium_base_qual(q: i8) -> bool {
+    is_sbx() && q >= SBX_MEDIUM_QUAL_LOWER && q <= SBX_MEDIUM_QUAL_UPPER
+}
+
+/// BaseQualAdjustment.isHighBaseQual
+pub fn is_high_base_qual_byte(q: i8) -> bool {
+    if is_sbx() {
+        q > SBX_MEDIUM_QUAL_UPPER
+    } else {
+        q >= ILLUMINA_HIGH_BASE_QUAL as i8
+    }
+}

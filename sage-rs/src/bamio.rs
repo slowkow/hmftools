@@ -52,6 +52,7 @@ fn blank_read() -> Read {
         mate_cigar: None,
         consensus: ConsensusType::None,
         has_consensus_tag: false,
+        duplex_index: -1,
     }
 }
 
@@ -82,6 +83,7 @@ fn fill(rec: &bam::Record, read: &mut Read) {
     read.nm = None;
     read.consensus = ConsensusType::None;
     read.has_consensus_tag = false;
+    read.duplex_index = -1;
     let mut has_mate_cigar = false;
     for (tag, value) in rec.aux_iter().flatten() {
         match tag {
@@ -106,6 +108,17 @@ fn fill(rec: &bam::Record, read: &mut Read) {
                         }
                         None => read.mate_cigar = Some(s.to_string()),
                     }
+                }
+            }
+            b"YX" => {
+                read.duplex_index = match value {
+                    Aux::U8(v) => v as i32,
+                    Aux::I8(v) => v as i32,
+                    Aux::U16(v) => v as i32,
+                    Aux::I16(v) => v as i32,
+                    Aux::U32(v) => v as i32,
+                    Aux::I32(v) => v,
+                    _ => -1,
                 }
             }
             b"UT" => {

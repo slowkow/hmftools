@@ -92,8 +92,10 @@ impl Config {
         let flag = |k: &str| vals.contains_key(k);
 
         if let Some(seq) = get("sequencing_type") {
-            if !seq.eq_ignore_ascii_case("ILLUMINA") {
-                bail!("sequencing_type {seq} is not supported; only ILLUMINA is implemented");
+            if seq.eq_ignore_ascii_case("SBX") {
+                set_sequencing_type(SequencingType::Sbx);
+            } else if !seq.eq_ignore_ascii_case("ILLUMINA") {
+                bail!("sequencing_type {seq} is not supported; ILLUMINA and SBX are implemented");
             }
         }
         let tumor_bams = list(get("tumor_bam"));
@@ -141,7 +143,8 @@ impl Config {
             log_candidates: flag("log_candidates"),
             specific_chr,
             specific_regions,
-            read_length: int("read_length", 0)?,
+            // SBX reads are long and variable, so the length is not sampled from the BAM
+            read_length: int("read_length", if is_sbx() { NON_ILLUMINA_MAX_READ_LENGTH } else { 0 })?,
             min_map_quality: int("min_map_quality", DEFAULT_MIN_MAP_QUALITY)?,
             max_read_depth: int("max_read_depth", DEFAULT_MAX_READ_DEPTH)?,
             max_read_depth_panel: int("max_read_depth_panel", DEFAULT_MAX_READ_DEPTH_PANEL)?,

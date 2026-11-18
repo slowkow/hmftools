@@ -20,6 +20,7 @@ mod realignment; // evidence/RealignmentTest
 mod ref_context_consumer; // candidate/RefContextConsumerTest
 mod ref_sequence; // common/RefSequenceTest
 mod repeat_info; // common/RepeatInfoTest
+mod sbx; // seqtech/SbxTest
 mod soft_filter; // filters/SoftFilterTest
 mod split_read; // evidence/SplitReadTest
 mod variant_dedup; // dedup/VariantDedupTest

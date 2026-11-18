@@ -204,6 +204,9 @@ pub fn has_valid_base_quals(ctx: &VariantReadContext, alt_index_upper: i32, read
         if within_core && ctx_index >= lower && ctx_index <= upper && is_uncertain_base_qual(read.quals[read_index as usize]) {
             return false;
         }
+        if within_core && is_medium_base_qual(read.quals[read_index as usize] as i8) {
+            return false;
+        }
         ctx_index += 1;
     }
     true
@@ -271,9 +274,12 @@ pub(crate) fn has_jitter_match_type(
         if within_permitted && is_uncertain_base_qual(q) {
             return false;
         }
+        if within_core && is_medium_base_qual(q as i8) {
+            return false;
+        }
         if read_bases[read_index as usize] != ctx_base {
             let mut permitted = false;
-            if q < MATCHING_BASE_QUALITY {
+            if q < matching_base_quality() {
                 if within_core {
                     if permitted_low_qual_mismatches > 0 && !within_permitted {
                         permitted_low_qual_mismatches -= 1;
@@ -832,7 +838,7 @@ impl ReadContextCounter {
         false
     }
 
-    fn count_consensus_type(&mut self, read: &Read, supports_variant: bool) {
+    fn count_consensus_type(&mut self, read: &Read, read_var_index: i32, supports_variant: bool) {
         if self.consensus_type_counts.is_none() {
             if !read.has_consensus_tag {
                 return;
@@ -842,17 +848,22 @@ impl ReadContextCounter {
             c[3] = self.strong_alt_support();
             self.consensus_type_counts = Some(c);
         }
+        let consensus =
+            if is_sbx() { sbx_consensus_type(&self.ctx, read_var_index, read) } else { read.consensus };
         let c = self.consensus_type_counts.as_mut().unwrap();
-        let t = read.consensus as usize;
+        let t = consensus as usize;
         c[t] += 1;
         if supports_variant {
             c[t + 3] += 1;
         }
     }
 
-    fn register_read_support(&mut self, read: &Read, support: Option<Support>, combined_quality: f64, seq_tech_qual: f64, is_medium: bool) {
+    fn register_read_support(
+        &mut self, read: &Read, support: Option<Support>, read_var_index: i32, combined_quality: f64, seq_tech_qual: f64,
+        is_medium: bool,
+    ) {
         let strong = matches!(support, Some(Support::Full | Support::PartialCore | Support::Realigned));
-        self.count_consensus_type(read, strong);
+        self.count_consensus_type(read, read_var_index, strong);
         self.counts.add(support, 1);
         self.qualities.add(support, combined_quality as i32);
         if strong {
@@ -1024,7 +1035,7 @@ impl ReadContextCounter {
                     MatchType::Realigned => Support::Realigned,
                     _ => Support::Core,
                 };
-                self.register_read_support(read, Some(support), combined_quality, seq_tech_qual, q.is_medium_qual);
+                self.register_read_support(read, Some(support), read_var_index, combined_quality, seq_tech_qual, q.is_medium_qual);
                 self.qual_counters.update(&q, read.mapq, match_type);
                 self.read_edge_distance.update(read, fragment, match_type.full_alt_support());
                 self.count_alt_support_metrics(read, fragment);
@@ -1043,7 +1054,7 @@ impl ReadContextCounter {
         }
 
         let mut realigned_type = Realigned::None;
-        if match_type != MatchType::Ref {
+        if match_type != MatchType::Ref || (is_sbx() && !self.is_indel && ctx.has_indel_in_core) {
             let idx = *realigned_read_index.get_or_insert_with(|| realigned_read_index_position(&ctx, read));
             let can_realign = idx != INVALID_INDEX && self.matcher.covers_variant(&ctx, read.len(), idx);
             if can_realign {
@@ -1064,7 +1075,7 @@ impl ReadContextCounter {
                     return Unrelated;
                 }
                 if matches!(realigned_type, Realigned::Exact | Realigned::LowQualMismatches) {
-                    self.register_read_support(read, Some(Support::Realigned), combined_quality, seq_tech_qual, q.is_medium_qual);
+                    self.register_read_support(read, Some(Support::Realigned), read_var_index, combined_quality, seq_tech_qual, q.is_medium_qual);
                     self.qual_counters.update(&q, read.mapq, MatchType::Realigned);
                     self.read_edge_distance.update(read, fragment, true);
                     self.count_alt_support_metrics(read, fragment);
@@ -1104,7 +1115,7 @@ impl ReadContextCounter {
         let (f, r) = self.register_read_strand(false, read, fragment);
         self.non_alt_read_strand_bias.forward += f;
         self.non_alt_read_strand_bias.reverse += r;
-        self.register_read_support(read, support, combined_quality, seq_tech_qual, q.is_medium_qual);
+        self.register_read_support(read, support, read_var_index, combined_quality, seq_tech_qual, q.is_medium_qual);
         self.read_edge_distance.update(read, fragment, false);
         self.non_alt_nm_count_total += number_of_events as i64;
 
@@ -1160,7 +1171,11 @@ impl<'a> QualityCalculator<'a> {
             } else if uses_msi && artefact_qual != INVALID_BASE_QUAL {
                 jmin(artefact_qual, msi_qual)
             } else {
-                let avg = average_core_quality(ctx, read, read_var_index);
+                let avg = if is_sbx() {
+                    sbx_indel_core_quality(ctx, read, read_var_index)
+                } else {
+                    average_core_quality(ctx, read, read_var_index)
+                };
                 if uses_msi {
                     jmin(avg, msi_qual)
                 } else if artefact_qual != INVALID_BASE_QUAL {
@@ -1171,6 +1186,8 @@ impl<'a> QualityCalculator<'a> {
             }
         } else if artefact_qual != INVALID_BASE_QUAL {
             artefact_qual
+        } else if is_sbx() && ctx.has_indel_in_core {
+            sbx_indel_core_quality(ctx, read, read_var_index)
         } else {
             let var_len = ctx.variant.ref_len();
             min_base_qual_across_range(read_var_index, read_var_index + var_len - 1, read)
@@ -1182,6 +1199,13 @@ impl<'a> QualityCalculator<'a> {
         let mut recalibrated = seq_tech;
         if !rc.is_indel && ctx.artefact.is_none() {
             recalibrated = self.recalibrated_base_quality(rc, read_var_index, read);
+            // don't boost the recalibrated qual of SBX artefacts
+            if is_sbx()
+                && ctx.has_indel_in_core
+                && seq_tech < min_base_qual_across_range(read_var_index, read_var_index + ctx.variant.ref_len() - 1, read)
+            {
+                recalibrated = jmin(recalibrated, seq_tech);
+            }
         }
 
         // calcMapQuality
@@ -1218,7 +1242,7 @@ impl<'a> QualityCalculator<'a> {
         penalised_base_quality -= edge_penalty as f64;
 
         let combined = jmax(0.0, jmin(penalised_map_quality as f64, penalised_base_quality));
-        let is_medium = if uses_msi { !has_valid_msi_jitter_quals } else { false };
+        let is_medium = if uses_msi { !has_valid_msi_jitter_quals } else { is_medium_base_qual(seq_tech as i8) };
         QualityScores {
             seq_tech_base_quality: seq_tech,
             recalibrated_base_quality: recalibrated,
@@ -1232,15 +1256,19 @@ impl<'a> QualityCalculator<'a> {
     fn recalibrated_base_quality(&self, rc: &ReadContextCounter, start_read_index: i32, read: &Read) -> f64 {
         let variant = &rc.ctx.variant;
         let pos_orient = !read.negative_strand();
+        let mut consensus = read.consensus;
+        if is_sbx() && consensus == ConsensusType::Dual && !in_duplex_region(pos_orient, read.duplex_index, start_read_index) {
+            consensus = ConsensusType::Single;
+        }
         if variant.is_snv() {
-            return rc.qual_cache.get_qual(self, read.quals[start_read_index as usize], read.consensus, 0, pos_orient);
+            return rc.qual_cache.get_qual(self, read.quals[start_read_index as usize], consensus, 0, pos_orient);
         }
         let max_index = (start_read_index + variant.ref_len()).min(read.quals.len() as i32) - 1;
         let max_length = max_index - start_read_index + 1;
         let mut quality = i32::MAX as f64;
         for i in 0..max_length {
             let raw = read.quals[(start_read_index + i) as usize];
-            quality = jmin(quality, rc.qual_cache.get_qual(self, raw, read.consensus, i as usize, pos_orient));
+            quality = jmin(quality, rc.qual_cache.get_qual(self, raw, consensus, i as usize, pos_orient));
         }
         quality
     }
@@ -1282,7 +1310,44 @@ pub fn is_chimeric_read(read: &Read) -> bool {
 }
 
 pub fn is_high_base_qual(q: f64) -> bool {
-    (q as i8) >= ILLUMINA_HIGH_BASE_QUAL as i8
+    is_high_base_qual_byte(q as i8)
+}
+
+/// SbxBamUtils.inDuplexRegion
+fn in_duplex_region(pos_orientation_read: bool, duplex_base_index: i32, base_index: i32) -> bool {
+    if duplex_base_index < 0 {
+        return false;
+    }
+    if pos_orientation_read {
+        base_index >= duplex_base_index
+    } else {
+        base_index <= duplex_base_index
+    }
+}
+
+/// SbxUtils.determineConsensusType: a duplex read only counts as DUAL if the whole core is in its duplex region
+fn sbx_consensus_type(ctx: &VariantReadContext, read_var_index: i32, read: &Read) -> ConsensusType {
+    if read.consensus != ConsensusType::Dual {
+        return read.consensus;
+    }
+    let start = read_var_index - ctx.left_core_length();
+    let end = read_var_index + ctx.right_core_length();
+    for i in start..=end {
+        if !in_duplex_region(!read.negative_strand(), read.duplex_index, i) {
+            return ConsensusType::Single;
+        }
+    }
+    ConsensusType::Dual
+}
+
+/// SbxUtils.indelCoreQuality: the minimum base quality across the core
+fn sbx_indel_core_quality(ctx: &VariantReadContext, read: &Read, read_var_index: i32) -> f64 {
+    let start = (read_var_index - ctx.left_core_length()).max(0);
+    let end = (read_var_index + ctx.right_core_length()).min(read.len() - 1);
+    if end - start + 1 <= 0 {
+        return 0.0;
+    }
+    min_base_qual_across_range(start, end, read)
 }
 
 /// Unused config placeholder so the counter's constructor signature stays stable.
