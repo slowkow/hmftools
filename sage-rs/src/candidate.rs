@@ -223,13 +223,13 @@ impl AltContext {
     }
 }
 
-struct RefContext {
+pub(crate) struct RefContext {
     position: i32,
     alts: Vec<AltContext>,
 }
 
 /// EvictingArray: a ring buffer of RefContext by position.
-struct EvictingArray {
+pub(crate) struct EvictingArray {
     elements: Vec<Option<RefContext>>,
     min_position: i32,
     min_position_index: i32,
@@ -262,7 +262,7 @@ impl EvictingArray {
         self.min_position = 1.max(position - self.read_length_buffer);
     }
     /// checkFlush; evicted contexts are appended to `evicted`.
-    fn check_flush(&mut self, position: i32, evicted: &mut Vec<RefContext>) {
+    pub(crate) fn check_flush(&mut self, position: i32, evicted: &mut Vec<RefContext>) {
         let flush_count;
         if position > 0 {
             if self.min_position == 0 {
@@ -294,7 +294,7 @@ impl EvictingArray {
         }
     }
     /// getOrCreateRefContext: false when the position precedes the window (Java returns null).
-    fn ensure(&mut self, position: i32, evicted: &mut Vec<RefContext>) -> bool {
+    pub(crate) fn ensure(&mut self, position: i32, evicted: &mut Vec<RefContext>) -> bool {
         if self.min_position > 0 && position < self.min_position {
             eprintln!("WARN ignoring read with position({}) before prior position({})", position, self.min_position);
             return false;
@@ -318,32 +318,58 @@ impl EvictingArray {
     }
 }
 
-struct RegionBlock {
-    start: i32,
-    end: i32,
+/// Test-only constructor and accessors (EvictingArray's @VisibleForTesting methods in Java).
+#[cfg(test)]
+impl EvictingArray {
+    pub(crate) fn with_capacity(capacity: i32, read_length_buffer: i32) -> Self {
+        EvictingArray {
+            elements: (0..capacity).map(|_| None).collect(),
+            min_position: 0,
+            min_position_index: 0,
+            read_length_buffer,
+            capacity,
+        }
+    }
+    pub(crate) fn capacity(&self) -> i32 {
+        self.capacity
+    }
+    pub(crate) fn read_length_buffer(&self) -> i32 {
+        self.read_length_buffer
+    }
+    pub(crate) fn min_position(&self) -> i32 {
+        self.min_position
+    }
+    pub(crate) fn item_count(&self) -> usize {
+        self.elements.iter().filter(|x| x.is_some()).count()
+    }
+}
+
+pub(crate) struct RegionBlock {
+    pub(crate) start: i32,
+    pub(crate) end: i32,
     hotspot_positions: Vec<i32>,
-    apply_event_penalty: bool,
-    depth_limit: i32,
-    depth: i32,
+    pub(crate) apply_event_penalty: bool,
+    pub(crate) depth_limit: i32,
+    pub(crate) depth: i32,
 }
 
 impl RegionBlock {
     fn contains(&self, pos: i32) -> bool {
         pos >= self.start && pos <= self.end
     }
-    fn limit_reached(&self) -> bool {
+    pub(crate) fn limit_reached(&self) -> bool {
         self.depth >= self.depth_limit
     }
     fn is_hotspot(&self, pos: i32) -> bool {
         self.hotspot_positions.contains(&pos)
     }
-    fn covers_hotspot(&self, s: i32, e: i32) -> bool {
+    pub(crate) fn covers_hotspot(&self, s: i32, e: i32) -> bool {
         self.hotspot_positions.iter().any(|&p| position_within(p, s, e))
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_region_blocks(
+pub(crate) fn build_region_blocks(
     chr: &str, region: BaseRegion, panel: &[BaseRegion], hotspots: &[SimpleVariant], ref_data: &RefData,
     max_depth_panel: i32, max_depth_non_panel: i32,
 ) -> Vec<RegionBlock> {
@@ -505,7 +531,7 @@ pub fn position_from_read_index(
     None
 }
 
-fn mnv_length(read_index: i32, ref_index: i32, read_bases: &[u8], ref_bases: &[u8]) -> i32 {
+pub(crate) fn mnv_length(read_index: i32, ref_index: i32, read_bases: &[u8], ref_bases: &[u8]) -> i32 {
     let diff = |i: i32| {
         ref_index + i < ref_bases.len() as i32
             && read_index + i < read_bases.len() as i32

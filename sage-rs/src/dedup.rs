@@ -12,7 +12,7 @@ fn is_germline_and_not_tumor_filtered(filters: &HashSet<SoftFilter>) -> bool {
 }
 
 /// VariantDeduper.longerContainsShorter
-fn longer_contains_shorter(shorter: &SimpleVariant, longer: &SimpleVariant) -> bool {
+pub(crate) fn longer_contains_shorter(shorter: &SimpleVariant, longer: &SimpleVariant) -> bool {
     if shorter.pos < longer.pos || shorter.end() > longer.end() {
         return false;
     }
@@ -25,7 +25,7 @@ fn mnv_changed_bases(v: &SimpleVariant) -> usize {
 }
 
 /// dedupMnvOverlaps
-fn dedup_mnv_overlaps(variants: &mut [SageVariant]) {
+pub(crate) fn dedup_mnv_overlaps(variants: &mut [SageVariant]) {
     let mnvs: Vec<usize> = (0..variants.len())
         .filter(|&i| variants[i].variant().is_mnv() && variants[i].is_passing() && variants[i].has_local_phase_sets())
         .collect();
@@ -65,7 +65,7 @@ fn dedup_mnv_overlaps(variants: &mut [SageVariant]) {
 }
 
 /// dedupMnvSnvs
-fn dedup_mnv_snvs(variants: &mut [SageVariant]) {
+pub(crate) fn dedup_mnv_snvs(variants: &mut [SageVariant]) {
     let candidates: Vec<usize> = (0..variants.len())
         .filter(|&i| !variants[i].is_indel() && variants[i].is_passing() && variants[i].has_local_phase_sets())
         .collect();
@@ -126,7 +126,7 @@ fn codon_differences(codon: BaseRegion, v: &SimpleVariant) -> i32 {
     (s..=e).filter(|p| v.ref_[(p - v.pos) as usize] != v.alt[(p - v.pos) as usize]).count() as i32
 }
 
-struct MixedGermlineDedup<'a> {
+pub(crate) struct MixedGermlineDedup<'a> {
     transcripts: &'a [TranscriptData],
     index: usize,
     next_mixed_id: i32,
@@ -179,7 +179,13 @@ impl<'a> MixedGermlineDedup<'a> {
         Some(BaseRegion::new(start, end))
     }
 
-    fn dedup(&mut self, variants: &mut [SageVariant]) {
+    /// new DedupMixedGermlineSomatic(transcripts, filterConfig), for the unit tests
+    #[cfg(test)]
+    pub(crate) fn new(transcripts: &'a [TranscriptData]) -> Self {
+        MixedGermlineDedup { transcripts, index: 0, next_mixed_id: 1 }
+    }
+
+    pub(crate) fn dedup(&mut self, variants: &mut [SageVariant]) {
         let germline_snv = |v: &SageVariant| v.variant().is_snv() && !v.is_passing() && is_germline_and_not_tumor_filtered(&v.filters);
         let passing_mnv = |v: &SageVariant| v.variant().is_mnv() && v.is_passing() && v.has_local_phase_sets();
         let passing_snv = |v: &SageVariant| v.variant().is_snv() && v.is_passing() && v.has_local_phase_sets();
@@ -548,6 +554,12 @@ fn recover_filtered_variant(variants: &[SageVariant], data: &[VariantData], vi: 
         }
     }
     !v.filters.iter().any(|f| f.is_germline())
+}
+
+/// IndelDeduper.dedupVariants, for the unit tests
+#[cfg(test)]
+pub(crate) fn dedup_indels(variants: &mut [SageVariant], genome: &RefGenome, chr: &str) {
+    IndelDeduper { genome, chr, iterations: 0 }.dedup(variants);
 }
 
 /// DedupMatching.dedupMatchingVariants

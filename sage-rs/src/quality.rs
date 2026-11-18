@@ -109,7 +109,7 @@ impl JitterParams {
         }
     }
     /// MsiModelParams.calcErrorRate
-    fn calc_error_rate(&self, repeat_count: i32, repeat_count_change: i32, fixed_scale: Option<f64>) -> f64 {
+    pub(crate) fn calc_error_rate(&self, repeat_count: i32, repeat_count_change: i32, fixed_scale: Option<f64>) -> f64 {
         let scale = fixed_scale.unwrap_or(self.intercept + self.gradient * repeat_count as f64);
         let modified_skew = 1.0 + (self.skew - 1.0) * jmin(scale, 1.0);
         let laplace = |change: i32| -> f64 {

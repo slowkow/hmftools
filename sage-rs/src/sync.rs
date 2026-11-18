@@ -12,7 +12,7 @@ pub const SYNC_NO_OVERLAP: usize = 2;
 pub const SYNC_CIGAR_MISMATCH: usize = 3;
 pub const SYNC_EXCEPTION: usize = 5;
 
-enum Outcome {
+pub(crate) enum Outcome {
     Combined(Read),
     NoOverlap,
     Inversion,
@@ -120,7 +120,7 @@ fn adjust_base_qual(q: f64) -> u8 {
     STD[0] as u8
 }
 
-fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
+pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
     if !positions_overlap(first.start, first.end, second.start, second.end) {
         return Outcome::NoOverlap;
     }

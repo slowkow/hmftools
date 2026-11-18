@@ -29,7 +29,7 @@ impl RepeatInfo {
     fn matches(&self, o: &RepeatInfo) -> bool {
         self.index == o.index && self.bases == o.bases && self.count == o.count
     }
-    fn is_multiple_of(&self, other: &RepeatInfo) -> bool {
+    pub(crate) fn is_multiple_of(&self, other: &RepeatInfo) -> bool {
         if other.repeat_length() < self.repeat_length() {
             return false;
         }
@@ -48,7 +48,7 @@ impl RepeatInfo {
         }
         true
     }
-    fn is_alternative_start(&self, other: &RepeatInfo) -> bool {
+    pub(crate) fn is_alternative_start(&self, other: &RepeatInfo) -> bool {
         let rl = self.repeat_length();
         if rl == 1 || other.repeat_length() != rl {
             return false;
@@ -139,7 +139,7 @@ pub fn extend_repeat_lower(repeat: RepeatInfo, bases: &[u8]) -> RepeatInfo {
     RepeatInfo::new(start, repeat.bases, repeat.count + extra)
 }
 
-fn add_if_unique(repeats: &mut Vec<RepeatInfo>, new: RepeatInfo) {
+pub(crate) fn add_if_unique(repeats: &mut Vec<RepeatInfo>, new: RepeatInfo) {
     for r in repeats.iter() {
         if new.matches(r) {
             return;

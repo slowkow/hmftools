@@ -60,16 +60,16 @@ fn consider_read(rc: &ReadContextCounter, unclipped_start: i32, unclipped_end: i
     position_within(rc.position(), unclipped_start, unclipped_end)
 }
 
-struct Collector<'a> {
-    counters: Vec<ReadContextCounter>,
-    last_index: i64,
-    selected: Vec<usize>,
-    ref_seq: &'a RefSequence,
-    qc: &'a QualityCalculator<'a>,
+pub(crate) struct Collector<'a> {
+    pub(crate) counters: Vec<ReadContextCounter>,
+    pub(crate) last_index: i64,
+    pub(crate) selected: Vec<usize>,
+    pub(crate) ref_seq: &'a RefSequence,
+    pub(crate) qc: &'a QualityCalculator<'a>,
 }
 
 impl<'a> Collector<'a> {
-    fn process(&mut self, read: &Read, fragment: Option<&FragmentData>, phaser: &mut Option<&mut dyn PhaseSink>) {
+    pub(crate) fn process(&mut self, read: &Read, fragment: Option<&FragmentData>, phaser: &mut Option<&mut dyn PhaseSink>) {
         self.selected.clear();
         let n = self.counters.len() as i64;
         let mut read_start = read.start - read.left_soft_clip();

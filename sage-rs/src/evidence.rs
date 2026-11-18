@@ -49,7 +49,7 @@ pub enum ReadMatchType {
 }
 
 /// RawContext.exceedsSoftClipLowBaseQual
-fn exceeds_soft_clip_low_base_qual(quals: &[u8], start: i32, sc_len: i32) -> bool {
+pub(crate) fn exceeds_soft_clip_low_base_qual(quals: &[u8], start: i32, sc_len: i32) -> bool {
     if sc_len < MAX_SOFT_CLIP_LOW_QUAL_COUNT {
         return false;
     }
@@ -171,7 +171,7 @@ pub fn read_index_from_position(alignment_start: i32, cigar: &[CigarEl], positio
 }
 
 /// Realignment.realignedReadIndexPosition
-fn realigned_read_index_position(ctx: &VariantReadContext, read: &Read) -> i32 {
+pub(crate) fn realigned_read_index_position(ctx: &VariantReadContext, read: &Read) -> i32 {
     let core_end_index = read_index_from_position(read.start, &read.cigar, ctx.core_position_end);
     if core_end_index == INVALID_INDEX {
         return INVALID_INDEX;
@@ -209,7 +209,7 @@ pub fn has_valid_base_quals(ctx: &VariantReadContext, alt_index_upper: i32, read
 }
 
 #[allow(clippy::too_many_arguments)]
-fn has_jitter_match_type(
+pub(crate) fn has_jitter_match_type(
     repeat: &RepeatInfo, ctx: &VariantReadContext, alt_index_upper: i32, read_var_index: i32, read_bases: &[u8],
     read_quals: &[u8], jitter: Jitter, jitter_at_start: bool, jitter_count: i32,
 ) -> bool {
@@ -318,7 +318,7 @@ pub fn check_jitter(ctx: &VariantReadContext, matcher: &Matcher, read: &Read, re
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Realigned {
+pub(crate) enum Realigned {
     None,
     Exact,
     LowQualMismatches,
@@ -327,7 +327,7 @@ enum Realigned {
 }
 
 /// Realignment.checkRealignment
-fn check_realignment(
+pub(crate) fn check_realignment(
     ctx: &VariantReadContext, matcher: &mut Matcher, read: &Read, read_index: i32, realigned_read_index: i32, is_msi: bool,
 ) -> Realigned {
     if read_index == realigned_read_index {
@@ -485,9 +485,9 @@ impl StrandBias {
 /// FragmentCoords: unique 5' fragment coordinates of alt reads, capped.
 #[derive(Clone, Debug)]
 pub struct FragmentCoords {
-    max: usize,
-    lower: Vec<(i32, i32, bool)>,
-    upper: Vec<(i32, i32, bool)>,
+    pub(crate) max: usize,
+    pub(crate) lower: Vec<(i32, i32, bool)>,
+    pub(crate) upper: Vec<(i32, i32, bool)>,
 }
 
 fn add_unique(v: &mut Vec<(i32, i32, bool)>, x: (i32, i32, bool)) {
@@ -1232,7 +1232,7 @@ fn min_base_qual_across_range(start: i32, end: i32, read: &Read) -> f64 {
     min as f64
 }
 
-fn average_core_quality(ctx: &VariantReadContext, read: &Read, read_var_index: i32) -> f64 {
+pub(crate) fn average_core_quality(ctx: &VariantReadContext, read: &Read, read_var_index: i32) -> f64 {
     let s = (read_var_index - ctx.left_core_length()).max(0);
     let e = (read_var_index + ctx.right_core_length()).min(read.len() - 1);
     let len = e - s + 1;

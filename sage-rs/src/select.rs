@@ -71,6 +71,11 @@ impl<'a> HotspotCache<'a> {
         };
         HotspotCache { hotspots, min_pos, max_pos, index: 0 }
     }
+    /// HotspotCache.setIndex (@VisibleForTesting in Java)
+    #[cfg(test)]
+    pub(crate) fn set_index(&mut self, index: i64) {
+        self.index = index.min(self.hotspots.len() as i64 - 1).max(0);
+    }
     fn at(&self, i: i64) -> &SimpleVariant {
         &self.hotspots[i as usize]
     }

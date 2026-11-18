@@ -15,7 +15,7 @@ pub struct PhasedGroup {
     pub negative: Vec<usize>,
     pub read_count: i32,
     pub allocated: f64,
-    pos_min: i32,
+    pub(crate) pos_min: i32,
     pos_max: i32,
     var_min: i32,
     var_max: i32,
@@ -158,10 +158,10 @@ impl PhasedGroup {
     }
 }
 
-struct GroupCollection {
+pub(crate) struct GroupCollection {
     /// keyed by the minimum positive position; Java uses a HashMap but only ever sorts by key
-    map: Vec<(i32, Vec<PhasedGroup>)>,
-    groups: Vec<PhasedGroup>,
+    pub(crate) map: Vec<(i32, Vec<PhasedGroup>)>,
+    pub(crate) groups: Vec<PhasedGroup>,
     min_position: i32,
     max_position: i32,
 }
@@ -207,7 +207,7 @@ impl GroupCollection {
         self.min_position = self.min_position.min(other.min_position);
         self.max_position = self.max_position.max(other.max_position);
     }
-    fn finalise(&mut self) {
+    pub(crate) fn finalise(&mut self) {
         let mut map = std::mem::take(&mut self.map);
         map.sort_by_key(|(k, _)| *k);
         for (_, list) in map {
@@ -217,9 +217,9 @@ impl GroupCollection {
 }
 
 pub struct Phaser {
-    collections: Vec<GroupCollection>,
+    pub(crate) collections: Vec<GroupCollection>,
     next_group_id: i32,
-    pos: Vec<i32>,
+    pub(crate) pos: Vec<i32>,
 }
 
 impl PhaseSink for Phaser {
@@ -261,7 +261,7 @@ impl PhaseSink for Phaser {
     }
 }
 
-fn merge_matching(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
+pub(crate) fn merge_matching(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
     if groups.len() < 2 {
         return;
     }
@@ -287,7 +287,7 @@ fn merge_matching(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
     }
 }
 
-fn merge_by_extension(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
+pub(crate) fn merge_by_extension(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
     if groups.len() < 2 {
         return;
     }
@@ -352,7 +352,7 @@ fn merge_by_extension(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
     }
 }
 
-fn merge_uninformative(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
+pub(crate) fn merge_uninformative(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
     let mut index = 0;
     while index < groups.len() {
         // quirk: the Java test is always true for any other group, so a single-variant group is
