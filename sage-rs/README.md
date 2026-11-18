@@ -8,12 +8,12 @@ are reproduced deliberately.
 
 ## Supported
 
-Tumor/normal somatic calling on Illumina and SBX (`-sequencing_type SBX`) BAMs with REDUX outputs
+Tumor/normal somatic calling on Illumina, SBX and Ultima (`-sequencing_type SBX` / `ULTIMA`) BAMs with REDUX outputs
 (`<sample>.redux.bqr.tsv`, `.redux.jitter_params.tsv`, `.redux.ms_table.tsv.gz`).
 Also: tumor-only runs, `-panel_only`, `-high_depth_mode`, `-germline`, and TINC (`-run_tinc` with
 `-pon_file` and `-gnomad_freq_dir`, or standalone as `sage-rs tinc -input_vcf ...`).
 Not yet: append mode, CRAM, more than one tumor or reference sample, samples REDUX predicts as MSI,
-split (RNA) reads, Ultima, the visualiser. Unsupported options stop with an error rather than being ignored.
+split (RNA) reads, the visualiser. Unsupported options stop with an error rather than being ignored.
 
 ## Build and run
 

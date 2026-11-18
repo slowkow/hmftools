@@ -20,7 +20,8 @@ VCF. On every region tested so far the decompressed VCF is byte-identical to Jav
 | 6. Optimisation | Multi-threading; table-based base decoding, one pass over BAM tags and a reused read buffer in the candidate stage (about 25% less CPU). Still to do: the tumor BAM is read twice, and the evidence stage copies every read. |
 | 7. TINC | Done: `-run_tinc` and the standalone `sage-rs tinc`. |
 | 8. SBX | Done: `-sequencing_type SBX`. chr21 of the public HG008 tumor/normal pair (119x / 44x, after Java REDUX) is byte-identical to Java, with and without soft filters (3,316 and 68,809 records). |
-| 9. Later | Append mode, CRAM, multiple tumor / reference samples, MSI-specific jitter parameters, split (RNA) reads, Ultima, the visualiser. Each is rejected with an error if requested. |
+| 9. Ultima | Done: `-sequencing_type ULTIMA`. chr21 of the public HG008 ppmSeq tumor/normal pair (157x / 160x, after Java REDUX without `-form_consensus`) is byte-identical to Java, with and without soft filters (2,689 and 87,238 records). One thread: Java 253 s, Rust 172 s; SBX: Java 106 s, Rust 61 s. The non-Illumina paths have not been profiled. |
+| 10. Later | Append mode, CRAM, multiple tumor / reference samples, MSI-specific jitter parameters, split (RNA) reads, the visualiser. Each is rejected with an error if requested. |
 
 Regions compared (records identical / total), tumor and normal WGS BAMs on an external volume, 20-core machine:
 
@@ -204,4 +205,6 @@ flat arrays in place of hash lookups, phasing data structures. Parity suite runs
 - Test data for SBX and Ultima: the public GIAB HG008 tumor/normal pair
   (`https://giab.s3.amazonaws.com/data_somatic/HG008/Liss_lab/`), sliced by chromosome and run through
   Java REDUX. REDUX 2.1 at this commit crashes during BQR because `BaseQualityResults.addPerfCounter`
-  merges a counter into itself; the baseline was made with that one line patched locally.
+  merges a counter into itself; the baseline was made with that one line patched locally. With
+  `-form_consensus` REDUX also fails on the Ultima slices (a consensus read with an empty base), so the
+  Ultima baseline was made without it.

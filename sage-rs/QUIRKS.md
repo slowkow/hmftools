@@ -50,6 +50,17 @@ upstream report rather than a silent fix. File references are to `sage/src/main/
 - With `-run_tinc` the first pass keeps filtered variants with up to 10 germline alt fragments rather
   than 3, and the rewrite then drops those above 3 unless they are phased or were recovered.
 
+## Ultima
+
+- `BqrCache.loadBqrFiles` overwrites the maximum raw quality for each sample while iterating a
+  `HashMap`, so the value used is that of whichever sample id iterates last (and 0 with `-skip_bqr`).
+  The port reproduces the bucket order.
+- `ReadContextCounterFactory` calls `markedInvalid()` (the getter) where `markInvalid()` was meant, so
+  a context whose quality models fail to build is never marked invalid; its counter has no matcher.
+- `createRealignedQualModels` passes the read index offset, not the read index, to
+  `getStraddlingReadBases` for inserts. The bases are unused for inserts.
+- The `ReadCigarState` copy constructor resets the valid flag.
+
 ## Where the port differs
 
 - `dedup/IndelDeduper.checkDedupCombinations` enumerates subsets of a `HashSet` whose order comes from
@@ -65,3 +76,7 @@ upstream report rather than a silent fix. File references are to `sage/src/main/
 - TINC only loads the gnomAD and PON entries at positions present in the VCF, in one pass per file;
   Java loads whole chromosomes. The output is the same.
 - Reads with `N` in the CIGAR (RNA) are skipped: `evidence/SplitReadSegment` is not ported.
+- Ultima: the quality recalibration table is loaded once per process (Java merges into a static on
+  each load); a failure to build quality models stops the run for a standard chromosome, where Java
+  logs and continues with a counter that counts nothing; missing `tp` / `t0` tags stop the run with a
+  message naming the read, where Java fails with a null pointer.
