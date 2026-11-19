@@ -378,7 +378,7 @@ fn fill(rec: &RawRecord, read: &mut Read) {
     for_each_aux(rec.aux(), |tag, value| match (tag, value) {
         (b"NM", AuxValue::Int(v)) => read.nm = Some(v),
         (b"MC", AuxValue::Str(s)) => {
-            if let Ok(s) = std::str::from_utf8(s) {
+            if let Some(s) = s.is_ascii().then(|| unsafe { std::str::from_utf8_unchecked(s) }).or_else(|| std::str::from_utf8(s).ok()) {
                 has_mate_cigar = true;
                 match read.mate_cigar.as_mut() {
                     Some(mc) => {
@@ -410,9 +410,11 @@ fn fill(rec: &RawRecord, read: &mut Read) {
     }
     read.name.clear();
     let name = rec.name();
-    match std::str::from_utf8(name) {
-        Ok(name) => read.name.push_str(name),
-        Err(_) => read.name.push_str(&String::from_utf8_lossy(name)),
+    if name.is_ascii() {
+        // SAFETY: ASCII bytes are valid UTF-8
+        read.name.push_str(unsafe { std::str::from_utf8_unchecked(name) });
+    } else {
+        read.name.push_str(&String::from_utf8_lossy(name));
     }
     read.flags = rec.core.flags;
     read.tid = rec.core.tid;

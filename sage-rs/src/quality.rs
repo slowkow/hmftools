@@ -41,8 +41,13 @@ impl QualityScores {
 /// BqrRecordMap: (ref, alt, trinucleotide, original qual, read type) -> recalibrated qual
 #[derive(Default)]
 pub struct BqrMap {
-    map: HashMap<(u8, u8, [u8; 3], u8, u8), f64>,
+    /// keyed by the seven key bytes packed into one word
+    map: HashMap<u64, f64, std::hash::BuildHasherDefault<crate::sync::FastHasher>>,
     enabled: bool,
+}
+
+fn bqr_key(ref_: u8, alt: u8, tnc: [u8; 3], qual: u8, read_type: u8) -> u64 {
+    u64::from_le_bytes([ref_, alt, tnc[0], tnc[1], tnc[2], qual, read_type, 0])
 }
 
 impl BqrMap {
@@ -57,7 +62,7 @@ impl BqrMap {
             idx["OriginalQual"],
             idx["RecalibratedQual"],
         );
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         for line in &lines[1..] {
             let v: Vec<&str> = line.split('\t').collect();
             let tnc = v[ti].as_bytes();
@@ -66,7 +71,7 @@ impl BqrMap {
                 Some("DUAL") => 2,
                 _ => 0,
             };
-            let key = (v[ri].as_bytes()[0], v[ai].as_bytes()[0], [tnc[0], tnc[1], tnc[2]], v[qi].parse::<u8>()?, read_type);
+            let key = bqr_key(v[ri].as_bytes()[0], v[ai].as_bytes()[0], [tnc[0], tnc[1], tnc[2]], v[qi].parse::<u8>()?, read_type);
             // the first of any duplicate keys is kept
             map.entry(key).or_insert(v[rqi].parse::<f64>()?);
         }
@@ -75,11 +80,11 @@ impl BqrMap {
 
     /// BqrCache.maxRawQual for one sample's records: the highest original qual, 0 if there are none
     pub fn max_raw_qual(&self) -> i8 {
-        self.map.keys().map(|k| k.3 as i32).max().unwrap_or(0) as i8
+        self.map.keys().map(|k| (k >> 40 & 0xff) as i32).max().unwrap_or(0) as i8
     }
 
     fn quality_adjustment(&self, ref_: u8, alt: u8, tnc: [u8; 3], qual: u8, read_type: ConsensusType) -> f64 {
-        self.map.get(&(ref_, alt, tnc, qual, read_type as u8)).copied().unwrap_or(qual as f64)
+        self.map.get(&bqr_key(ref_, alt, tnc, qual, read_type as u8)).copied().unwrap_or(qual as f64)
     }
 }
 

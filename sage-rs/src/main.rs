@@ -1,3 +1,7 @@
+// Optional allocator (cargo build --release --features mimalloc): less CPU time, more memory. See README.
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod append;
 
 mod bamio;

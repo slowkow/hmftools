@@ -48,6 +48,10 @@ and 15% more time); `-file_buffer_kb N` sets the buffer each alignment file hand
 (default 1024; 0 leaves htslib's default, which is about half as fast on a whole genome);
 `-perf_summary` reports where the wall-clock time went.
 
+`cargo build --release --features mimalloc` links the mimalloc allocator: the same output for about 16%
+less CPU time, at several times the memory (11.6 GB against 1.7 GB on a whole genome). It only pays
+when storage is fast enough to keep every thread busy.
+
 ## Visualiser
 
 As Java SAGE, `sage-rs` can write one gzipped HTML file per variant showing the reads behind it

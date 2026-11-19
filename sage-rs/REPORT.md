@@ -36,6 +36,20 @@ Section 6 lists what was added after this table was first written.
   tumor/normal pair for SBX and Ultima (chr21, after Java REDUX).
 - **Whole genome.** 360,440 records without TINC and 611,876 / 365,286 with `-run_tinc`. Against Java
   at 16 threads the only differing lines are those with thread-order `LPS` ids (4,573 and 4,704).
+- **A second private project** (run on the pipeline's own REDUX and PURPLE output; Java 5.1 run fresh,
+  since the pipeline had used SAGE 4.2, with 4.2's recalibration table under the 5.1 header):
+
+  | Input | Run | Records | Result |
+  |---|---|---|---|
+  | Tumor RNA of three samples, appended to the PURPLE somatic and germline VCFs (`-skip_bqr -skip_msi_jitter -max_read_depth 100000 -write_frag_lengths`) | Java, 1 thread | 4,248 to 11,021 somatic, 1,910 to 1,957 germline | all six VCFs and fragment length files byte-identical |
+  | Deep exome pair, whole run | Java, 16 threads | 1,198,874 | 97 lines differ, `LPS` ids only |
+  | WGS pair from another vendor | Java, 16 threads; chr21 at 1 thread | 430,927; 3,751 | 429 lines differ, `LPS` ids only; chr21 byte-identical |
+  | WGS pair whose tumor has no base quality above 28 | same | 1,945,878; 13,923 | every line identical; chr21 byte-identical |
+  | WGS pair, a later sample | same | 390,056; 4,707 | 2,094 lines differ, `LPS` ids only; chr21 byte-identical |
+
+  Read from a network drive (about 260 to 400 MB/s), the three whole genomes took Java 3,531, 4,132 and
+  4,128 s with 18 to 22 GB, and the port 620, 1,226 and 862 s with 1.5 to 1.8 GB; the exome 1,549 s
+  against 383 s. The port was waiting on the drive for most of that time.
 - **Regression suite.** 30 comparisons against stored Java output, run after every change: each mode
   on each platform, MSI, multi-sample, append, CRAM. It is kept outside the repository because the
   outputs contain patient variants; `bench/` has the scripts that produce each side.
@@ -59,7 +73,7 @@ Whole genome, 16 threads:
 | Run | Java | Rust |
 |---|---|---|
 | Without TINC | 2,450 s, 26.9 GB | 812 s, 0.9 GB (first complete version) |
-| With `-run_tinc` | 3,407 s | 764 s (first complete version), 593 s (second round), 327 s and 1.8 GB (current) |
+| With `-run_tinc` | 3,407 s | 764 s (first complete version), 593 s (second round), 327 s (third), 316 s and 1.7 GB (current) |
 | Standalone TINC | 113 s, 17 GB | 14 s, 0.5 GB |
 
 The current whole-genome run uses 4,030 core-seconds (9,030 for the first complete version) and
@@ -81,8 +95,10 @@ averages 12 of 16 cores. Java's 3,407 s was measured while other jobs were runni
 
 ### Tried and dropped
 
-- **mimalloc**: 10 to 15% faster, but memory grew through a whole genome (12 GB against 2 GB), because
-  region results are allocated on worker threads and freed on the writer thread.
+- **mimalloc as the default**: 16% less CPU time, but 11.6 GB against 1.7 GB on a whole genome, and
+  only 5% less wall time there (301 s against 316 s) because the external disk is the limit. Its purge
+  settings and a collect on each worker between regions did not lower the memory. It is kept as a
+  build feature (`--features mimalloc`), off by default.
 - **Slice comparison in the repeat search**: slower than the byte loop for the short repeats involved.
 
 ### Where the time goes now
@@ -90,6 +106,13 @@ averages 12 of 16 cores. Java's 3,407 s was measured while other jobs were runni
 Illumina chr21, one thread: BAM decompression and reading 34%, matching reads to candidates and
 quality scores 13%, allocation 11%, decoding records 8%, jitter check 7%, read-context building 6%,
 fragment sync 5%. For Ultima, read-context building is about half.
+
+At 16 threads the whole genome is limited by the disk, not the CPU. From an internal SSD (chr1 and
+chr2) the run scales with the threads (82 s on 8, 43 s on 16) and keeps 15.4 of 16 cores busy; from the
+external disk the whole genome reads 690 MB/s of the 800 the disk can give, so about 270 s is the floor
+there. The binary already uses libdeflate. Busy time at 16 threads: decompression 22%, allocation 10%,
+copying 8%, record decoding 7%, jitter check 6%, repeat search 5%. Nothing left is worth more than a
+few percent without faster storage.
 
 ## 4. Timeline
 
@@ -228,7 +251,14 @@ These are candidates for upstream reports. The port reproduces every one that af
 
 ## 7. Not done
 
-- Split reads compared with Java on real RNA data.
-- Ultima reads formed by REDUX consensus (REDUX fails on the test data, above).
-- Further speed: decompression (34 to 40% of CPU) and allocation (about 10%) are what is left; the
-  visualiser builds its files on the writer thread.
+Untested, with what each test needs. None of these is known to fail; they have not been run.
+
+| Gap | Why it is open | What a test needs |
+|---|---|---|
+| Ultima reads formed by REDUX consensus | REDUX fails on the public Ultima test data (section 5), so only non-consensus Ultima reads were compared | An Ultima BAM that REDUX has deduplicated with consensus, or a REDUX release with the failure fixed; then the usual Java-at-one-thread byte comparison |
+| Reference genome version 37 | Every comparison used version 38 | A 37 reference, a 37 BAM pair and the 37 resource files (hotspots, panel, high-confidence, coverage, PON); run both tools with `-ref_genome_version 37` and byte-compare. Covers the chromosome naming without `chr`, the 37 PAR and MT handling |
+| A Linux run | All builds and runs were on macOS arm64 | Build with `cargo build --release` on x86-64 Linux, run `cargo test --release` and the regression suite, and byte-compare one region against Java. Covers libdeflate and floating point on another target |
+| Visualiser with several samples | The visualiser was compared with Java on one tumor and on tumor plus normal, not on a run with several tumor or reference samples | A run with two or more `-tumor` or `-reference` samples and `-vis_variants`; compare the HTML files with the read rows sorted, as in section 6 |
+| A second deep exome pair | Prepared, not run | Run both tools on it at 16 threads and compare with `bench/compare_vcf.py` |
+
+Not done for speed: the visualiser builds its files on the writer thread, which only matters with `-vis_variants` on many variants. See the end of section 3 for the rest.

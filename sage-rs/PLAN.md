@@ -74,6 +74,16 @@ being system time) and the run averages 12 of 16 cores. The disk reads a single 
 chromosomes not in the page cache: 23 s per 100 Mb with the default block, 12 s with 256 KB, 11 s with
 1 MB, 11 s with 4 MB, 14 s with 16 MB.
 
+Fourth round: what is left. From an internal SSD (chr1 and chr2, 33 GB of BAM) the run scales with the
+threads: 82 s on 8, 43 s on 16, 41 s on 20, with 15.4 of 16 cores busy. So the idle cores of the whole
+genome run are the external disk (217 GB in 316 s is 690 MB/s of its 800), not a lock, and on that disk
+the floor is about 270 s. The binary already links libdeflate. Profile of the busy time at 16 threads:
+decompression 22%, allocation 10%, copying 8%, record decoding 7%, jitter check 6%, repeat search 5%.
+A packed key with a cheap hash for the recalibration lookup and an ASCII check in place of UTF-8
+validation of read names took 1.5% off (645 to 636 core-seconds). mimalloc is now a build feature, off
+by default: 43 s to 36 s on the SSD, but 316 s to 301 s on the whole genome from the external disk, with
+11.6 GB in place of 1.7 GB; its purge settings and collecting on each worker did not lower the memory.
+
 For Ultima the profile has changed since the second round: decompression is 40%, decoding records 13%,
 allocation 9%, and read-context building is small. A larger read cache does not help (21.4 s at 32 MB,
 20.9 s at 128 MB, 23.5 s with none, on 10 Mb of chr21).
