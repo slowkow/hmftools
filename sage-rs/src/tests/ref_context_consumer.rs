@@ -42,3 +42,23 @@ fn test_low_qual_soft_clips() {
     assert!(!exceeds_soft_clip_low_base_qual(&base_qualities, 0, 7));
     assert!(!exceeds_soft_clip_low_base_qual(&base_qualities, 23, 7));
 }
+
+/// Not in the Java suite: the word-at-a-time search for the next base differing from the reference
+/// agrees with a base-by-base search, for every length and mismatch position.
+#[test]
+fn test_first_mismatch() {
+    use crate::candidate::first_mismatch;
+    for len in 0..40usize {
+        let a: Vec<u8> = (0..len).map(|i| b"ACGT"[i % 4]).collect();
+        assert_eq!(first_mismatch(&a, &a), None);
+        for first in 0..len {
+            for second in first..len {
+                let mut b = a.clone();
+                b[first] = b'N';
+                b[second] = b'N';
+                assert_eq!(first_mismatch(&a, &b), Some(first));
+                assert_eq!(first_mismatch(&b, &a), Some(first));
+            }
+        }
+    }
+}

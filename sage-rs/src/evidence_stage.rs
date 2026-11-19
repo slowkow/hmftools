@@ -1,6 +1,6 @@
 //! ReadContextEvidence: gathers evidence for a list of candidates from one sample's BAM.
 
-use crate::bamio::BamSlicer;
+use crate::bamio::{BamSlicer, ReadPool};
 use crate::candidate::{calc_adjusted_num_mutations, Candidate};
 use crate::config::Config;
 use crate::constants::{is_append_mode, is_ultima, DEFAULT_FLANK_LENGTH};
@@ -13,7 +13,7 @@ use crate::types::*;
 use crate::ultima::{build_read_context_ultima_models, RefBases};
 use anyhow::{bail, Result};
 
-const SLICE_SOFT_CLIP_BUFFER: i32 = 30;
+pub const SLICE_SOFT_CLIP_BUFFER: i32 = 30;
 
 pub struct Sample<'a> {
     pub bam: &'a mut BamSlicer,
@@ -235,18 +235,28 @@ pub fn collect_evidence(
     let mut collector = Collector { counters, last_index: 0, selected: Vec::new(), ref_seq: &ref_seq, qc: &qc };
     let mut out: SyncOutput = Vec::new();
     let sync_fragments = cfg.sync_fragments;
-    sample.bam.slice(chr, &slices, false, |read| {
+    let pool = ReadPool::default();
+    sample.bam.slice_pooled(chr, &slices, false, &pool, |read| {
         if sync_fragments {
-            match sync.handle(read, &mut out) {
-                Some(read) => collector.process(&read, None, &mut phaser),
+            match sync.handle(read, &mut out, &pool) {
+                Some(read) => {
+                    collector.process(&read, None, &mut phaser);
+                    pool.put(read);
+                }
                 None => {
                     for (r, f) in out.drain(..) {
                         collector.process(&r, f.as_ref(), &mut phaser);
+                        pool.put(r);
+                        if let Some(f) = f {
+                            pool.put(f.first);
+                            pool.put(f.second);
+                        }
                     }
                 }
             }
         } else {
             collector.process(&read, None, &mut phaser);
+            pool.put(read);
         }
     })?;
     for read in sync.empty_cached_reads() {

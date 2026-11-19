@@ -1,6 +1,7 @@
 //! Fragment sync: overlapping mates are merged into a single consensus read (FragmentSync,
 //! CombinedSyncData, CigarState).
 
+use crate::bamio::ReadPool;
 use crate::constants::*;
 use crate::evidence::FragmentData;
 use crate::types::*;
@@ -120,15 +121,15 @@ fn adjust_base_qual(q: f64) -> u8 {
     STD[0] as u8
 }
 
-pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
+fn form_into(first: &Read, second: &Read, out: &mut Read, allow_fast_path: bool) -> Formed {
     if !positions_overlap(first.start, first.end, second.start, second.end) {
-        return Outcome::NoOverlap;
+        return Formed::NoOverlap;
     }
     if first.negative_strand() == second.negative_strand() {
-        return Outcome::Inversion;
+        return Formed::Inversion;
     }
     if first.cigar.is_empty() || second.cigar.is_empty() {
-        return Outcome::Exception;
+        return Formed::Exception;
     }
 
     // buildCombinedCigar
@@ -146,19 +147,26 @@ pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
         (second.start, first.end, second_eff_start, first_eff_end)
     };
 
+    if allow_fast_path && is_plain_match(first) && is_plain_match(second) {
+        combine_plain_matches(first, second, combined_eff_start, combined_eff_end, out);
+        set_synced_read_fields(first, second, fragment_start, out);
+        return Formed::Combined;
+    }
+
     let mut first_cigar = CigarState::new(&first.cigar);
     let mut second_cigar = CigarState::new(&second.cigar);
     if first_eff_start < combined_eff_start {
         if first_cigar.move_to_position(first_eff_start, combined_eff_start).is_err() {
-            return Outcome::Exception;
+            return Formed::Exception;
         }
     } else if second_eff_start < combined_eff_start
         && second_cigar.move_to_position(second_eff_start, combined_eff_start).is_err()
     {
-        return Outcome::Exception;
+        return Formed::Exception;
     }
 
-    let mut combined: Vec<CigarEl> = Vec::new();
+    let mut combined: Vec<CigarEl> = std::mem::take(&mut out.cigar);
+    combined.clear();
     let mut el_len = 0;
     let mut el_op: Option<Op> = None;
     let mut first_active = false;
@@ -191,7 +199,7 @@ pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
                     if f != s {
                         let ignorable = matches!(f, Op::M | Op::S) && matches!(s, Op::M | Op::S);
                         if !ignorable {
-                            return Outcome::CigarMismatch;
+                            return Formed::CigarMismatch;
                         }
                         if position_within(current_pos, fragment_start, fragment_end) {
                             Some(Op::M)
@@ -208,7 +216,7 @@ pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
             if el_len > 0 && el_op != new_op {
                 match el_op {
                     Some(op) => combined.push(CigarEl::new(el_len, op)),
-                    None => return Outcome::Exception,
+                    None => return Formed::Exception,
                 }
                 el_len = 0;
             }
@@ -222,13 +230,17 @@ pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
     }
     match el_op {
         Some(op) => combined.push(CigarEl::new(el_len, op)),
-        None => return Outcome::Exception,
+        None => return Formed::Exception,
     }
 
     // setBaseAndQualities
     let combined_len: i32 = combined.iter().filter(|e| e.op.consumes_read()).map(|e| e.len).sum();
-    let mut bases = vec![0u8; combined_len as usize];
-    let mut quals = vec![0u8; combined_len as usize];
+    let mut bases = std::mem::take(&mut out.bases);
+    let mut quals = std::mem::take(&mut out.quals);
+    bases.clear();
+    bases.resize(combined_len as usize, 0);
+    quals.clear();
+    quals.resize(combined_len as usize, 0);
     let find_start = |read: &Read, effective_start: i32| -> i32 {
         if effective_start > combined_eff_start {
             return -1;
@@ -261,7 +273,7 @@ pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
     let mut current_position = combined_eff_start;
     let mut ci = 0;
     while ci < combined_len {
-        let Some(op) = state.op() else { return Outcome::Exception };
+        let Some(op) = state.op() else { return Formed::Exception };
         let move_read = op.consumes_read();
         let move_ref = moves_effective_position(op);
         if move_read {
@@ -322,30 +334,122 @@ pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
         }
     }
 
-    // buildSyncedRead: flags and tags are taken from the first read
-    let ref_len: i32 = combined.iter().filter(|e| e.op.consumes_ref()).map(|e| e.len).sum();
-    Outcome::Combined(Read {
-        name: first.name.clone(),
-        flags: first.flags,
-        tid: first.tid,
-        start: fragment_start,
-        end: fragment_start + ref_len - 1,
-        mapq: first.mapq.max(second.mapq),
-        cigar: combined,
-        bases,
-        quals,
-        mate_tid: first.mate_tid,
-        mate_start: fragment_start,
-        insert_size: first.insert_size.abs(),
-        nm: first.nm,
-        mate_cigar: first.mate_cigar.clone(),
-        consensus: first.consensus,
-        has_consensus_tag: first.has_consensus_tag,
-        duplex_index: first.duplex_index,
-        tp: first.tp.clone(),
-        t0: first.t0.clone(),
-        low_qual_tag: first.low_qual_tag.clone(),
-    })
+    out.cigar = combined;
+    out.bases = bases;
+    out.quals = quals;
+    set_synced_read_fields(first, second, fragment_start, out);
+    Formed::Combined
+}
+
+/// buildSyncedRead: flags and tags are taken from the first read. `out` holds the combined cigar,
+/// bases and quals.
+fn set_synced_read_fields(first: &Read, second: &Read, fragment_start: i32, out: &mut Read) {
+    let ref_len: i32 = out.cigar.iter().filter(|e| e.op.consumes_ref()).map(|e| e.len).sum();
+    out.name.clear();
+    out.name.push_str(&first.name);
+    out.flags = first.flags;
+    out.tid = first.tid;
+    out.start = fragment_start;
+    out.end = fragment_start + ref_len - 1;
+    out.mapq = first.mapq.max(second.mapq);
+    out.mate_tid = first.mate_tid;
+    out.mate_start = fragment_start;
+    out.insert_size = first.insert_size.abs();
+    out.nm = first.nm;
+    out.mate_cigar.clone_from(&first.mate_cigar);
+    out.consensus = first.consensus;
+    out.has_consensus_tag = first.has_consensus_tag;
+    out.duplex_index = first.duplex_index;
+    out.tp.clone_from(&first.tp);
+    out.t0.clone_from(&first.t0);
+    out.low_qual_tag.clone_from(&first.low_qual_tag);
+}
+
+/// A read aligned as a single match element, with no clipping or indels.
+fn is_plain_match(r: &Read) -> bool {
+    r.cigar.len() == 1
+        && r.cigar[0].op == Op::M
+        && r.bases.len() == r.cigar[0].len as usize
+        && r.quals.len() == r.bases.len()
+        && r.end - r.start + 1 == r.cigar[0].len
+}
+
+/// The combined cigar, bases and quals of two overlapping plain-match reads: what the general
+/// base-by-base walk produces for them, computed as a leading run from one read, the overlap and a
+/// trailing run from one read.
+fn combine_plain_matches(first: &Read, second: &Read, combined_start: i32, combined_end: i32, out: &mut Read) {
+    let len = (combined_end - combined_start + 1) as usize;
+    out.cigar.clear();
+    out.cigar.push(CigarEl::new(len as i32, Op::M));
+    out.bases.clear();
+    out.bases.resize(len, 0);
+    out.quals.clear();
+    out.quals.resize(len, 0);
+    let overlap_start = first.start.max(second.start).max(combined_start);
+    let overlap_end = first.end.min(second.end).min(combined_end);
+    // the run before the overlap comes from the read that starts first, the run after it from the
+    // read that ends last
+    let mut copy = |read: &Read, from: i32, to: i32| {
+        if from > to {
+            return;
+        }
+        let dst = (from - combined_start) as usize..(to - combined_start + 1) as usize;
+        let src = (from - read.start) as usize..(to - read.start + 1) as usize;
+        out.bases[dst.clone()].copy_from_slice(&read.bases[src.clone()]);
+        out.quals[dst].copy_from_slice(&read.quals[src]);
+    };
+    copy(if first.start < second.start { first } else { second }, combined_start, overlap_start - 1);
+    copy(if first.end > second.end { first } else { second }, overlap_end + 1, combined_end);
+    if overlap_start > overlap_end {
+        return;
+    }
+    let n = (overlap_end - overlap_start + 1) as usize;
+    let fo = (overlap_start - first.start) as usize;
+    let so = (overlap_start - second.start) as usize;
+    let co = (overlap_start - combined_start) as usize;
+    let (fb, fq) = (&first.bases[fo..fo + n], &first.quals[fo..fo + n]);
+    let (sb, sq) = (&second.bases[so..so + n], &second.quals[so..so + n]);
+    let (ob, oq) = (&mut out.bases[co..co + n], &mut out.quals[co..co + n]);
+    for i in 0..n {
+        if fb[i] == sb[i] {
+            ob[i] = fb[i];
+            oq[i] = fq[i].max(sq[i]);
+        } else {
+            // getCombinedBaseAndQual for differing bases
+            let (f, s) = (fq[i] as i32, sq[i] as i32);
+            let (base, qual) = if f > s {
+                (fb[i], (BASE_QUAL_MINIMUM as i32).max(f - s))
+            } else {
+                (sb[i], (BASE_QUAL_MINIMUM as i32).max(s - f))
+            };
+            ob[i] = base;
+            oq[i] = adjust_base_qual(qual as f64);
+        }
+    }
+}
+
+enum Formed {
+    Combined,
+    NoOverlap,
+    Inversion,
+    CigarMismatch,
+    Exception,
+}
+
+#[cfg(test)]
+pub(crate) fn form_fragment_read(first: &Read, second: &Read) -> Outcome {
+    form_fragment_read_with(first, second, crate::bamio::blank_read(), true)
+}
+
+/// As `form_fragment_read`, building the combined read in the buffers of `out`.
+pub(crate) fn form_fragment_read_with(first: &Read, second: &Read, mut out: Read, allow_fast_path: bool) -> Outcome {
+    match form_into(first, second, &mut out, allow_fast_path) {
+        Formed::Combined => Outcome::Combined(out),
+        Formed::NoOverlap => Outcome::NoOverlap,
+        Formed::Inversion => Outcome::Inversion,
+        Formed::CigarMismatch => Outcome::CigarMismatch,
+        Formed::Exception => Outcome::Exception,
+    }
 }
 
 pub(crate) fn java_string_hash(s: &str) -> i32 {
@@ -397,12 +501,12 @@ impl FragmentSync {
 
     /// handleOverlappingReads: Some(read) when the caller should process the read itself; otherwise
     /// the read was consumed and any reads to process have been appended to `out`.
-    pub fn handle(&mut self, read: Read, out: &mut SyncOutput) -> Option<Read> {
+    pub fn handle(&mut self, read: Read, out: &mut SyncOutput, pool: &ReadPool) -> Option<Read> {
         if !read.paired() || read.flag(FLAG_MATE_UNMAPPED) {
             return Some(read);
         }
         if let Some((other, other_seq)) = self.cached.remove(&read.name) {
-            match form_fragment_read(&other, &read) {
+            match form_fragment_read_with(&other, &read, pool.take(), true) {
                 Outcome::Combined(combined) => {
                     self.counts[SYNC_COMBINED] += 1;
                     out.push((combined, Some(FragmentData { first: other, second: read })));

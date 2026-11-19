@@ -16,25 +16,32 @@ VCF. On every region tested so far the decompressed VCF is byte-identical to Jav
 | 2. Candidate stage | Done. |
 | 3. Evidence stage | Done, including fragment sync, BQR and the MSI jitter model. |
 | 4. Filters, phasing, dedup | Done. |
-| 5. Parity sweep | Whole genome compared with and without TINC (below), plus chr21, HLA region, chrM and part of chrX against single-threaded Java. chr21 is also byte-identical in `-high_depth_mode`, `-germline`, tumor-only and `-panel_only` runs. The Java unit tests are ported (`src/tests`; 150 tests pass). |
-| 6. Optimisation | Multi-threading; table-based base decoding, one pass over BAM tags and a reused read buffer in the candidate stage (about 25% less CPU). Still to do: the tumor BAM is read twice, and the evidence stage copies every read. |
+| 5. Parity sweep | Whole genome compared with and without TINC (below), plus chr21, HLA region, chrM and part of chrX against single-threaded Java. chr21 is also byte-identical in `-high_depth_mode`, `-germline`, tumor-only and `-panel_only` runs. The Java unit tests are ported (`src/tests`), with further tests for the port's own alignment reading and fast paths; 157 tests pass. |
+| 6. Optimisation | Multi-threading; table-based base decoding; the BAM tags are parsed in place; read buffers are reused in both stages; the tumor's reads are read once per partition and kept for the evidence stage; overlapping plain-match mates are merged by a fast path; the candidate stage skips from mismatch to mismatch. About half the CPU of the first complete version (measurements below). |
 | 7. TINC | Done: `-run_tinc` and the standalone `sage-rs tinc`. |
 | 8. SBX | Done: `-sequencing_type SBX`. chr21 of the public HG008 tumor/normal pair (119x / 44x, after Java REDUX) is byte-identical to Java, with and without soft filters (3,316 and 68,809 records). |
-| 9. Ultima | Done: `-sequencing_type ULTIMA`. chr21 of the public HG008 ppmSeq tumor/normal pair (157x / 160x, after Java REDUX without `-form_consensus`) is byte-identical to Java, with and without soft filters (2,689 and 87,238 records). One thread: Java 253 s, Rust 172 s; SBX: Java 106 s, Rust 61 s. The non-Illumina paths have not been profiled. |
+| 9. Ultima | Done: `-sequencing_type ULTIMA`. chr21 of the public HG008 ppmSeq tumor/normal pair (157x / 160x, after Java REDUX without `-form_consensus`) is byte-identical to Java, with and without soft filters (2,689 and 87,238 records). |
 | 10. Append, split reads, MSI samples, multi-sample | Done: `sage-rs append`, `SplitReadSegment`, MSI-specific jitter parameters, several tumor / reference samples. Compared with Java on the public HG008 data (chr21): append onto SBX and Ultima VCFs with and without soft filters, two samples at once, `-high_depth_mode` and an older-format VCF; simulated MSI predictions for SBX, Ultima and the default path; two tumors and/or two references. All byte-identical. Split reads have unit tests only (no RNA BAM compared). |
-| 11. Later | CRAM, the visualiser, `-write_frag_lengths`, `-specific_var_file`, TINC with more than one tumor. |
+| 11. CRAM | Done: CRAM 3.0 and 3.1 input, decoded against `-ref_genome`. chr21 from CRAM is byte-identical to Java reading the same CRAM for the Illumina, SBX and Ultima pairs (5,908, 3,316 and 2,689 records). For the Illumina pair that is not the BAM result, in Java either: see QUIRKS.md. |
+| 12. Later | The visualiser, `-write_frag_lengths`, `-specific_var_file`, TINC with more than one tumor. |
 
 Regions compared (records identical / total), tumor and normal WGS BAMs on an external volume, 20-core machine:
 
-| Region | Records | Java 1 thread | Rust 1 thread |
+| Input (one thread) | Records | Java | Rust |
 |---|---|---|---|
-| chr21 | 6,023 / 6,023 | 501 s, 3.6 GB | 114 s, 125 MB |
-| chr21, `-disable_soft_filter` | 110,762 / 110,762 | 564 s | 128 s |
-| chr6:29.8-33.2 Mb (HLA) | 851 / 851 | 56 s | 15 s |
-| chrM | 128 / 128 | 25 s | 6 s |
-| chrX:1-6 Mb | 482 / 482 | 47 s | 12 s |
+| Illumina chr21 | 6,023 / 6,023 | 501 s, 3.6 GB | 59 s, 150 MB |
+| Illumina chr21, CRAM | 5,908 / 5,908 | 767 s | 110 s |
+| SBX chr21 | 3,316 / 3,316 | 106 s | 37 s |
+| SBX chr21, CRAM | 3,316 / 3,316 | 310 s | 81 s |
+| Ultima chr21 | 2,689 / 2,689 | 253 s | 109 s |
+| Ultima chr21, CRAM | 2,689 / 2,689 | 692 s | 201 s |
+| Illumina chrM | 128 / 128 | 25 s | 4 s |
 
-chr21 with more threads: Java 8 threads 72 s (8.5 GB); Rust 8 threads 19 s (0.5 GB); Rust 16 threads 12 s.
+Before the second optimisation round the Rust times were 114 s (Illumina), 61 s (SBX) and 172 s
+(Ultima). Other Illumina regions compared with the earlier build: chr21 with `-disable_soft_filter`
+(110,762 records), the HLA region of chr6 (851) and chrX:1-6 Mb (482).
+
+chr21 with more threads (first complete version): Java 8 threads 72 s (8.5 GB); Rust 8 threads 19 s (0.5 GB); Rust 16 threads 12 s.
 Java's own 8-thread output differs from its 1-thread output on 152 lines (phase set ids, as section 4
 predicts); the Rust output is the same at 1, 8 and 16 threads.
 
@@ -50,8 +57,22 @@ separately: `bench/simulate_tinc.py` adds simulated contamination to a VCF, and 
 Rust analysers give byte-identical output at 2%, 10% and 50% (5,132 to 14,381 variants recovered).
 Standalone TINC on the whole-genome VCF takes 113 s and 17 GB in Java, 14 s and 0.5 GB in Rust.
 
-Rust CPU profile after the first optimisation round (12 Mb of chr21, one thread): BAM decompression
-and reading about 30%, allocation about 20%, fragment sync 11%, candidate read processing 10%.
+After the second optimisation round, the same `-run_tinc` whole genome at 16 threads takes 593 s with a
+1.7 GB peak and writes the same two VCFs as the build compared with Java above. CPU time fell from
+9,030 to 5,380 core-seconds; the wall time fell less (771 s before) because the run now waits on the
+disk: it averages 9 of 16 cores, and the same build runs four chromosomes at 16 cores once the BAMs are
+in the page cache. `-perf_summary` reports how long the workers waited on the writer (54 s summed over
+16 threads here) and how long the writer was busy (64 s). The peak is above the earlier 0.9 GB because
+of the read cache (32 MB per thread by default; `-read_cache_mb 0` turns it off).
+
+Rust CPU profile on Illumina chr21 after the second round (one thread): BAM decompression and reading
+34%, matching reads to candidates and quality scores 13%, allocation 11%, decoding records 8%, the
+jitter check 7%, read-context building 6%, fragment sync 5%. For Ultima, read-context building (core
+extension over homopolymers, repeat search) is about half.
+
+Tried and dropped: the mimalloc allocator was 10 to 15% faster, but its memory grew throughout a
+whole-genome run (12 GB against 2 GB), because region results are allocated by worker threads and
+freed by the writer thread.
 
 Java CPU by stage on chr21 (flight recorder): candidate stage 63%, evidence stage 34%, everything after
 that under 1%. BAM decoding inside htsjdk is about 20% of the total.
@@ -202,7 +223,7 @@ flat arrays in place of hash lookups, phasing data structures. Parity suite runs
 
 - Baseline sample: a WGS tumor/normal pair (REDUX BAMs). Paths live in `bench/env.local.sh`, which is
   not committed; outputs go to a directory outside the repository.
-- The port lives in this fork under `sage-rs/`. CRAM is deferred.
+- The port lives in this fork under `sage-rs/`.
 - Test data for SBX and Ultima: the public GIAB HG008 tumor/normal pair
   (`https://giab.s3.amazonaws.com/data_somatic/HG008/Liss_lab/`), sliced by chromosome and run through
   Java REDUX. REDUX 2.1 at this commit crashes during BQR because `BaseQualityResults.addPerfCounter`

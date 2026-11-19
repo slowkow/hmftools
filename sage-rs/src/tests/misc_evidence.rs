@@ -440,7 +440,7 @@ fn test_read_context_counter_ordering() {
     let mut sync_out: SyncOutput = Vec::new();
     assert!(cfg.sync_fragments);
     for read in reads {
-        match sync.handle(read, &mut sync_out) {
+        match sync.handle(read, &mut sync_out, &crate::bamio::ReadPool::default()) {
             Some(read) => collector.process(&read, None, &mut phase_sink),
             None => {
                 for (r, f) in sync_out.drain(..) {

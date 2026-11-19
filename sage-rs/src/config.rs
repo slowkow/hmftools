@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 const FLAGS: &[&str] = &[
     "include_mt", "panel_only", "no_fragment_sync", "skip_bqr", "skip_msi_jitter", "high_depth_mode",
-    "log_candidates", "log_debug", "germline", "disable_soft_filter", "disable_hard_filter", "write_frag_lengths",
+    "log_candidates", "perf_summary", "log_debug", "germline", "disable_soft_filter", "disable_hard_filter", "write_frag_lengths",
     "bqr_write_plot", "log_evidence", "run_tinc", "write_tinc_vcf", "write_fit_variants", "require_gene",
 ];
 
@@ -26,10 +26,15 @@ pub struct Config {
     pub ensembl_data_dir: Option<String>,
     pub jitter_bqr_dir: String,
     pub threads: usize,
+    /// not a Java option: the most tumor record data (MB) kept per thread and sample between the
+    /// candidate and evidence stages; 0 reads the file twice, as Java does
+    pub read_cache_mb: usize,
     pub include_mt: bool,
     pub panel_only: bool,
     pub sync_fragments: bool,
     pub log_candidates: bool,
+    /// not a Java option: report where the wall-clock time went
+    pub perf_summary: bool,
     pub specific_chr: Vec<String>,
     /// (chromosome, start, end)
     pub specific_regions: Vec<(String, i32, i32)>,
@@ -158,10 +163,12 @@ impl Config {
             ensembl_data_dir: get("ensembl_data_dir").cloned(),
             jitter_bqr_dir,
             threads: int("threads", 1)? as usize,
+            read_cache_mb: int("read_cache_mb", crate::bamio::DEFAULT_READ_CACHE_MB)?.max(0) as usize,
             include_mt: flag("include_mt"),
             panel_only: flag("panel_only"),
             sync_fragments: !flag("no_fragment_sync"),
             log_candidates: flag("log_candidates"),
+            perf_summary: flag("perf_summary"),
             specific_chr,
             specific_regions,
             // SBX and Ultima reads are long and variable, so the length is not sampled from the BAM

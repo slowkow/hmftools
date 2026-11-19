@@ -87,26 +87,24 @@ pub fn find_multi_base_repeat(bases: &[u8], index: i32, repeat_len: i32, min_cou
     if index + (min_count * repeat_len) - 1 >= n {
         return None;
     }
-    let mut i = index + repeat_len;
-    while i < n - (repeat_len - 1) {
-        let mut matched = 0;
-        for j in 0..repeat_len {
-            if bases[(i + j) as usize] == bases[(index + j) as usize] {
-                matched += 1;
-            } else {
-                break;
+    let (start, len) = (index as usize, repeat_len as usize);
+    let unit = &bases[start..start + len];
+    let mut i = start + len;
+    // units are at most a few bases long: compared in place, as a library call costs more
+    'units: while i + len <= bases.len() {
+        let next = &bases[i..i + len];
+        for j in 0..len {
+            if next[j] != unit[j] {
+                break 'units;
             }
         }
-        if matched != repeat_len {
-            break;
-        }
-        i += repeat_len;
+        i += len;
     }
-    let count = (i - index) / repeat_len;
+    let count = ((i - start) / len) as i32;
     if count < min_count {
         return None;
     }
-    Some(RepeatInfo::new(index, bases[index as usize..(index + repeat_len) as usize].to_vec(), count))
+    Some(RepeatInfo::new(index, unit.to_vec(), count))
 }
 
 pub fn extend_repeat_lower(repeat: RepeatInfo, bases: &[u8]) -> RepeatInfo {

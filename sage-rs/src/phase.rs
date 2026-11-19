@@ -398,18 +398,11 @@ impl Phaser {
                 // lower for the sequencing technologies with longer reads
                 threshold = (threshold - 1).max(1);
             }
-            let mut index = 0;
-            while index < c.groups.len() {
-                let g = &mut c.groups[index];
-                if g.read_count < threshold
+            c.groups.retain_mut(|g| {
+                !(g.read_count < threshold
                     || !g.positive.iter().any(|&i| passing[i])
-                    || (g.cull(valid, &pos) && !g.is_valid())
-                {
-                    c.groups.remove(index);
-                    continue;
-                }
-                index += 1;
-            }
+                    || (g.cull(valid, &pos) && !g.is_valid()))
+            });
             has_groups |= !c.groups.is_empty();
         }
         if !has_groups {

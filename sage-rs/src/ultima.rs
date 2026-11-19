@@ -1965,10 +1965,33 @@ impl ReadCigarState {
         self.cigar_index < 0 || self.cigar_index >= cigar.len() as i32
     }
 
+    /// The moves that stay within the current element, taken at once: up to `limit` of them where
+    /// each brings the target closer, otherwise all of them. Returns whether any were taken.
+    fn move_within_element(&mut self, move_up: bool, limit: Option<i32>) -> bool {
+        let room = if move_up { self.element.len - 1 - self.element_index } else { self.element_index };
+        let steps = limit.map_or(room, |l| room.min(l));
+        if steps <= 0 {
+            return false;
+        }
+        let direction = if move_up { 1 } else { -1 };
+        self.element_index += direction * steps;
+        if self.op().consumes_ref() {
+            self.ref_position += direction * steps;
+        }
+        if self.op().consumes_read() {
+            self.read_index += direction * steps;
+        }
+        true
+    }
+
     /// ReadCigarState.moveToRefPosition
     fn move_to_ref_position(&mut self, cigar: &[CigarEl], target_ref_position: i32) {
         let move_up = self.ref_position < target_ref_position;
         while self.ref_position != target_ref_position {
+            let limit = self.op().consumes_ref().then(|| (target_ref_position - self.ref_position).abs());
+            if self.move_within_element(move_up, limit) {
+                continue;
+            }
             self.move_state(cigar, move_up);
             if !self.valid {
                 break;
@@ -1982,6 +2005,10 @@ impl ReadCigarState {
     /// ReadCigarState.moveToIndex
     fn move_to_index(&mut self, cigar: &[CigarEl], target_index: i32) {
         while self.read_index != target_index {
+            let limit = self.op().consumes_read().then(|| (target_index - self.read_index).abs());
+            if self.move_within_element(self.read_index < target_index, limit) {
+                continue;
+            }
             self.move_state(cigar, self.read_index < target_index);
             if !self.valid {
                 break;
@@ -1989,6 +2016,84 @@ impl ReadCigarState {
         }
         if self.read_index != target_index {
             self.valid = false;
+        }
+    }
+
+    /// moveToRefPosition as Java has it, one base at a time
+    #[cfg(test)]
+    fn move_to_ref_position_by_base(&mut self, cigar: &[CigarEl], target_ref_position: i32) {
+        let move_up = self.ref_position < target_ref_position;
+        while self.ref_position != target_ref_position {
+            self.move_state(cigar, move_up);
+            if !self.valid {
+                break;
+            }
+        }
+        if self.ref_position != target_ref_position {
+            self.valid = false;
+        }
+    }
+
+    /// moveToIndex as Java has it, one base at a time
+    #[cfg(test)]
+    fn move_to_index_by_base(&mut self, cigar: &[CigarEl], target_index: i32) {
+        while self.read_index != target_index {
+            self.move_state(cigar, self.read_index < target_index);
+            if !self.valid {
+                break;
+            }
+        }
+        if self.read_index != target_index {
+            self.valid = false;
+        }
+    }
+}
+
+/// Not in the Java suite: moving a cigar state a whole element at a time ends in the state that
+/// moving it a base at a time ends in.
+#[cfg(test)]
+#[test]
+fn test_cigar_state_moves_equal_moves_by_base() {
+    let mut seed: u64 = 99;
+    let mut next = |bound: u64| -> u64 {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 33) % bound
+    };
+    let describe = |s: &ReadCigarState| format!("{s:?}");
+    for _ in 0..3000 {
+        let mut cigar: Vec<CigarEl> = Vec::new();
+        if next(3) == 0 {
+            cigar.push(CigarEl::new(1 + next(6) as i32, Op::S));
+        }
+        cigar.push(CigarEl::new(1 + next(20) as i32, Op::M));
+        for _ in 0..next(5) {
+            let op = [Op::I, Op::D, Op::N, Op::I, Op::D][next(5) as usize];
+            cigar.push(CigarEl::new(1 + next(4) as i32, op));
+            cigar.push(CigarEl::new(1 + next(20) as i32, Op::M));
+        }
+        if next(3) == 0 {
+            cigar.push(CigarEl::new(1 + next(6) as i32, Op::S));
+        }
+        let read_length: i32 = cigar.iter().filter(|e| e.op.consumes_read()).map(|e| e.len).sum();
+        let ref_length: i32 = cigar.iter().filter(|e| e.op.consumes_ref()).map(|e| e.len).sum();
+        let start = 1000;
+        let mut fast = ReadCigarState::initialise(start, &cigar).unwrap();
+        let mut by_base = fast;
+        // a sequence of moves, each from where the last one ended, some to targets off the read
+        for _ in 0..6 {
+            if !fast.valid {
+                break;
+            }
+            if next(2) == 0 {
+                let target = next(read_length as u64 + 6) as i32 - 3;
+                fast.move_to_index(&cigar, target);
+                by_base.move_to_index_by_base(&cigar, target);
+            } else {
+                let target = start + next(ref_length as u64 + 6) as i32 - 3;
+                fast.move_to_ref_position(&cigar, target);
+                by_base.move_to_ref_position_by_base(&cigar, target);
+            }
+            assert_eq!(describe(&fast), describe(&by_base), "cigar {cigar:?}");
         }
     }
 }

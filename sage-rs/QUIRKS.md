@@ -76,6 +76,18 @@ upstream report rather than a silent fix. File references are to `sage/src/main/
   public SBX chr21 slice (after "ignoring read with position before prior position"); the port runs
   through. Default-path comparisons on that data use chr21:20-40 Mb.
 
+## CRAM
+
+- A CRAM normally leaves the `NM` tag out. htslib regenerates it when decoding; htsjdk does not, and
+  `NumberEvents.getOrCalcNm` then counts the mismatches itself against the region's reference bases.
+  The port turns the regeneration off and counts as Java does. The count is not always the aligner's
+  `NM` (which the BAM carries), so the event penalty on map quality changes for some reads and with it
+  `RC_QUAL`, `AFMQ`, `MQF` and a few filters. On chr21 of the Illumina baseline pair, Java gives
+  6,023 records from the BAMs and 5,908 from CRAMs of the same reads; the port gives the same 6,023
+  and 5,908. The SBX and Ultima slices give the same calls from BAM and CRAM.
+- The htsjdk in Java SAGE 5.1 rejects CRAM 3.1, the default of current samtools. The port reads 3.0
+  and 3.1 and gives the same calls from either.
+
 ## Where the port differs
 
 - `dedup/IndelDeduper.checkDedupCombinations` enumerates subsets of a `HashSet` whose order comes from
@@ -96,3 +108,11 @@ upstream report rather than a silent fix. File references are to `sage/src/main/
   message naming the read, where Java fails with a null pointer.
 - Append: header lines are kept as text; the GL to PL conversion, the INFO value-count check and the
   missing-header-line error of htsjdk are not reproduced.
+- The tumor's reads are read from the file once per partition: the candidate stage keeps the records
+  it reads, plus those within the evidence stage's 30-base soft-clip buffer, and the evidence stage
+  takes its reads from there (Java queries the file again). A partition holding more than 32 MB of
+  records (`-read_cache_mb`, per thread and tumor sample; 0 turns the cache off) is read a second
+  time instead. The reads and their order are the same.
+- Overlapping mates that are both a single match element are merged directly from the three runs
+  (first read only, overlap, second read only) rather than by the base-by-base cigar walk; a unit test
+  checks the two give the same read.

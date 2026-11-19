@@ -600,6 +600,21 @@ pub fn position_from_read_index(
     None
 }
 
+/// The index of the first position at which two equally long sequences differ.
+pub(crate) fn first_mismatch(a: &[u8], b: &[u8]) -> Option<usize> {
+    let mut offset = 0;
+    let mut a_words = a.chunks_exact(8);
+    let mut b_words = b.chunks_exact(8);
+    for (x, y) in (&mut a_words).zip(&mut b_words) {
+        let diff = u64::from_le_bytes(x.try_into().unwrap()) ^ u64::from_le_bytes(y.try_into().unwrap());
+        if diff != 0 {
+            return Some(offset + (diff.trailing_zeros() / 8) as usize);
+        }
+        offset += 8;
+    }
+    a_words.remainder().iter().zip(b_words.remainder()).position(|(x, y)| x != y).map(|i| offset + i)
+}
+
 pub(crate) fn mnv_length(read_index: i32, ref_index: i32, read_bases: &[u8], ref_bases: &[u8]) -> i32 {
     let diff = |i: i32| {
         ref_index + i < ref_bases.len() as i32
@@ -781,7 +796,7 @@ impl<'a> CandidateFinder<'a> {
         let n = read.cigar.len();
         let mut read_index = 0;
         let mut ref_base = read.start;
-        for (i, el) in read.cigar.clone().iter().enumerate() {
+        for (i, el) in read.cigar.iter().enumerate() {
             match el.op {
                 Op::H | Op::P => {}
                 Op::S => {
@@ -873,16 +888,27 @@ impl<'a> CandidateFinder<'a> {
     fn process_alignment(&mut self, read: &Read, read_start_index: i32, ref_pos_start: i32, len: i32, info: &mut ReadInfo) {
         let ref_index = self.ref_seq.index(ref_pos_start);
         let ref_bases = &self.ref_seq.bases;
-        for i in 0..len {
+        // only the part of the element within the region bounds is looked at
+        let first = (self.bounds.start - ref_pos_start).max(0);
+        let end = (self.bounds.end - ref_pos_start + 1).min(len);
+        let mut i = first - 1;
+        loop {
+            i += 1;
+            if i >= end {
+                break;
+            }
+            if info.exceeds_quality {
+                // nothing happens at a base matching the reference, so go straight to the next mismatch
+                let ref_part = &ref_bases[(ref_index + i) as usize..(ref_index + end) as usize];
+                let read_part = &read.bases[(read_start_index + i) as usize..(read_start_index + end) as usize];
+                match first_mismatch(ref_part, read_part) {
+                    Some(offset) => i += offset as i32,
+                    None => break,
+                }
+            }
             let ref_position = ref_pos_start + i;
             let read_base_index = read_start_index + i;
             let ref_base_index = ref_index + i;
-            if ref_position < self.bounds.start {
-                continue;
-            }
-            if ref_position > self.bounds.end {
-                break;
-            }
             if !info.exceeds_quality && !self.is_hotspot_position(ref_position) {
                 continue;
             }

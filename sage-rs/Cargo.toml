@@ -8,7 +8,8 @@ anyhow = "1.0.104"
 core-math = "1.4.0"
 flate2 = "1.1.11"
 libm = "0.2.16"
-rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate"] }
+memchr = "2.8.3"
+rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate", "bzip2", "lzma"] }
 
 [profile.release]
 panic = "abort"

@@ -5,6 +5,7 @@
 
 pub mod util;
 
+mod alignment_reading; // not from Java: BAM / CRAM reading, the tag parser and the read cache
 mod artefacts; // seqtech/ArtefactsTest
 mod candidate_creation; // candidate/CandidateCreationTest
 mod candidate_serialisation; // candidate/CandidateSerialisationTest

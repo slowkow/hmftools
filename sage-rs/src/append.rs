@@ -995,7 +995,7 @@ struct Worker {
 
 impl Worker {
     fn open(cfg: &Config) -> Result<Worker> {
-        let bams: Result<Vec<BamSlicer>> = cfg.reference_bams.iter().map(|p| BamSlicer::open(p, 1)).collect();
+        let bams: Result<Vec<BamSlicer>> = cfg.reference_bams.iter().map(|p| BamSlicer::open(p, &cfg.ref_genome, 1)).collect();
         Ok(Worker { genome: RefGenome::open(&cfg.ref_genome)?, bams: bams? })
     }
 }

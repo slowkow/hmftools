@@ -1,4 +1,5 @@
 mod append;
+
 mod bamio;
 mod candidate;
 mod config;
@@ -171,7 +172,7 @@ struct Worker {
 impl Worker {
     fn open(cfg: &Config) -> Result<Worker> {
         let open_all = |paths: &[String]| -> Result<Vec<bamio::BamSlicer>> {
-            paths.iter().map(|p| bamio::BamSlicer::open(p, 1)).collect()
+            paths.iter().map(|p| bamio::BamSlicer::open_with_cache(p, &cfg.ref_genome, 1, cfg.read_cache_mb)).collect()
         };
         Ok(Worker {
             genome: RefGenome::open(&cfg.ref_genome)?,
@@ -217,14 +218,16 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion) ->
         vec![region]
     };
     // CandidateStage.findCandidates: each tumor sample is read with its own RefContextCache
-    w.tumor_bams[0].slice_ref(chr, &slice_regions, true, |read| finder.process_read(read))?;
+    // the records are kept for the evidence stage, which reads up to a soft-clip buffer further out
+    let margin = evidence_stage::SLICE_SOFT_CLIP_BUFFER;
+    w.tumor_bams[0].slice_ref_caching(chr, &slice_regions, margin, |read| finder.process_read(read))?;
     let candidates = if w.tumor_bams.len() == 1 {
         build_candidates(finder.finish(), &hotspots, &panel, &high_conf)
     } else {
         let mut sample_candidates = vec![finder.finish()];
         for bam in w.tumor_bams[1..].iter_mut() {
             let mut finder = CandidateFinder::new(cfg, chr, region, &ref_seq, &hotspots, &panel, ref_data);
-            bam.slice_ref(chr, &slice_regions, true, |read| finder.process_read(read))?;
+            bam.slice_ref_caching(chr, &slice_regions, margin, |read| finder.process_read(read))?;
             sample_candidates.push(finder.finish());
         }
         build_candidates_of_multiple_samples(sample_candidates, &hotspots, &panel, &high_conf)
@@ -375,6 +378,8 @@ struct Queue {
     written: usize,
     done: BTreeMap<usize, Result<Option<RegionOutput>>>,
     failed: bool,
+    /// time the workers spent waiting for the writer to catch up
+    worker_wait: std::time::Duration,
 }
 
 fn main() -> Result<()> {
@@ -493,9 +498,11 @@ fn main() -> Result<()> {
     let threads = cfg.threads.max(1);
     // workers may run this many regions ahead of the writer
     let window = threads * 4;
-    let queue = Mutex::new(Queue { next: 0, written: 0, done: BTreeMap::new(), failed: false });
+    let queue = Mutex::new(Queue { next: 0, written: 0, done: BTreeMap::new(), failed: false, worker_wait: std::time::Duration::ZERO });
     let ready = Condvar::new();
     let mut next_lps = 1;
+    let mut writer_busy = std::time::Duration::ZERO;
+    let started = std::time::Instant::now();
 
     let result: Result<()> = std::thread::scope(|scope| {
         for _ in 0..threads {
@@ -511,7 +518,9 @@ fn main() -> Result<()> {
                             if q.next < q.written + window {
                                 break;
                             }
+                            let waiting = std::time::Instant::now();
                             q = ready.wait(q).unwrap();
+                            q.worker_wait += waiting.elapsed();
                         }
                         q.next += 1;
                         q.next - 1
@@ -550,8 +559,10 @@ fn main() -> Result<()> {
                         }
                     }
                     if !out.variants.is_empty() {
+                        let busy = std::time::Instant::now();
                         let records = finalise_region(&shared, &main_worker.genome, chr, *region, out, &mut next_lps);
                         vcf.add_region(records)?;
+                        writer_busy += busy.elapsed();
                     }
                 }
                 // Java flushes the writer at the end of each chromosome
@@ -572,6 +583,16 @@ fn main() -> Result<()> {
     });
     result?;
     vcf.close()?;
+    if cfg.perf_summary {
+        eprintln!(
+            "regions({}) elapsed({:.1}s) finalising and writing({:.1}s) workers held back by the writer({:.1}s over {} threads)",
+            tasks.len(),
+            started.elapsed().as_secs_f64(),
+            writer_busy.as_secs_f64(),
+            queue.lock().unwrap().worker_wait.as_secs_f64(),
+            threads
+        );
+    }
     if let Some(tinc_cfg) = tinc_cfg {
         let output = if cfg.write_tinc_vcf { tinc::generate_tinc_vcf_filename(&cfg.output_vcf) } else { cfg.output_vcf.clone() };
         let mut analyser = tinc::TincAnalyser::new(tinc_cfg);

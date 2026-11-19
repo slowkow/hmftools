@@ -441,3 +441,54 @@ fn test_truncated_fragment_indel_mismatch() {
 
     assert_eq!(&r[10..40], read_string(&combined));
 }
+
+/// Not in the Java suite: the fast path for two plain-match reads gives exactly what the general
+/// base-by-base walk gives, for every arrangement of the two reads.
+#[test]
+fn test_plain_match_fast_path_equals_general_path() {
+    use crate::sync::form_fragment_read_with;
+    let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut next = |bound: u64| -> u64 {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (state >> 33) % bound
+    };
+    let mut combined = 0;
+    for _ in 0..20000 {
+        let mut make = |start: i32, next: &mut dyn FnMut(u64) -> u64| -> Read {
+            let len = 1 + next(40) as usize;
+            let bases: String = (0..len).map(|_| ['A', 'C', 'G', 'T'][next(4) as usize]).collect();
+            // a few quality values, so that equal and differing quals both occur
+            let quals: Vec<u8> = (0..len).map(|_| [1u8, 11, 25, 37, 12, 30][next(6) as usize]).collect();
+            let mut read = build_sam_record_quals(start, &format!("{len}M"), &bases, quals);
+            read.name = READ_ID.to_string();
+            read
+        };
+        let mut first = make(100 + next(30) as i32, &mut next);
+        let mut second = make(100 + next(30) as i32, &mut next);
+        // mostly matching bases over the overlap, as real mates have
+        if next(4) != 0 {
+            for pos in first.start.max(second.start)..=first.end.min(second.end) {
+                if next(10) != 0 {
+                    second.bases[(pos - second.start) as usize] = first.bases[(pos - first.start) as usize];
+                }
+            }
+        }
+        set_negative_strand(&mut first, next(2) == 0);
+        set_negative_strand(&mut second, next(8) != 0 && !first.negative_strand());
+        let fast = form_fragment_read_with(&first, &second, crate::bamio::blank_read(), true);
+        let general = form_fragment_read_with(&first, &second, crate::bamio::blank_read(), false);
+        match (fast, general) {
+            (Outcome::Combined(a), Outcome::Combined(b)) => {
+                combined += 1;
+                assert_eq!(a.cigar, b.cigar);
+                assert_eq!(a.bases, b.bases);
+                assert_eq!(a.quals, b.quals);
+                assert_eq!((a.start, a.end, a.flags, a.mapq), (b.start, b.end, b.flags, b.mapq));
+            }
+            (Outcome::NoOverlap, Outcome::NoOverlap) | (Outcome::Inversion, Outcome::Inversion) => {}
+            (Outcome::CigarMismatch, Outcome::CigarMismatch) | (Outcome::Exception, Outcome::Exception) => {}
+            _ => panic!("fast and general paths disagree on the outcome"),
+        }
+    }
+    assert!(combined > 2000);
+}
