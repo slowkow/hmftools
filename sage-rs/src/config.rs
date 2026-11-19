@@ -166,6 +166,11 @@ impl Config {
                 crate::ultima::set_candidate_min_high_bq_threshold(v.parse()?);
             }
         }
+        // not a Java option: see bamio::FILE_BUFFER_KB
+        crate::bamio::FILE_BUFFER_KB.store(
+            int("file_buffer_kb", crate::bamio::DEFAULT_FILE_BUFFER_KB)?.clamp(0, 1 << 20),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let tumor_bams = list(get("tumor_bam"));
         let reference_bams = list(get("reference_bam"));
         let dir_of = |p: &String| {

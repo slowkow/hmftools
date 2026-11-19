@@ -124,6 +124,11 @@ fn sorted_and_disjoint(regions: &[BaseRegion]) -> bool {
 /// The most record data (MB) kept per sample for one region partition, by default; a partition
 /// with more is read from the file a second time instead.
 pub const DEFAULT_READ_CACHE_MB: i32 = 32;
+
+/// The size (KB) of the buffer each alignment file handle reads through (-file_buffer_kb; 0 leaves
+/// htslib's default).
+pub const DEFAULT_FILE_BUFFER_KB: i32 = 1024;
+pub static FILE_BUFFER_KB: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(DEFAULT_FILE_BUFFER_KB);
 const READ_CACHE_GROWTH_BYTES: usize = 4 << 20;
 
 /// The records one sample has within a set of regions, kept as stored in the BAM, so that the
@@ -458,6 +463,18 @@ impl BamSlicer {
             };
             if ret != 0 {
                 anyhow::bail!("setting CRAM options for {path}");
+            }
+        }
+        let buffer_kb = FILE_BUFFER_KB.load(std::sync::atomic::Ordering::Relaxed);
+        if buffer_kb > 0 {
+            // htslib reads the file in blocks of 32 KB or the file system's preferred size; with many
+            // threads each reading its own part of a large file, bigger blocks mean far fewer requests
+            // SAFETY: the option takes one int argument
+            let ret = unsafe {
+                htslib::hts_set_opt(reader.htsfile(), htslib::hts_fmt_option_HTS_OPT_BLOCK_SIZE, (buffer_kb << 10) as std::os::raw::c_int)
+            };
+            if ret != 0 {
+                anyhow::bail!("setting the file buffer size for {path}");
             }
         }
         if threads > 1 {

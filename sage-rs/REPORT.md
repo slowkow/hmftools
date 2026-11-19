@@ -59,11 +59,12 @@ Whole genome, 16 threads:
 | Run | Java | Rust |
 |---|---|---|
 | Without TINC | 2,450 s, 26.9 GB | 812 s, 0.9 GB (first complete version) |
-| With `-run_tinc` | 3,407 s | 764 s (first complete version), 593 s and 1.7 GB (current) |
+| With `-run_tinc` | 3,407 s | 764 s (first complete version), 593 s (second round), 327 s and 1.8 GB (current) |
 | Standalone TINC | 113 s, 17 GB | 14 s, 0.5 GB |
 
-The current whole-genome run uses 5,380 core-seconds (9,030 before the second optimisation round) and
-is limited by the disk: it averages 9 of 16 cores.
+The current whole-genome run uses 4,030 core-seconds (9,030 for the first complete version) and
+averages 12 of 16 cores. Java's 3,407 s was measured while other jobs were running, so the ratio
+(about 10x) is approximate.
 
 ### What made it faster, in order of effect
 
@@ -74,6 +75,9 @@ is limited by the disk: it averages 9 of 16 cores.
 3. BAM tags parsed in place; read buffers reused.
 4. Overlapping mates that are both a plain match are merged without the cigar walk.
 5. The candidate stage skips from mismatch to mismatch with a word-wise compare.
+6. A 1 MB read buffer per alignment file handle. With htslib's default block the 16 threads made many
+   small requests to the disk and the whole genome read at 340 MB/s; with 1 MB blocks it takes 327 s
+   in place of 593 s. This is the largest single gain in wall time and changes no code path in the caller.
 
 ### Tried and dropped
 
@@ -226,4 +230,5 @@ These are candidates for upstream reports. The port reproduces every one that af
 
 - Split reads compared with Java on real RNA data.
 - Ultima reads formed by REDUX consensus (REDUX fails on the test data, above).
-- Further speed: Ultima read-context building, allocation, decompression; disk-bound wall time.
+- Further speed: decompression (34 to 40% of CPU) and allocation (about 10%) are what is left; the
+  visualiser builds its files on the writer thread.

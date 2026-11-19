@@ -44,7 +44,9 @@ Extra options: `-log_candidates` writes `<output>.candidates.tsv` (same columns 
 `-log_evidence` writes the per-sample genotype fields of every candidate that passes the hard filters;
 `-read_cache_mb N` sets how much tumor read data each thread keeps between the candidate and evidence
 stages (default 32; 0 reads the file twice, as Java does, for about 0.5 GB less memory at 16 threads
-and 15% more time); `-perf_summary` reports where the wall-clock time went.
+and 15% more time); `-file_buffer_kb N` sets the buffer each alignment file handle reads through
+(default 1024; 0 leaves htslib's default, which is about half as fast on a whole genome);
+`-perf_summary` reports where the wall-clock time went.
 
 ## Visualiser
 

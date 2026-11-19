@@ -66,6 +66,18 @@ in the page cache. `-perf_summary` reports how long the workers waited on the wr
 16 threads here) and how long the writer was busy (64 s). The peak is above the earlier 0.9 GB because
 of the read cache (32 MB per thread by default; `-read_cache_mb 0` turns it off).
 
+Third round: each alignment file handle now reads through a 1 MB buffer (`-file_buffer_kb`) in place of
+htslib's default block. The same `-run_tinc` whole genome at 16 threads takes 327 s (593 s before) with a
+1.8 GB peak and writes the same two VCFs; CPU time is 4,030 core-seconds (5,380 before, the difference
+being system time) and the run averages 12 of 16 cores. The disk reads a single stream at about
+800 MB/s; with the default block the run managed 340 MB/s across its 32 file handles. On single
+chromosomes not in the page cache: 23 s per 100 Mb with the default block, 12 s with 256 KB, 11 s with
+1 MB, 11 s with 4 MB, 14 s with 16 MB.
+
+For Ultima the profile has changed since the second round: decompression is 40%, decoding records 13%,
+allocation 9%, and read-context building is small. A larger read cache does not help (21.4 s at 32 MB,
+20.9 s at 128 MB, 23.5 s with none, on 10 Mb of chr21).
+
 Rust CPU profile on Illumina chr21 after the second round (one thread): BAM decompression and reading
 34%, matching reads to candidates and quality scores 13%, allocation 11%, decoding records 8%, the
 jitter check 7%, read-context building 6%, fragment sync 5%. For Ultima, read-context building (core
