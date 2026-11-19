@@ -139,6 +139,7 @@ pub fn build_sam_record_quals(alignment_start: i32, cigar: &str, read_bases: &st
         tp: Vec::new(),
         t0: Vec::new(),
         low_qual_tag: None,
+        consensus_read_tag: None,
     }
 }
 

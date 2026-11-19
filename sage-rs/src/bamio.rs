@@ -179,8 +179,9 @@ impl ReadCache {
         let aux = raw.aux();
         self.data.extend_from_slice(&raw.data[..raw.data.len() - aux.len()]);
         let data = &mut self.data;
+        let vis = crate::vis::is_enabled();
         for_each_aux_span(aux, |tag, _, span| {
-            if matches!(tag, b"NM" | b"MC" | b"YX" | b"UT" | b"tp" | b"t0" | b"UQ") {
+            if matches!(tag, b"NM" | b"MC" | b"YX" | b"UT" | b"tp" | b"t0" | b"UQ") || (vis && tag == b"CR") {
                 data.extend_from_slice(span);
             }
         });
@@ -330,6 +331,7 @@ pub(crate) fn blank_read() -> Read {
         tp: Vec::new(),
         t0: Vec::new(),
         low_qual_tag: None,
+        consensus_read_tag: None,
     }
 }
 
@@ -364,7 +366,9 @@ fn fill(rec: &RawRecord, read: &mut Read) {
     read.tp.clear();
     read.t0.clear();
     read.low_qual_tag = None;
+    read.consensus_read_tag = None;
     let ultima = crate::constants::is_ultima();
+    let vis = crate::vis::is_enabled();
     let mut has_mate_cigar = false;
     for_each_aux(rec.aux(), |tag, value| match (tag, value) {
         (b"NM", AuxValue::Int(v)) => read.nm = Some(v),
@@ -385,6 +389,7 @@ fn fill(rec: &RawRecord, read: &mut Read) {
         (b"tp", AuxValue::ByteArray(a)) if ultima => read.tp.extend(a.iter().map(|v| *v as i8)),
         (b"t0", AuxValue::Str(s)) if ultima => read.t0.extend(s.iter().map(|b| (*b as i32 - 33) as i8)),
         (b"UQ", AuxValue::Str(s)) if ultima => read.low_qual_tag = Some(String::from_utf8_lossy(s).into_owned()),
+        (b"CR", AuxValue::Str(s)) if vis => read.consensus_read_tag = Some(String::from_utf8_lossy(s).into_owned()),
         (b"UT", AuxValue::Str(s)) => {
             read.has_consensus_tag = true;
             read.consensus = match s {

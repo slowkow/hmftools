@@ -22,6 +22,7 @@ the same VCF, byte for byte, as Java run with `-threads 1`.
 | Append (`sage-rs append`) | identical |
 | CRAM 3.0 | identical to Java reading the same CRAM |
 | CRAM 3.1 | works; Java cannot read it |
+| Visualiser (`-vis_*`) | same files as Java once the read rows Java orders at random are sorted (section 6) |
 | Unit tests | the Java SAGE unit tests are ported, plus tests for the port's own code |
 
 Section 6 lists what was added after this table was first written.
@@ -127,6 +128,11 @@ These are candidates for upstream reports. The port reproduces every one that af
 - REDUX 2.1 with `-form_consensus` on the public Ultima slices: fails on a consensus read with an empty
   base.
 - Ultima reads without `tp` / `t0` tags: null pointer rather than a message.
+- Visualiser: `-vis_variants` with a variant two or more regions out of position order stops the VCF
+  writer ("Features added out of order").
+- Visualiser: with `-vis_purple_vcf`, a reportable variant whose transcript has no amino acid entry
+  (intergenic, non-coding), or whose protein change is written in a form `AminoAcidEvent.parse` does
+  not expect (`p.Gly12Ter`), is a null pointer exception: a warning, and no file for the variant.
 
 ### Logic that looks unintended and changes calls
 
@@ -146,6 +152,26 @@ These are candidates for upstream reports. The port reproduces every one that af
 - The binomial tail `1 - cdf` is exactly 0 in some cases only because of `FastMath` rounding, which
   selects a different penalty; one `MQF` value in a whole genome depends on it.
 
+- **Turning the visualiser on removes every chrM call.** `VariantVis` needs the chromosome length from
+  `RefGenomeCoordinates`, which lists 1-22, X and Y; on chrM the counters cannot be built and the VCF
+  has no chrM records (0 against 128 on the Illumina pair), with nothing in the log.
+- With `-vis_purple_vcf` and no reportable variant, SAGE exits leaving an empty, unterminated
+  `.vcf.gz`.
+
+### Visualiser output
+
+- The reads shown, and the order of reads that tie, come from `ThreadLocalRandom`: two runs never
+  give the same file.
+- Text positions come from AWT font metrics, so the files depend on the fonts of the machine.
+- Several filters are listed in an order that partly depends on identity hash codes.
+- `BaseSeqViewModel.create` indexes the mates of a merged fragment by read-base index where a
+  reference position is meant, so the overlap border is misplaced after an indel in the merged read.
+- The `AED` row shows the first sample's two averages (all reads, alt reads) under "Tumor" and "Normal".
+- `MQF` is rounded to a whole number (`round(round(x * 10) / 10)`).
+- After a frameshift reaches a stop codon, `AminoAcidUtil` uses an index into the fetched bases as a
+  genome position for the rest of the track.
+- An unknown three-letter amino acid code in a `delins` is drawn as the letters of `null`.
+
 ### Cosmetic
 
 - `RC_JIT` is declared with three values and written with two.
@@ -160,6 +186,41 @@ These are candidates for upstream reports. The port reproduces every one that af
   alleles, append on position only, as in Java.
 - **TINC with two tumors**: the pre-TINC VCF, the rewritten VCF and the fit-variant file are identical.
   Java uses the first tumor and requires exactly one reference sample.
+
+- **The visualiser** (`-vis_variants`, `-vis_pass_only`, `-vis_max_support_reads`, `-vis_output_dir`,
+  `-vis_purple_vcf`): one gzipped HTML file per variant, with the read table, the info tables and, for
+  the reportable variants of a PURPLE VCF, the amino acid track. `src/vis_svg.rs` writes SVG as
+  JFreeSVG 5.0.5 does and holds the font metrics; `src/vis_html.rs` the CSS builder and the HTML that
+  j2html renders; `src/vis_aa.rs` the amino acid track; `src/vis.rs` the rest. A counter collects reads
+  only for a variant that is shown, so a run without the visualiser does the same work as before
+  (SBX chr21, one thread: 37.7 s against 37.6 s, same VCF).
+
+  Java's files are not reproducible (the reads shown and the order of tied reads are random) and
+  depend on the machine's fonts, so the comparison sorts the read rows within each match type block
+  and was made against Java on the same machine; everything else must be equal byte for byte. With
+  `-vis_max_support_reads -1` both sides show every read:
+
+  | Input | Run | Files | Result |
+  |---|---|---|---|
+  | SBX, public | 9 named variants: SNV, MNV, insert, delete; with and without soft filters | 9 | equal |
+  | Ultima, public | 6 named variants | 6 | equal |
+  | SBX, public | `-vis_pass_only` over 400 kb | 3 | equal |
+  | SBX, public | two tumors and two references | 3 | equal |
+  | SBX, public | tumor only, `-vis_output_dir` | 3 | equal |
+  | SBX, public | CRAM input | 3 | equal |
+  | SBX, public | synthetic PURPLE VCF: 119 coding variants given made-up protein changes of every kind | 105 | equal; the same 14 variants fail in both |
+  | Illumina | 16 named variants (paired reads, merged fragments, mate columns, duplicate counts) | 16 | equal |
+  | Illumina | `-vis_pass_only` over 2 Mb | 8 | equal |
+  | Illumina | PURPLE VCF of the sample, and one with 173 of its variants flagged reportable | 4, 155 | equal; of the 173, the same 18 fail in both |
+
+  With the default limits and with `-vis_max_support_reads 7` the two sides show different reads, so
+  there the number of rows per block is compared, and everything outside the read rows: equal (SBX: 5
+  files each; Illumina, default limits: 16; SBX `-vis_pass_only` over all of chr21: 174, which takes
+  Java 2,392 s on one thread and the port 11 s on eight). The VCF of every one of these runs is
+  identical to Java's.
+  The unit tests take their expected values from Java (`src/tests/data/VisFixtures.java`): CSS, font
+  metrics, SVG for base sequences, fragments, coordinates and gene tracks, 45 protein changes, and the
+  amino acid track for 864 combinations of transcript, variant, protein change and view.
 
 ## 7. Not done
 

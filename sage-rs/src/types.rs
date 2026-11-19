@@ -109,6 +109,8 @@ pub struct Read {
     pub t0: Vec<i8>,
     /// Ultima: the UQ tag set by REDUX, "count=index,start-end,..." of the low-qual read indices
     pub low_qual_tag: Option<String>,
+    /// the CR tag set by REDUX on a consensus read; only kept when the visualiser is on
+    pub consensus_read_tag: Option<String>,
 }
 
 impl Read {

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 const FLAGS: &[&str] = &[
     "include_mt", "panel_only", "no_fragment_sync", "skip_bqr", "skip_msi_jitter", "high_depth_mode",
     "log_candidates", "perf_summary", "log_debug", "germline", "disable_soft_filter", "disable_hard_filter", "write_frag_lengths",
-    "bqr_write_plot", "log_evidence", "run_tinc", "write_tinc_vcf", "write_fit_variants", "require_gene",
+    "bqr_write_plot", "log_evidence", "run_tinc", "write_tinc_vcf", "write_fit_variants", "require_gene", "vis_pass_only",
 ];
 
 #[derive(Clone, Debug)]
@@ -76,6 +76,9 @@ pub struct Config {
     pub write_frag_lengths: bool,
     /// SageConfig.SpecificVariants (-specific_var_file): only these candidates are kept
     pub specific_variants: Vec<(String, crate::types::SimpleVariant)>,
+    /// SageConfig.Visualiser (-vis_variants, -vis_pass_only, -vis_max_support_reads, -vis_output_dir,
+    /// -vis_purple_vcf); never enabled in append mode
+    pub vis: crate::vis::VisConfig,
 }
 
 fn list(v: Option<&String>) -> Vec<String> {
@@ -189,8 +192,25 @@ impl Config {
         }
         // SageConfig: the variants file is only read when no region or chromosome was given, and each
         // variant adds a region around itself
+        let vis = if append {
+            crate::vis::VisConfig::default()
+        } else {
+            crate::vis::VisConfig::from_options(
+                get("vis_variants").map(|s| s.as_str()),
+                flag("vis_pass_only"),
+                int("vis_max_support_reads", 0)?,
+                get("vis_output_dir").map(|s| s.as_str()),
+                get("vis_purple_vcf").map(|s| s.as_str()),
+                &req("output_vcf")?,
+            )?
+        };
         let mut specific_variants = Vec::new();
-        if specific_regions.is_empty() && specific_chr.is_empty() {
+        if !vis.specific_variants.is_empty() {
+            // each visualised variant adds a region around itself, and the variants file is then not read
+            for (chr, v) in &vis.specific_variants {
+                add_specific_region(&mut specific_chr, &mut specific_regions, chr, v.pos - VIS_VARIANT_BUFFER, v.pos + VIS_VARIANT_BUFFER);
+            }
+        } else if specific_regions.is_empty() && specific_chr.is_empty() {
             if let Some(path) = get("specific_var_file") {
                 specific_variants =
                     load_simple_variants(path).with_context(|| format!("failed to load specific variants file: {path}"))?;
@@ -271,6 +291,7 @@ impl Config {
             require_gene: flag("require_gene"),
             write_frag_lengths: flag("write_frag_lengths"),
             specific_variants,
+            vis,
         })
     }
 

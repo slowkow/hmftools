@@ -679,6 +679,7 @@ pub fn to_candidate(context: &VariantContext, ref_sequence: &RefSequence) -> Res
         tp: Vec::new(),
         t0: Vec::new(),
         low_qual_tag: None,
+        consensus_read_tag: None,
     };
     let read_context = create_context(&variant, &read, vcf_info.var_index, ref_sequence, DEFAULT_FLANK_LENGTH);
     let read_context = match read_context {
@@ -1023,7 +1024,7 @@ fn process_region(
     let mut sample_counters: Vec<Vec<ReadContextCounter>> = Vec::new();
     for (i, sample_id) in cfg.reference_ids.iter().enumerate() {
         phaser.initialise(sample_id);
-        let mut sample = evidence_stage::Sample { bam: &mut w.bams[i], bqr: &sh.bqr[i], msi: &sh.msi[i], is_reference: true };
+        let mut sample = evidence_stage::Sample { id: sample_id, bam: &mut w.bams[i], bqr: &sh.bqr[i], msi: &sh.msi[i], is_reference: true };
         sample_counters.push(evidence_stage::collect_evidence(
             cfg, chr, &candidates, &w.genome, sh.ref_data, &mut sample, &mut sync, Some(&mut phaser),
         )?);

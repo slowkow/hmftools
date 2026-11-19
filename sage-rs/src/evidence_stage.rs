@@ -16,6 +16,7 @@ use anyhow::{bail, Result};
 pub const SLICE_SOFT_CLIP_BUFFER: i32 = 30;
 
 pub struct Sample<'a> {
+    pub id: &'a str,
     pub bam: &'a mut BamSlicer,
     pub bqr: &'a BqrMap,
     pub msi: &'a MsiJitter,
@@ -68,11 +69,16 @@ pub(crate) struct Collector<'a> {
     pub(crate) selected: Vec<usize>,
     pub(crate) ref_seq: &'a RefSequence,
     pub(crate) qc: &'a QualityCalculator<'a>,
+    /// whether any counter collects reads for the visualiser
+    pub(crate) vis: bool,
 }
 
 impl<'a> Collector<'a> {
     pub(crate) fn process(&mut self, read: &Read, fragment: Option<&FragmentData>, phaser: &mut Option<&mut dyn PhaseSink>) {
         self.selected.clear();
+        if self.vis {
+            crate::vis::begin_read();
+        }
         let n = self.counters.len() as i64;
         let mut read_start = read.start - read.left_soft_clip();
         let mut read_end = read.end + read.right_soft_clip();
@@ -205,6 +211,17 @@ pub fn collect_evidence(
             rc.fragment_length_data = Some(Vec::new());
         }
     }
+    // ReadContextCounter: a VariantVis for each variant the visualiser shows
+    let mut vis = false;
+    if cfg.vis.enabled() {
+        let sequence_names = std::sync::Arc::new(sample.bam.sequence_names());
+        for rc in counters.iter_mut() {
+            if !rc.ctx.marked_invalid && cfg.vis.process_variant(chr, rc.variant()) {
+                rc.vis = crate::vis::VariantVis::new(chr, sample.id, rc.ctx.clone(), rc.tier, genome, sequence_names.clone())?;
+                vis |= rc.vis.is_some();
+            }
+        }
+    }
     if is_ultima() {
         let ref_bases = GenomeBases { genome, chr, ref_seq: &ref_seq };
         for rc in counters.iter_mut() {
@@ -237,7 +254,7 @@ pub fn collect_evidence(
         counters = valid;
     }
 
-    let mut collector = Collector { counters, last_index: 0, selected: Vec::new(), ref_seq: &ref_seq, qc: &qc };
+    let mut collector = Collector { counters, last_index: 0, selected: Vec::new(), ref_seq: &ref_seq, qc: &qc, vis };
     let mut out: SyncOutput = Vec::new();
     let sync_fragments = cfg.sync_fragments;
     let pool = ReadPool::default();

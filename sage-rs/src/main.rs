@@ -23,6 +23,10 @@ mod tinc;
 mod types;
 mod ultima;
 mod vcfout;
+mod vis;
+mod vis_aa;
+mod vis_html;
+mod vis_svg;
 
 #[cfg(test)]
 mod tests;
@@ -279,6 +283,7 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion) ->
     for (s, bam) in w.tumor_bams.iter_mut().enumerate() {
         let sample_id = &cfg.tumor_ids[s];
         let mut tumor = evidence_stage::Sample {
+            id: sample_id,
             bam,
             bqr: &sh.bqr[s],
             msi: &sh.msi[s],
@@ -303,6 +308,7 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion) ->
     let mut ref_counters: Vec<Vec<Option<evidence::ReadContextCounter>>> = Vec::with_capacity(w.ref_bams.len());
     for (s, bam) in w.ref_bams.iter_mut().enumerate() {
         let mut reference = evidence_stage::Sample {
+            id: &cfg.reference_ids[s],
             bam,
             bqr: &sh.bqr[tumor_count + s],
             msi: &sh.msi[tumor_count + s],
@@ -395,6 +401,12 @@ fn finalise_region(
         .map(|l| l.iter().filter(|t| positions_overlap(region.start, region.end, t.trans_start, t.trans_end)).cloned().collect())
         .unwrap_or_default();
     dedup::process_variants(&mut variants, &transcripts, genome, chr);
+    if cfg.vis.enabled() {
+        // RegionTask.finaliseResults: a file for every variant of the region, final or not
+        for v in &variants {
+            vis::write_to_html_file(&cfg.tumor_ids, &cfg.reference_ids, &cfg.vis, chr, v, genome);
+        }
+    }
     if cfg.write_frag_lengths {
         // RegionTask.finaliseResults: every variant of the region, final or not, for each tumor sample
         for v in &variants {
@@ -436,6 +448,8 @@ fn main() -> Result<()> {
         return append::run(&args[1..]);
     }
     let mut cfg = Config::from_args(&args)?;
+    vis::set_enabled(cfg.vis.enabled());
+    cfg.vis.load_transcripts(cfg.ensembl_data_dir.as_deref())?;
     let tinc_cfg = if cfg.run_tinc {
         // callerTincConfig: fail before the run rather than after it
         let exists = |p: &Option<String>| p.as_ref().is_some_and(|p| std::path::Path::new(p).exists());
@@ -528,6 +542,12 @@ fn main() -> Result<()> {
         })
         .collect();
     let mut vcf = vcfout::VcfWriter::create(&cfg.output_vcf, &contigs, &cfg.reference_ids, &cfg.tumor_ids, cfg.run_tinc)?;
+    if cfg.vis.visualiser_only_mode() && !cfg.vis.has_variants() {
+        // SageApplication.run
+        eprintln!("no reportable variants to visualise, exiting");
+        vcf.close()?;
+        return Ok(());
+    }
 
     // every region task, in the order the sequence dictionary lists the chromosomes
     let dictionary_bam = main_worker.ref_bams.first().unwrap_or(&main_worker.tumor_bams[0]);

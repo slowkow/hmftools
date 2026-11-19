@@ -435,7 +435,7 @@ fn test_read_context_counter_ordering() {
     }
     let mut phaser = Phaser::new();
     let mut phase_sink: Option<&mut dyn PhaseSink> = Some(&mut phaser);
-    let mut collector = Collector { counters, last_index: 0, selected: Vec::new(), ref_seq: &ref_seq, qc: &qc };
+    let mut collector = Collector { counters, last_index: 0, selected: Vec::new(), ref_seq: &ref_seq, qc: &qc, vis: false };
     let mut sync = FragmentSync::new();
     let mut sync_out: SyncOutput = Vec::new();
     assert!(cfg.sync_fragments);

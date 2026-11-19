@@ -24,7 +24,7 @@ VCF. On every region tested so far the decompressed VCF is byte-identical to Jav
 | 10. Append, split reads, MSI samples, multi-sample | Done: `sage-rs append`, `SplitReadSegment`, MSI-specific jitter parameters, several tumor / reference samples. Compared with Java on the public HG008 data (chr21): append onto SBX and Ultima VCFs with and without soft filters, two samples at once, `-high_depth_mode` and an older-format VCF; simulated MSI predictions for SBX, Ultima and the default path; two tumors and/or two references. All byte-identical. Split reads have unit tests only (no RNA BAM compared). |
 | 11. CRAM | Done: CRAM 3.0 and 3.1 input, decoded against `-ref_genome`. chr21 from CRAM is byte-identical to Java reading the same CRAM for the Illumina, SBX and Ultima pairs (5,908, 3,316 and 2,689 records). For the Illumina pair that is not the BAM result, in Java either: see QUIRKS.md. |
 | 12. Smaller options | Done: `-write_frag_lengths` and `-specific_var_file`, in the caller and in append, and `-run_tinc` with two tumors. Compared with Java on the public HG008 data and the Illumina pair: the fragment length files (1.1 to 5.3 million lines) and the VCFs are byte-identical. One site in a two-tumor `-disable_soft_filter` run differs because Java's own answer there is arbitrary (QUIRKS.md, `IndelDeduper`). |
-| 13. Later | The visualiser. |
+| 13. Visualiser | Done: `-vis_variants`, `-vis_pass_only`, `-vis_max_support_reads`, `-vis_output_dir`, `-vis_purple_vcf` (with the amino acid track). Compared with Java on the public HG008 data (SBX and Ultima, one and several samples, tumor only) and on the Illumina pair (paired reads, merged fragments, a PURPLE VCF): the same file names, and the same bytes once the read rows that Java orders at random are sorted. The VCF of a run with the visualiser on is identical to Java's. 181 unit tests pass. See "Visualiser" in QUIRKS.md for what cannot match. |
 
 Regions compared (records identical / total), tumor and normal WGS BAMs on an external volume, 20-core machine:
 
@@ -109,7 +109,7 @@ Size: 26.7k lines of Java in `sage/src/main`, 9.1k lines of tests.
 | seqtech (Ultima, SBX) | ~2.9k | no - reject `sequencing_type` other than ILLUMINA |
 | tinc | ~1.4k | second milestone (needed if the pipeline passes `run_tinc`) |
 | append | ~0.6k | later - reuses the evidence stage |
-| vis, utils | ~3.8k | no |
+| vis, utils | ~3.8k | no (vis was added last: status row 13) |
 
 So the first milestone is about 18k lines of Java plus a small slice of `hmf-common`
 (`Doubles`, `BaseQualAdjustment`, BQR / jitter file readers, BED / hotspot readers, HLA gene

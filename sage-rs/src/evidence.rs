@@ -796,6 +796,8 @@ pub struct ReadContextCounter {
     /// the counter ReadContextCounterFactory builds when the Ultima models cannot be built for a variant
     /// near the start of a chromosome or on a non-standard one: it has no matcher and counts nothing
     pub no_matcher: bool,
+    /// mVariantVis: only with the visualiser on, for the variants it shows
+    pub vis: Option<Box<crate::vis::VariantVis>>,
 }
 
 /// FragmentLengthCounts.addLength: lengths of 1 to 500 are counted, as (length, [ref, alt]) in the
@@ -876,6 +878,7 @@ impl ReadContextCounter {
             map_qual_factor: 0.0,
             ultima: if is_ultima() && !ctx.marked_invalid { Some(crate::ultima::UltimaVariantData::new(&ctx)) } else { None },
             no_matcher: ctx.marked_invalid,
+            vis: None,
             ctx,
         }
     }
@@ -1066,6 +1069,14 @@ impl ReadContextCounter {
         }
     }
 
+    /// addVariantVisRecord
+    #[inline]
+    fn vis_record(&mut self, read: &Read, fragment: Option<&FragmentData>, match_type: MatchType, q: Option<&QualityScores>) {
+        if let Some(vis) = self.vis.as_mut() {
+            vis.add_evidence(read, fragment, match_type, q);
+        }
+    }
+
     /// ReadContextCounter.processRead
     pub fn process_read(
         &mut self, read: &Read, number_of_events: i32, fragment: Option<&FragmentData>, qc: &QualityCalculator,
@@ -1078,10 +1089,12 @@ impl ReadContextCounter {
             return MaxCoverage;
         }
         if self.tier != Tier::Hotspot && read.mapq < EVIDENCE_MIN_MAP_QUAL {
+            self.vis_record(read, fragment, MatchType::None, None);
             return MapQual;
         }
         let high_depth = qc.cfg.high_depth_mode;
         if high_depth && fragment.is_none() && is_chimeric_read(read) {
+            self.vis_record(read, fragment, MatchType::None, None);
             return Chimeric;
         }
         // belowQualThreshold
@@ -1104,6 +1117,7 @@ impl ReadContextCounter {
             None => matcher.determine_read_match(&ctx, read, read_var_index),
         };
         if pos_type == PosType::LowQual {
+            self.vis_record(read, fragment, MatchType::None, None);
             return SoftClip;
         }
         let mut check_realigned = false;
@@ -1115,14 +1129,17 @@ impl ReadContextCounter {
                 check_realigned = idx != INVALID_INDEX;
             }
             if !check_realigned {
+                self.vis_record(read, fragment, MatchType::None, None);
                 return Unrelated;
             }
         }
         if pos_type == PosType::Skipped {
+            self.vis_record(read, fragment, MatchType::None, None);
             return InSplit;
         }
         let variant_covered = covers(&self.matcher, read_var_index);
         if !variant_covered && !check_realigned {
+            self.vis_record(read, fragment, MatchType::None, None);
             return NonCore;
         }
 
@@ -1143,10 +1160,12 @@ impl ReadContextCounter {
 
         if variant_covered {
             if self.has_uncertain_core_bases(read, read_var_index, split) {
+                self.vis_record(read, fragment, MatchType::None, None);
                 return NonCore;
             }
             let q = qc.calculate_quality_scores(self, read_var_index, read, adjusted_events);
             if !q.valid() {
+                self.vis_record(read, fragment, MatchType::None, None);
                 return Unrelated;
             }
             seq_tech_qual = q.seq_tech_base_quality;
@@ -1159,6 +1178,7 @@ impl ReadContextCounter {
                         self.qual_counters.low_qual_alt_support_count += 1;
                     }
                 }
+                self.vis_record(read, fragment, MatchType::None, None);
                 return Unrelated;
             }
             combined_quality = q.combined_quality;
@@ -1176,6 +1196,7 @@ impl ReadContextCounter {
                 self.register_read_support(read, Some(support), read_var_index, combined_quality, seq_tech_qual, q.is_medium_qual);
                 self.qual_counters.update(&q, read.mapq, match_type);
                 self.read_edge_distance.update(read, fragment, match_type.full_alt_support());
+                self.vis_record(read, fragment, match_type, Some(&q));
                 self.count_alt_support_metrics(read, fragment);
                 if support == Support::Full
                     && has_valid_base_quals(&ctx, self.matcher.alt_index_upper, read, read_var_index)
@@ -1201,21 +1222,25 @@ impl ReadContextCounter {
             }
             if realigned_type != Realigned::None {
                 if self.has_uncertain_core_bases(read, idx, split) {
+                    self.vis_record(read, fragment, MatchType::None, None);
                     return Unrelated;
                 }
                 let q = qc.calculate_quality_scores(self, idx, read, adjusted_events);
                 if !q.valid() {
+                    self.vis_record(read, fragment, MatchType::None, None);
                     return Unrelated;
                 }
                 seq_tech_qual = q.seq_tech_base_quality;
                 combined_quality = q.combined_quality;
                 if below_qual_threshold(&self.qual_cache, seq_tech_qual) {
+                    self.vis_record(read, fragment, MatchType::None, None);
                     return Unrelated;
                 }
                 if matches!(realigned_type, Realigned::Exact | Realigned::LowQualMismatches) {
                     self.register_read_support(read, Some(Support::Realigned), read_var_index, combined_quality, seq_tech_qual, q.is_medium_qual);
                     self.qual_counters.update(&q, read.mapq, MatchType::Realigned);
                     self.read_edge_distance.update(read, fragment, true);
+                    self.vis_record(read, fragment, MatchType::Realigned, Some(&q));
                     self.count_alt_support_metrics(read, fragment);
                     return if realigned_type == Realigned::Exact { AltSupportExact } else { AltSupportLowQualMismatches };
                 }
@@ -1226,6 +1251,7 @@ impl ReadContextCounter {
                 }
                 scores = Some(q);
             } else if !variant_covered || read_var_index < 0 {
+                self.vis_record(read, fragment, MatchType::None, None);
                 return if read_var_index < 0 { Unrelated } else { NonCore };
             }
         }
@@ -1255,6 +1281,7 @@ impl ReadContextCounter {
         self.non_alt_read_strand_bias.reverse += r;
         self.register_read_support(read, support, read_var_index, combined_quality, seq_tech_qual, q.is_medium_qual);
         self.read_edge_distance.update(read, fragment, false);
+        self.vis_record(read, fragment, match_type, Some(&q));
         self.non_alt_nm_count_total += number_of_events as i64;
 
         if match_type == MatchType::Ref {

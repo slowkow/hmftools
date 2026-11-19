@@ -88,6 +88,73 @@ upstream report rather than a silent fix. File references are to `sage/src/main/
 - The htsjdk in Java SAGE 5.1 rejects CRAM 3.1, the default of current samtools. The port reads 3.0
   and 3.1 and gives the same calls from either.
 
+## Visualiser
+
+File references are to `vis/` and to `hmf-common` `common/vis/`.
+
+Reproduced as they are:
+
+- `BaseSeqViewModel.create` marks a base of a merged fragment as overlapped by looking both mates up at
+  `baseIdx + unclippedStart`, where `baseIdx` counts read bases rather than reference positions, so after
+  an insert or a delete in the merged read the overlap border is drawn against the wrong columns.
+- `VisFileBuilder.renderSampleQualAndSiteInfo` fills the `AED` row from the first counter only: its
+  average edge distance over all reads under "Tumor" and over alt reads under "Normal".
+- `MQF` is shown as `round(round(mapQualFactor * 10) / 10)`, a whole number.
+- `AminoAcidUtil.getAltGeneRegionViewModels`, after a frameshift reaches a stop codon, uses an index
+  into the fetched bases (`idx + 3`, `refIdx - 3`) as a genome position for the non-coding remainder.
+- `AminoAcidEvent.parse` appends the lookup result for each three-letter code of a `delins`, so an
+  unknown code contributes the four letters of `null` as substituted amino acids. `p.Gly12Ter` (a stop
+  written as `Ter` rather than `*`) and an insertion without a range are null pointer exceptions.
+- Any exception while a file is built means no file for that variant, with a warning. With
+  `-vis_purple_vcf` that includes every reportable variant whose `IMPACT` transcript has no amino acid
+  entry (intergenic and non-coding ones): the port writes no file for these either.
+- The reference chromosome names of a read and its mate are compared with `!=` (`ReadTableColumn`,
+  "TRL"). It works because htsjdk hands out one string per sequence; the port compares the indices.
+
+Where Java's own output is not reproducible, and what the port does:
+
+- **Which reads are shown, and the order of ties.** `VariantVis.downsampleReadEvidenceRecords` draws
+  the reads of each match type with `ThreadLocalRandom`, also when none has to be dropped, and the
+  sort that follows is stable, so reads with the same orientation, combined quality and map quality
+  come out in a different order on every run. The port shows all reads when they fit, otherwise ones
+  spread evenly over the order they were read in (read `k * count / limit`), and ties keep that order.
+  A comparison has to sort the read rows within each match type block, and can only compare the reads
+  themselves when both sides show all of them (`-vis_max_support_reads -1` at a site with fewer than
+  1000 reads per type).
+- **Text placement depends on the machine's fonts.** `SvgUtil` measures strings with AWT font metrics
+  for the logical font "SansSerif". The port has a table of the advance widths, line height and descent
+  that Java reports on macOS (where "SansSerif" is Lucida Grande), dumped from Java at the three sizes
+  used. On a machine with other fonts Java's own files differ from these in the `x` and `y` of each
+  `<text>`, the height of the coordinate header and the size of the box behind an indel length. Only
+  printable ASCII is in the table; any other character is given the width of a space.
+- **Order of several filters.** The "Filter" cell joins a `HashSet<String>` collected from a `HashSet`
+  of enum values. The names come out in hash-bucket order, which the port reproduces; names that share
+  a bucket come out in identity-hash order of the enum values, which varies between JVM runs, and in
+  the port in the order the filters are declared. The groups that share a bucket: `readStrandBias` and
+  `realignFrequency`; `jitter` and `dedupMnv`; `maxGermlineAltSupport` and `minAvgT0Qual`;
+  `minTumorQual`, `minAvgRawBaseQual` and `dedupMixedGermlineSomatic`; `minMQF` and `minGermlineDepth`;
+  `fragmentStrandBias`, `dedupSnvMnv` and `dedupIndel`; `minAvgHpQual` and `minFragmentCoords`;
+  `maxGermlineVAF` and `dedupMatch`.
+
+Where the port differs:
+
+- **Chromosomes outside 1-22, X and Y.** `VariantVis` takes the chromosome length from
+  `RefGenomeCoordinates`, which has none for chrM, and the counter then cannot be built: with the
+  visualiser on, Java writes no VCF records at all for chrM (0 against 128 on the Illumina pair) and
+  logs nothing. The port writes no visualiser files there and leaves the calls alone.
+- **`-vis_variants` out of position order.** The regions are processed in the order the variants are
+  given, so phase set ids follow that order. The VCF writer holds one region back and can place a
+  region's records before those of the region just before it (the port does the same, and the VCFs
+  are identical), but no further: when a variant is two or more regions out of place Java stops with
+  "Features added out of order". The port does not stop, and its VCF is then out of order.
+- `-vis_purple_vcf`: for a record with several alt alleles Java takes the one with the highest allele
+  count; the port takes the first.
+- `-vis_purple_vcf` with no `REPORTED` record: both stop with "no reportable variants to visualise".
+  Java leaves an empty, unterminated `.vcf.gz` without an index; the port writes the header and the index.
+- Java loads every Ensembl transcript and amino acid sequence when the visualiser is on; the port
+  loads those the reportable variants name. Files are built on the writer thread, after the region's
+  records are final, where Java builds them on the region's thread.
+
 ## Where the port differs
 
 - `dedup/IndelDeduper.checkDedupCombinations` enumerates subsets of a `HashSet` of objects that have no
