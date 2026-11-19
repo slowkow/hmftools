@@ -25,6 +25,7 @@ mod ref_sequence; // common/RefSequenceTest
 mod repeat_info; // common/RepeatInfoTest
 mod sbx; // seqtech/SbxTest
 mod soft_filter; // filters/SoftFilterTest
+mod specific_variants; // not from Java: -specific_var_file and -write_frag_lengths helpers
 mod split_read; // evidence/SplitReadTest
 mod ultima_evidence; // not from Java: the Ultima evidence and filter path end to end
 mod ultima_misc_utils; // seqtech/UltimaMiscUtilsTest

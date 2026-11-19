@@ -72,10 +72,49 @@ pub struct Config {
     /// SageAppendConfig.InputVcf and FilterToGenes (-require_gene): append mode only
     pub input_vcf: Option<String>,
     pub require_gene: bool,
+    /// -write_frag_lengths: write <output>.frag_lengths.tsv.gz
+    pub write_frag_lengths: bool,
+    /// SageConfig.SpecificVariants (-specific_var_file): only these candidates are kept
+    pub specific_variants: Vec<(String, crate::types::SimpleVariant)>,
 }
 
 fn list(v: Option<&String>) -> Vec<String> {
     v.map(|s| s.split(',').map(|x| x.to_string()).collect()).unwrap_or_default()
+}
+
+/// SpecificRegions.addRegion: a region which overlaps an existing one widens the first such region
+/// (regions that come to overlap each other as a result are not merged)
+pub fn add_specific_region(chromosomes: &mut Vec<String>, regions: &mut Vec<(String, i32, i32)>, chr: &str, start: i32, end: i32) {
+    if !chromosomes.iter().any(|c| c == chr) {
+        chromosomes.push(chr.to_string());
+    }
+    for (c, s, e) in regions.iter_mut() {
+        if c == chr && start <= *e && end >= *s {
+            *s = (*s).min(start);
+            *e = (*e).max(end);
+            return;
+        }
+    }
+    regions.push((chr.to_string(), start, end));
+}
+
+/// SimpleVariant.loadSimpleVariants: a delimited file with Chromosome, Position, Ref and Alt columns
+pub fn load_simple_variants(path: &str) -> Result<Vec<(String, crate::types::SimpleVariant)>> {
+    let mut lines = crate::refdata::read_lines(path)?.into_iter();
+    let header = lines.next().context("empty file")?;
+    let delim = if header.contains(',') { ',' } else { '\t' };
+    let col = |name: &str| header.split(delim).position(|f| f == name).with_context(|| format!("missing column {name}"));
+    let (chr_i, pos_i, ref_i, alt_i) = (col("Chromosome")?, col("Position")?, col("Ref")?, col("Alt")?);
+    let mut out = Vec::new();
+    for line in lines {
+        let values: Vec<&str> = line.split(delim).collect();
+        let get = |i: usize| values.get(i).copied().with_context(|| format!("short line: {line}"));
+        out.push((
+            get(chr_i)?.to_string(),
+            crate::types::SimpleVariant::new(get(pos_i)?.parse()?, get(ref_i)?.as_bytes(), get(alt_i)?.as_bytes()),
+        ));
+    }
+    Ok(out)
 }
 
 impl Config {
@@ -148,6 +187,24 @@ impl Config {
                 specific_chr.push(c.clone());
             }
         }
+        // SageConfig: the variants file is only read when no region or chromosome was given, and each
+        // variant adds a region around itself
+        let mut specific_variants = Vec::new();
+        if specific_regions.is_empty() && specific_chr.is_empty() {
+            if let Some(path) = get("specific_var_file") {
+                specific_variants =
+                    load_simple_variants(path).with_context(|| format!("failed to load specific variants file: {path}"))?;
+                for (chr, v) in &specific_variants {
+                    add_specific_region(
+                        &mut specific_chr,
+                        &mut specific_regions,
+                        chr,
+                        v.pos - VIS_VARIANT_BUFFER,
+                        v.pos + VIS_VARIANT_BUFFER,
+                    );
+                }
+            }
+        }
         Ok(Config {
             tumor_ids: if append { Vec::new() } else { list(Some(&req("tumor")?)) },
             tumor_bams,
@@ -212,6 +269,8 @@ impl Config {
             gnomad_freq_file: get("gnomad_freq_file").cloned(),
             input_vcf: if append { Some(req("input_vcf")?) } else { None },
             require_gene: flag("require_gene"),
+            write_frag_lengths: flag("write_frag_lengths"),
+            specific_variants,
         })
     }
 

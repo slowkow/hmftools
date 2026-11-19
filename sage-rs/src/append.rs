@@ -1001,7 +1001,9 @@ impl Worker {
 }
 
 /// RegionAppendTask.call: the region's records with the genotypes of the appended samples added
-fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion, variants: &[&VariantContext]) -> Result<Vec<String>> {
+fn process_region(
+    sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion, variants: &[&VariantContext],
+) -> Result<(Vec<String>, Vec<String>)> {
     let cfg = sh.cfg;
     let ref_sequence = RefSequence::new(
         &w.genome,
@@ -1036,7 +1038,15 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion, va
         })
         .collect();
     phaser.populate_local_phase_set_info(&candidates, &mut final_variants);
-    Ok(final_variants.iter().map(|v| v.encode(sh.defs)).collect())
+    let mut frag_lines = Vec::new();
+    if cfg.write_frag_lengths {
+        for (i, candidate) in candidates.iter().enumerate() {
+            for (sample_id, counters) in cfg.reference_ids.iter().zip(&sample_counters) {
+                crate::fragment_length_lines(sample_id, chr, candidate.variant(), &counters[i], &mut frag_lines);
+            }
+        }
+    }
+    Ok((final_variants.iter().map(|v| v.encode(sh.defs)).collect(), frag_lines))
 }
 
 // --- SageAppendApplication ---
@@ -1165,9 +1175,6 @@ pub fn run(args: &[String]) -> Result<()> {
     if cfg.reference_ids.is_empty() {
         bail!("missing reference Id must be supplied");
     }
-    if args.iter().any(|a| a == "-specific_var_file") {
-        bail!("-specific_var_file is not supported");
-    }
     eprintln!("appending variants with {} sample BAM(s)", cfg.reference_bams.len());
     eprintln!("reading and validating file: {input_vcf}");
 
@@ -1217,7 +1224,12 @@ pub fn run(args: &[String]) -> Result<()> {
                 continue;
             }
         }
-        if !cfg.specific_regions.is_empty() {
+        if !cfg.specific_variants.is_empty() {
+            // SimpleVariant.matches(chromosome, position): the alleles are not compared
+            if !cfg.specific_variants.iter().any(|(c, v)| *c == variant.chromosome && v.pos == variant.position) {
+                continue;
+            }
+        } else if !cfg.specific_regions.is_empty() {
             let pos = variant.position;
             if !cfg.specific_regions.iter().any(|(c, s, e)| *c == variant.chromosome && pos >= *s && pos <= *e) {
                 continue;
@@ -1289,8 +1301,9 @@ pub fn run(args: &[String]) -> Result<()> {
     }
 
     let shared = Shared { cfg: &cfg, ref_data: &ref_data, bqr: &bqr, msi: &msi, defs: &defs };
+    let mut frag_out = crate::create_fragment_length_writer(&cfg)?;
     let next = AtomicUsize::new(0);
-    let results: Vec<Mutex<Option<Result<Vec<String>>>>> = tasks.iter().map(|_| Mutex::new(None)).collect();
+    let results: Vec<Mutex<Option<Result<(Vec<String>, Vec<String>)>>>> = tasks.iter().map(|_| Mutex::new(None)).collect();
     std::thread::scope(|scope| {
         for _ in 0..cfg.threads.max(1).min(tasks.len().max(1)) {
             scope.spawn(|| {
@@ -1311,12 +1324,20 @@ pub fn run(args: &[String]) -> Result<()> {
         }
     });
     for result in results {
-        let lines = result.into_inner().unwrap().ok_or_else(|| anyhow!("region task did not complete"))??;
+        let (lines, frag_lines) = result.into_inner().unwrap().ok_or_else(|| anyhow!("region task did not complete"))??;
         for line in lines {
             output.write(&line)?;
         }
+        if let Some(w) = frag_out.as_mut() {
+            for line in frag_lines {
+                writeln!(w, "{line}")?;
+            }
+        }
     }
     output.close()?;
+    if let Some(w) = frag_out {
+        w.finish()?.flush()?;
+    }
     eprintln!("SageAppend complete");
     Ok(())
 }

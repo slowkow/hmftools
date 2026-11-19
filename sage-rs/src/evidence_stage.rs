@@ -200,6 +200,11 @@ pub fn collect_evidence(
             ReadContextCounter::new(c.ctx.clone(), c.tier, max_coverage(cfg, c.tier), c.min_events, &qc, sample.is_reference)
         })
         .collect();
+    if cfg.write_frag_lengths {
+        for rc in counters.iter_mut() {
+            rc.fragment_length_data = Some(Vec::new());
+        }
+    }
     if is_ultima() {
         let ref_bases = GenomeBases { genome, chr, ref_seq: &ref_seq };
         for rc in counters.iter_mut() {

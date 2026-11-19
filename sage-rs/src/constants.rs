@@ -195,3 +195,6 @@ pub fn is_high_base_qual_byte(q: i8) -> bool {
         q >= ILLUMINA_HIGH_BASE_QUAL as i8
     }
 }
+
+/// SageConstants.VIS_VARIANT_BUFFER: the region read around a specific or visualised variant
+pub const VIS_VARIANT_BUFFER: i32 = 200;

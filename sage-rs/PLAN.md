@@ -23,7 +23,8 @@ VCF. On every region tested so far the decompressed VCF is byte-identical to Jav
 | 9. Ultima | Done: `-sequencing_type ULTIMA`. chr21 of the public HG008 ppmSeq tumor/normal pair (157x / 160x, after Java REDUX without `-form_consensus`) is byte-identical to Java, with and without soft filters (2,689 and 87,238 records). |
 | 10. Append, split reads, MSI samples, multi-sample | Done: `sage-rs append`, `SplitReadSegment`, MSI-specific jitter parameters, several tumor / reference samples. Compared with Java on the public HG008 data (chr21): append onto SBX and Ultima VCFs with and without soft filters, two samples at once, `-high_depth_mode` and an older-format VCF; simulated MSI predictions for SBX, Ultima and the default path; two tumors and/or two references. All byte-identical. Split reads have unit tests only (no RNA BAM compared). |
 | 11. CRAM | Done: CRAM 3.0 and 3.1 input, decoded against `-ref_genome`. chr21 from CRAM is byte-identical to Java reading the same CRAM for the Illumina, SBX and Ultima pairs (5,908, 3,316 and 2,689 records). For the Illumina pair that is not the BAM result, in Java either: see QUIRKS.md. |
-| 12. Later | The visualiser, `-write_frag_lengths`, `-specific_var_file`, TINC with more than one tumor. |
+| 12. Smaller options | Done: `-write_frag_lengths` and `-specific_var_file`, in the caller and in append, and `-run_tinc` with two tumors. Compared with Java on the public HG008 data and the Illumina pair: the fragment length files (1.1 to 5.3 million lines) and the VCFs are byte-identical. One site in a two-tumor `-disable_soft_filter` run differs because Java's own answer there is arbitrary (QUIRKS.md, `IndelDeduper`). |
+| 13. Later | The visualiser. |
 
 Regions compared (records identical / total), tumor and normal WGS BAMs on an external volume, 20-core machine:
 

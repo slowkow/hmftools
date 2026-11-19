@@ -13,9 +13,13 @@ CRAMs (versions 3.0 and 3.1, decoded against `-ref_genome`) with REDUX outputs
 (`<sample>.redux.bqr.tsv`, `.redux.jitter_params.tsv`, `.redux.ms_table.tsv.gz`).
 Also: tumor-only runs, several tumor and reference samples, `-panel_only`, `-high_depth_mode`,
 `-germline`, samples REDUX predicts as MSI, split (RNA) reads, TINC (`-run_tinc` with `-pon_file` and
-`-gnomad_freq_dir`, or standalone as `sage-rs tinc -input_vcf ...`) and append mode
-(`sage-rs append -input_vcf ... -reference ... -reference_bam ... -output_vcf ...`).
-Not yet: the visualiser, `-write_frag_lengths`, `-specific_var_file`.
+`-gnomad_freq_dir`, or standalone as `sage-rs tinc -input_vcf ...`; with several tumors it uses the
+first, as Java does), append mode
+(`sage-rs append -input_vcf ... -reference ... -reference_bam ... -output_vcf ...`),
+`-write_frag_lengths` (`<output>.frag_lengths.tsv.gz`) and `-specific_var_file` (a delimited file with
+`Chromosome`, `Position`, `Ref` and `Alt` columns; ignored, as in Java, when `-specific_chr` or
+`-specific_regions` is given).
+Not yet: the visualiser.
 
 CRAM input gives slightly different calls from BAM input of the same reads, in Java and so here too:
 see "CRAM" in [QUIRKS.md](QUIRKS.md).

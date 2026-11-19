@@ -232,6 +232,15 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion) ->
         }
         build_candidates_of_multiple_samples(sample_candidates, &hotspots, &panel, &high_conf)
     };
+    // Candidates.candidates: with -specific_var_file only the listed variants are kept
+    let candidates: Vec<Candidate> = if cfg.specific_variants.is_empty() {
+        candidates
+    } else {
+        candidates
+            .into_iter()
+            .filter(|c| cfg.specific_variants.iter().any(|(vc, v)| vc == chr && v == c.variant()))
+            .collect()
+    };
     if candidates.is_empty() {
         return Ok(None);
     }
@@ -337,10 +346,38 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion) ->
     Ok(Some(out))
 }
 
+/// VariantFragmentLength.writeVariantFragmentLength: one line per fragment length, in the iteration
+/// order of FragmentLengthCounts' HashMap<Integer, int[]>
+pub(crate) fn fragment_length_lines(
+    sample_id: &str, chr: &str, variant: &SimpleVariant, counter: &evidence::ReadContextCounter, lines: &mut Vec<String>,
+) {
+    let Some(lengths) = counter.fragment_length_data.as_ref() else { return };
+    let info = format!("{}:{} {}>{}", chr, variant.pos, variant.ref_str(), variant.alt_str());
+    let keys: Vec<i32> = lengths.iter().map(|(l, _)| *l).collect();
+    for length in phase::java_int_hash_order(&keys) {
+        let counts = lengths.iter().find(|(l, _)| *l == length).unwrap().1;
+        lines.push(format!("{sample_id}\t{info}\t{length}\t{}\t{}", counts[0], counts[1]));
+    }
+}
+
+/// FragmentLengthWriter: <output>.frag_lengths.tsv.gz, or nothing without -write_frag_lengths
+pub(crate) fn create_fragment_length_writer(
+    cfg: &Config,
+) -> Result<Option<flate2::write::GzEncoder<std::io::BufWriter<std::fs::File>>>> {
+    if !cfg.write_frag_lengths {
+        return Ok(None);
+    }
+    let path = cfg.output_vcf.replace(".vcf.gz", ".frag_lengths.tsv.gz");
+    let mut w = flate2::write::GzEncoder::new(std::io::BufWriter::new(std::fs::File::create(path)?), flate2::Compression::default());
+    writeln!(w, "SampleId\tVariant\tLength\tRefCount\tAltCount")?;
+    Ok(Some(w))
+}
+
 /// The sequential part of a RegionTask: phase set ids come from one global counter, so phasing,
 /// dedup, the final filters and writing run in region order.
 fn finalise_region(
     sh: &Shared, genome: &RefGenome, chr: &str, region: BaseRegion, mut out: RegionOutput, next_lps: &mut i32,
+    frag_lines: &mut Vec<String>,
 ) -> Vec<(i32, String)> {
     let cfg = sh.cfg;
     let mut variants = std::mem::take(&mut out.variants);
@@ -358,6 +395,14 @@ fn finalise_region(
         .map(|l| l.iter().filter(|t| positions_overlap(region.start, region.end, t.trans_start, t.trans_end)).cloned().collect())
         .unwrap_or_default();
     dedup::process_variants(&mut variants, &transcripts, genome, chr);
+    if cfg.write_frag_lengths {
+        // RegionTask.finaliseResults: every variant of the region, final or not, for each tumor sample
+        for v in &variants {
+            for (sample_id, rc) in cfg.tumor_ids.iter().zip(&v.tumor_counters) {
+                fragment_length_lines(sample_id, chr, v.variant(), rc, frag_lines);
+            }
+        }
+    }
 
     // finaliseResults
     let passing_sets = phase::passing_phase_sets(&variants);
@@ -464,6 +509,7 @@ fn main() -> Result<()> {
     } else {
         None
     };
+    let mut frag_out = create_fragment_length_writer(&cfg)?;
     let mut evidence_out: Option<Box<dyn Write>> = if cfg.log_evidence {
         let path = cfg.output_vcf.replace(".vcf.gz", ".evidence.tsv");
         Some(Box::new(std::io::BufWriter::new(std::fs::File::create(path)?)))
@@ -560,8 +606,15 @@ fn main() -> Result<()> {
                     }
                     if !out.variants.is_empty() {
                         let busy = std::time::Instant::now();
-                        let records = finalise_region(&shared, &main_worker.genome, chr, *region, out, &mut next_lps);
+                        let mut frag_lines = Vec::new();
+                        let records =
+                            finalise_region(&shared, &main_worker.genome, chr, *region, out, &mut next_lps, &mut frag_lines);
                         vcf.add_region(records)?;
+                        if let Some(w) = frag_out.as_mut() {
+                            for l in &frag_lines {
+                                writeln!(w, "{l}")?;
+                            }
+                        }
                         writer_busy += busy.elapsed();
                     }
                 }
@@ -583,6 +636,9 @@ fn main() -> Result<()> {
     });
     result?;
     vcf.close()?;
+    if let Some(w) = frag_out {
+        w.finish()?.flush()?;
+    }
     if cfg.perf_summary {
         eprintln!(
             "regions({}) elapsed({:.1}s) finalising and writing({:.1}s) workers held back by the writer({:.1}s over {} threads)",

@@ -139,7 +139,7 @@ impl RegionTaskTester {
 
         if !variants.is_empty() {
             let mut next_lps = 1;
-            crate::finalise_region(&shared, &worker.genome, CHR_1, region, output, &mut next_lps);
+            crate::finalise_region(&shared, &worker.genome, CHR_1, region, output, &mut next_lps, &mut Vec::new());
         }
 
         variants

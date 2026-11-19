@@ -787,6 +787,8 @@ pub struct ReadContextCounter {
     pub lps_counts: Vec<i32>,
     pub consensus_type_counts: Option<[i32; 6]>,
     pub fragment_coords: FragmentCoords,
+    /// mFragmentLengthData (-write_frag_lengths): (length, [ref count, alt count]) in insertion order
+    pub fragment_length_data: Option<Vec<(i32, [i32; 2])>>,
     pub tumor_qual_probability: f64,
     pub map_qual_factor: f64,
     /// mUltimaData: only for Ultima
@@ -794,6 +796,22 @@ pub struct ReadContextCounter {
     /// the counter ReadContextCounterFactory builds when the Ultima models cannot be built for a variant
     /// near the start of a chromosome or on a non-standard one: it has no matcher and counts nothing
     pub no_matcher: bool,
+}
+
+/// FragmentLengthCounts.addLength: lengths of 1 to 500 are counted, as (length, [ref, alt]) in the
+/// order the lengths were first seen
+pub fn add_fragment_length(lengths: &mut Vec<(i32, [i32; 2])>, length: i32, is_alt: bool) {
+    if length <= 0 || length > 500 {
+        return;
+    }
+    let index = match lengths.iter().position(|(l, _)| *l == length) {
+        Some(i) => i,
+        None => {
+            lengths.push((length, [0, 0]));
+            lengths.len() - 1
+        }
+    };
+    lengths[index].1[is_alt as usize] += 1;
 }
 
 impl ReadContextCounter {
@@ -853,6 +871,7 @@ impl ReadContextCounter {
             lps_counts: Vec::new(),
             consensus_type_counts: None,
             fragment_coords: FragmentCoords::new(REQUIRED_UNIQUE_FRAG_COORDS_2 as usize),
+            fragment_length_data: None,
             tumor_qual_probability: 0.0,
             map_qual_factor: 0.0,
             ultima: if is_ultima() && !ctx.marked_invalid { Some(crate::ultima::UltimaVariantData::new(&ctx)) } else { None },
@@ -965,6 +984,14 @@ impl ReadContextCounter {
                 self.high_qual_strong_support += 1;
             } else if is_medium {
                 self.medium_qual_strong_support += 1;
+            }
+        }
+        if let Some(lengths) = self.fragment_length_data.as_mut() {
+            let supports_alt = strong || support == Some(Support::Core);
+            if support == Some(Support::Ref) || supports_alt {
+                // SamRecordUtils.inferredInsertSizeAbs
+                let length = if read.paired() { read.insert_size.abs() } else { (read.end - read.start + 1).abs() };
+                add_fragment_length(lengths, length, supports_alt);
             }
         }
         if matches!(support, Some(Support::Full | Support::PartialCore)) && (read.improper_pair() || read.supplementary()) {
