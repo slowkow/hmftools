@@ -46,6 +46,8 @@ pub struct PartitionOutput {
     pub unmap_stats: UnmapStats,
     pub unsorted_write_count: u64,
     pub processed_reads: u64,
+    /// reads written to the partition's file of fully unmapped reads
+    pub full_unmapped_written: u64,
 }
 
 pub struct PartitionReader<'a> {
@@ -80,6 +82,15 @@ pub struct PartitionReader<'a> {
 }
 
 impl<'a> PartitionReader<'a> {
+    /// See dup::CacheSync
+    pub fn set_cache_sync(&mut self, sync: std::sync::Arc<crate::dup::CacheSync>, index: usize) {
+        self.read_cache.set_sync(sync, index);
+    }
+
+    pub fn publish_cache_sync(&mut self) {
+        self.read_cache.publish_sync();
+    }
+
     pub fn new(
         config: &'a Config, names: &'a [String], expected_valid_tid: &'a [bool], unmapper: &'a ReadUnmapper, out: Option<RawBamOut>,
         full_unmapped_out: Option<RawBamOut>, capture: ReadCapture<'a>,
@@ -158,7 +169,9 @@ impl<'a> PartitionReader<'a> {
         if let Some(out) = self.out.take() {
             out.close()?;
         }
+        let mut full_unmapped_written = 0;
         if let Some(out) = self.full_unmapped_out.take() {
+            full_unmapped_written = out.written;
             out.close()?;
         }
         Ok(PartitionOutput {
@@ -167,6 +180,7 @@ impl<'a> PartitionReader<'a> {
             unmap_stats: self.unmap_stats,
             unsorted_write_count: self.unsorted_write_count,
             processed_reads: self.processed_reads,
+            full_unmapped_written,
         })
     }
 

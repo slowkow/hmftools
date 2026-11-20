@@ -24,6 +24,8 @@ Inputs:
 | Illumina | two lane BAMs | 27,684,550 | identical |
 | Illumina | 8 threads | 27,684,550 | identical apart from the order of 1,004 unplaced reads (section 2) |
 | Illumina, chr21 + chr22 + unplaced reads realigned | 16 threads | 114,593,080 | identical apart from the order of the unplaced reads; 40 million reads unmapped in the first pass |
+| Illumina whole genome, vendor (DRAGEN) alignments, 86 GB | 1 thread | 1,780,126,609 | BAM and all four side files identical |
+| The same | 16 threads | 1,780,126,609 | identical up to record 1,706,028,352; then about 500 duplicate flags differ on one very deep decoy contig, where Java depends on thread timing (section 2), and with them `duplicate_freq.tsv` |
 | Illumina, 6.6 M reads | 14 option runs: no consensus, `-drop_duplicates` (with and without consensus), `-skip_duplicate_marking`, `-unmap_mt`, `-unmap_alt_decoy`, `-std_chr_only`, `-skip_unmapping`, `-skip_fully_unmapped`, `-specific_regions`, `-specific_chr`, `-read_length`, `-output_id` | 1.6 to 7.0 M | all identical |
 | Illumina + UMIs | `-umi_enabled`; duplex with `+` and `_` delimiters; `-umi_variable_length`; `-umi_defined_ids`; `-umi_base_diff_stats` | 27.2 M | BAM, side files and UMI statistics files identical; 586,632 dual-strand groups in the duplex run |
 | SBX tumor | 1 and 8 threads | 23,819,453 | identical |
@@ -52,6 +54,16 @@ None of these is a difference between the port and Java at one thread.
 - **`umi_coord_freq.tsv`.** `UmiStatistics.merge` keeps the first thread's maximum for a row that exists
   in both, instead of the larger, so 14 of 2,038 rows differed between Java at 8 threads and at 1.
 - **`ultima_stats.tsv` row order** is HashMap order and, with several threads, depends on the same.
+- **Duplicate groups in very deep regions.** Each thread keeps one `ReadCache` for all the partitions it
+  takes, and the cache's size-check counter (`mCheckSizeReadCount`, one check every 10,000 reads) is not
+  reset between partitions. When the cache holds 100,000 reads or more, the check decides when half of
+  it is purged early, and reads that arrive later for a purged position form a new group. So the groups
+  in a very deep region depend on how many reads the same thread cached before it: with one thread, on
+  every earlier partition; with several threads, on which partitions that thread happened to take. Seen
+  on a whole genome, on a 33 kb decoy contig holding 7.5 million reads: adding 31,000 unrelated reads on
+  chr1 to the input changed the duplicate groups on the decoy at one thread. The port gives Java's
+  one-thread result at any thread count: a partition whose cache nears the threshold waits for the read
+  counts of the earlier partitions.
 - **Interim BAM of unmapped reads.** Written by several threads in timing order, then sorted by
   position; reads at the same position and strand keep the timing order.
 
@@ -76,6 +88,8 @@ None of these is a difference between the port and Java at one thread.
   data" and the run ends before `jitter_params` is written (seen with the classes, not in a full run).
 
 ### Dead or unused code
+- `ReadCache.checkPosCheckAdjust` returns at once unless the pop distance already differs from the
+  default, and nothing else changes it, so the "dynamic pop distance" never takes effect.
 - `msi_min_map_quality`, `msi_max_sites_per_type` and `max_site_alt_contribution` are read and never
   used.
 - The jitter analysis never increments its total read count, so the "20% of reads rejected" site filter
@@ -115,11 +129,18 @@ None of these is a difference between the port and Java at one thread.
   files itself, copies compressed blocks and indexes with htslib.
 - Java spends about 44% of its time in BQR (one object with a map of lists per position) and about 14%
   decoding bases; the port counts into flat arrays and reads bases from the packed record.
+- The index is built while the partitions are written (one index per partition file, merged with the
+  offsets at which the files land in the BAM), so the finished BAM is not read again. On a 78 GB output
+  on a network disk the re-read took 227 s. The index is not byte-identical to one from `samtools index`
+  (chunks are merged differently); 3,307 region queries, `idxstats` and htsjdk reads gave the same
+  results with both.
 - The jitter analysis costs about one second where Java allocates for every read and builds every
   table twice.
 - Memory is a few hundred MB against about 20 GB.
 
 ## 5. Timeline
 
+- Day 2: whole genome compared at 1 and 16 threads; the read cache's dependence on earlier partitions
+  found and followed; index built while writing.
 - Day 1: Java profiled; Illumina path, both unmapping passes, consensus, output; first identical BAM.
   BQR, jitter, SBX, Ultima, UMIs and the unit tests ported in parallel and merged.

@@ -61,6 +61,7 @@ pub struct FullUnmappedChunk {
     pub path: String,
     pub start: u64,
     pub end: u64,
+    pub reads: u64,
 }
 
 pub struct Stage1Result {
@@ -206,7 +207,7 @@ pub fn run(
                     }
                     if full_out.written > written_before {
                         full_out.flush()?;
-                        result.full_unmapped_chunks.push(FullUnmappedChunk { region_index: i, path: path.clone(), start: chunk_start, end: full_out.compressed_offset() });
+                        result.full_unmapped_chunks.push(FullUnmappedChunk { region_index: i, path: path.clone(), start: chunk_start, end: full_out.compressed_offset(), reads: full_out.written - written_before });
                     }
                 }
                 full_out.close()?;

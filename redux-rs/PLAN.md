@@ -60,8 +60,20 @@ Quiet machine (20 cores), 16 threads:
 | Illumina raw, chr21 + chr22 + unplaced reads, 111 M reads (40 M unmapped in the first pass) | 879 s / 1,389 s / 23.5 GB | 256 s / 603 s / 0.5 GB |
 | Illumina, two chromosomes of a whole genome, 343 M reads, 15 GB (Java run under a profiler) | 1,123 s / 4,404 s / 23.5 GB | 525 s / 2,073 s / 0.5 GB |
 
-Both inputs fill only a few of the 32 partitions, so neither tool uses 16 cores here. A whole genome
-from raw alignments has not been run.
+Both inputs fill only a few of the 32 partitions, so neither tool uses 16 cores here.
+
+Whole genome: a vendor (DRAGEN) normal BAM, 86 GB, 1.56 billion reads, read from and written to a
+network disk, so the 16-thread wall times show the disk, not the tools:
+
+| Threads | Java wall / CPU / memory | Rust wall / CPU / memory |
+|---|---|---|
+| 16 | 2,215 s / 13,488 s / 35.0 GB | 2,058 s / 10,909 s / 0.9 GB |
+| 1 (both tools running at the same time) | 15,122 s / 12,919 s / 39.6 GB | 9,906 s / 7,792 s / 0.8 GB |
+
+At 16 threads both tools spent the same time in each phase (first pass about 9 minutes, partitions 16
+to 18, joining and indexing 9), all bound by the disk. The 16-thread Rust run was made before the index
+was built while writing. The output BAM was 77.7 GB against Java's 77.4 GB. A whole genome on a local
+disk has not been timed.
 
 One thread, taken while other jobs were running; CPU time is the fairer figure:
 

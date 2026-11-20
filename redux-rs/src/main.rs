@@ -279,26 +279,41 @@ fn run_full(
     let next = AtomicUsize::new(0);
     let worker_count = config.threads.min(partitions.len()).max(1);
     let outputs: Vec<std::sync::Mutex<Option<partition::PartitionOutput>>> = (0..partitions.len()).map(|_| std::sync::Mutex::new(None)).collect();
+    let cache_sync = dup::CacheSync::new(partitions.len());
     std::thread::scope(|scope| -> Result<()> {
         let mut handles = Vec::new();
         for _ in 0..worker_count {
             handles.push(scope.spawn(|| -> Result<()> {
                 let mut reader = bamin::BamReader::open(&config.bam_files, &config.ref_genome_file, 1)?;
-                loop {
+                let mut taken = None;
+                let result = (|| -> Result<()> { loop {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     if i >= partitions.len() {
-                        break;
+                        break Ok(());
                     }
+                    taken = Some(i);
                     reader.set_extra(if have_buckets { Some(&sorted_bucket_paths[i]) } else { None })?;
-                    let out = if config.write_bam { Some(out::RawBamOut::create(&part_paths[i], config.compress_level)?) } else { None };
+                    let out = if config.write_bam {
+                        let mut o = out::RawBamOut::create(&part_paths[i], config.compress_level)?;
+                        o.enable_index();
+                        Some(o)
+                    } else {
+                        None
+                    };
                     let capture = capture::ReadCapture { jitter: jitter.map(|j| j.processor()), bqr: bqr.region_reader() };
                     let full_unmapped_out =
                         if unpaired_full_unmapped { Some(out::RawBamOut::create(&partition_unmapped_paths[i], config.compress_level)?) } else { None };
                     let mut pr = partition::PartitionReader::new(config, &names, &expected_valid_tid, &unmapper, out, full_unmapped_out, capture)?;
+                    pr.set_cache_sync(cache_sync.clone(), i);
                     pr.process_partition(&partitions[i], &mut reader)?;
+                    pr.publish_cache_sync();
                     *outputs[i].lock().unwrap() = Some(pr.finish()?);
+                } })();
+                // a failed partition must not leave later ones waiting for its count
+                if let (Err(_), Some(i)) = (&result, taken) {
+                    cache_sync.publish_empty(i);
                 }
-                Ok(())
+                result
             }));
         }
         for h in handles {
@@ -320,24 +335,32 @@ fn run_full(
     let mut consensus_stats = consensus::ConsensusStatistics::default();
     let mut reunmap_stats = unmap::UnmapStats::default();
     let mut unsorted_write_count = 0;
+    let mut no_coor = 0u64;
     for o in &outputs {
         let o = o.lock().unwrap().take().unwrap();
         stats.merge(&o.stats);
         consensus_stats.merge(&o.consensus_stats);
         reunmap_stats.merge(&o.unmap_stats);
         unsorted_write_count += o.unsorted_write_count;
+        no_coor += o.full_unmapped_written;
     }
 
     if config.write_bam {
         let mut final_out = out::RawBamOut::create(&final_bam, config.compress_level)?;
         final_out.write_header(&header)?;
         final_out.flush()?;
+        // each part has its own index; with the offset at which the part starts they give the final index
+        let mut part_indexes = Vec::new();
+        let mut part_start = final_out.compressed_offset();
         for p in &part_paths {
+            part_indexes.push((format!("{p}.bai"), part_start));
             out::append_file(&mut final_out, p)?;
+            part_start += std::fs::metadata(p)?.len() - out::BGZF_EOF_LEN;
         }
         if let Some(r) = &stage1_result {
             for c in &r.full_unmapped_chunks {
                 out::append_file_range(&mut final_out, &c.path, c.start, c.end)?;
+                no_coor += c.reads;
             }
         }
         if unpaired_full_unmapped {
@@ -348,7 +371,13 @@ fn run_full(
         }
         final_out.close()?;
         temp_files.extend(part_paths.iter().cloned());
-        out::index_bam(&final_bam, config.threads)?;
+        let final_index = format!("{final_bam}.bai");
+        if part_indexes.iter().all(|(p, _)| std::path::Path::new(p).exists()) {
+            out::merge_part_indexes(&part_indexes, header.target_count() as usize, no_coor + existing_unmapped as u64, &final_index)?;
+        } else {
+            out::index_bam(&final_bam, config.threads)?;
+        }
+        temp_files.extend(part_indexes.into_iter().map(|(p, _)| p));
         if !config.keep_interim_bams {
             for f in &temp_files {
                 let _ = std::fs::remove_file(f);

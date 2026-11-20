@@ -356,9 +356,88 @@ pub struct ReadCache {
     last_cache_read_count: i32,
     log_cache_read_count: i32,
     check_log_cache_read_count: i32,
+    /// processRead calls made on this cache
+    processed: u64,
+    sync: Option<(std::sync::Arc<CacheSync>, usize)>,
+    synced: bool,
 }
 
+/// Java keeps one ReadCache per thread and never resets its size-check counter between partitions, so
+/// with one thread the counter at any read is the number of reads cached in all earlier partitions,
+/// modulo the check interval. The counter decides when a cache above the read count threshold is
+/// purged, which changes duplicate groups in very deep regions. To give Java's one-thread result with
+/// partitions running in parallel, a partition whose cache approaches the threshold waits for the
+/// earlier partitions' counts before the counter can matter.
+pub struct CacheSync {
+    /// per partition: reads cached, and the last cache read count if it was changed
+    done: std::sync::Mutex<Vec<Option<(u64, Option<i32>)>>>,
+    cv: std::sync::Condvar,
+}
+
+impl CacheSync {
+    pub fn new(partitions: usize) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(CacheSync { done: std::sync::Mutex::new(vec![None; partitions]), cv: std::sync::Condvar::new() })
+    }
+
+    /// Marks a partition finished without a cache (also used when it failed, so that nothing waits on it)
+    pub fn publish_empty(&self, index: usize) {
+        let mut d = self.done.lock().unwrap();
+        if d[index].is_none() {
+            d[index] = Some((0, None));
+        }
+        self.cv.notify_all();
+    }
+
+    fn publish(&self, index: usize, reads: u64, last: Option<i32>) {
+        self.done.lock().unwrap()[index] = Some((reads, last));
+        self.cv.notify_all();
+    }
+
+    /// Waits for every earlier partition: the total reads they cached and the last cache read count
+    fn incoming(&self, index: usize) -> (u64, i32) {
+        let mut d = self.done.lock().unwrap();
+        while d[..index].iter().any(|x| x.is_none()) {
+            d = self.cv.wait(d).unwrap();
+        }
+        let total = d[..index].iter().map(|x| x.unwrap().0).sum();
+        let last = d[..index].iter().rev().find_map(|x| x.unwrap().1).unwrap_or(0);
+        (total, last)
+    }
+}
+
+/// how often, in reads, the cache size is looked at to decide whether to wait for earlier partitions
+const SYNC_CHECK_READS: u64 = 512;
+
 impl ReadCache {
+    /// Ties this cache to its partition's place in the run (see CacheSync)
+    pub fn set_sync(&mut self, sync: std::sync::Arc<CacheSync>, index: usize) {
+        self.synced = index == 0;
+        self.sync = Some((sync, index));
+    }
+
+    /// Call when the partition is complete
+    pub fn publish_sync(&mut self) {
+        if let Some((sync, index)) = self.sync.take() {
+            sync.publish(index, self.processed, if self.synced { Some(self.last_cache_read_count) } else { None });
+        }
+    }
+
+    fn check_sync(&mut self) {
+        if self.synced || self.log_cache_read_count == 0 || self.processed % SYNC_CHECK_READS != 0 {
+            return;
+        }
+        let Some((sync, index)) = &self.sync else { return };
+        // the cache grows by at most one read per call, so no size check can see the threshold before this does
+        if (self.cached_read_count() as i64) < self.log_cache_read_count as i64 - SYNC_CHECK_READS as i64 - 1 {
+            return;
+        }
+        let (total, last) = sync.incoming(*index);
+        let interval = self.check_log_cache_read_count.max(1) as u64;
+        self.check_size_read_count = ((total + self.processed) % interval) as i32;
+        self.last_cache_read_count = last;
+        self.synced = true;
+    }
+
     pub fn new(
         group_size: i32, max_soft_clip: i32, use_fragment_orientation: bool, pop_distance_check: i32, dynamic_read_count_threshold: i32,
         log_cache_read_count: i32,
@@ -379,6 +458,9 @@ impl ReadCache {
             last_cache_read_count: 0,
             log_cache_read_count,
             check_log_cache_read_count: (log_cache_read_count as f64 * 0.1).round() as i32,
+            processed: 0,
+            sync: None,
+            synced: true,
         }
     }
 
@@ -395,6 +477,8 @@ impl ReadCache {
 
     /// ReadCache.processRead
     pub fn process_read(&mut self, read: bam::Record, names: &[String]) {
+        self.check_sync();
+        self.processed += 1;
         let left_clip = left_soft_clip(read.raw_cigar());
         if left_clip > self.max_soft_clip {
             crate::warn!(

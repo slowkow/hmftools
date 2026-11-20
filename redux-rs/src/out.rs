@@ -11,6 +11,9 @@ pub struct RawBamOut {
     fp: *mut htslib::BGZF,
     pub path: String,
     pub written: u64,
+    /// index built while writing (see `enable_index`); offsets are relative to this file
+    idx: *mut htslib::hts_idx_t,
+    idx_failed: bool,
 }
 
 unsafe impl Send for RawBamOut {}
@@ -26,7 +29,7 @@ impl RawBamOut {
         if fp.is_null() {
             bail!("failed to open {path} for writing");
         }
-        Ok(RawBamOut { fp, path: path.to_string(), written: 0 })
+        Ok(RawBamOut { fp, path: path.to_string(), written: 0, idx: std::ptr::null_mut(), idx_failed: false })
     }
     pub fn write_header(&mut self, header: &bam::HeaderView) -> Result<()> {
         if unsafe { htslib::bam_hdr_write(self.fp, header.inner_ptr()) } < 0 {
@@ -40,7 +43,25 @@ impl RawBamOut {
             bail!("failed to write a record to {}", self.path);
         }
         self.written += 1;
+        if !self.idx.is_null() && !self.idx_failed {
+            let b = &rec.inner;
+            let r = unsafe {
+                htslib::hts_idx_push(self.idx, b.core.tid, b.core.pos, htslib::bam_endpos(b), self.tell(), (b.core.flag & 4 == 0) as i32)
+            };
+            // records out of order: no index from this file, the caller indexes the final BAM instead
+            self.idx_failed = r < 0;
+        }
         Ok(())
+    }
+    /// The virtual offset of the next byte (bgzf_tell)
+    fn tell(&self) -> u64 {
+        unsafe { (((*self.fp).block_address as u64) << 16) | ((*self.fp).block_offset as u64 & 0xFFFF) }
+    }
+    /// Builds a .bai for this file while it is written, saved as `<path>.bai` at `close`. The file must
+    /// hold only records, in coordinate order; `merge_part_indexes` turns the indexes of the parts into
+    /// the index of the final BAM, which saves reading the final BAM again.
+    pub fn enable_index(&mut self) {
+        self.idx = unsafe { htslib::hts_idx_init(0, htslib::HTS_FMT_BAI as i32, 0, 14, 5) };
     }
     /// Ends the current block, so that the next record starts a new one.
     pub fn flush(&mut self) -> Result<()> {
@@ -62,6 +83,16 @@ impl RawBamOut {
         Ok(())
     }
     pub fn close(mut self) -> Result<()> {
+        if !self.idx.is_null() {
+            let idx = std::mem::replace(&mut self.idx, std::ptr::null_mut());
+            let ok = !self.idx_failed && unsafe { htslib::bgzf_flush(self.fp) } >= 0 && unsafe { htslib::hts_idx_finish(idx, self.tell()) } >= 0;
+            if ok {
+                let cpath = CString::new(self.path.as_str())?;
+                let cidx = CString::new(format!("{}.bai", self.path))?;
+                unsafe { htslib::hts_idx_save_as(idx, cpath.as_ptr(), cidx.as_ptr(), htslib::HTS_FMT_BAI as i32) };
+            }
+            unsafe { htslib::hts_idx_destroy(idx) };
+        }
         let fp = std::mem::replace(&mut self.fp, std::ptr::null_mut());
         if unsafe { htslib::bgzf_close(fp) } < 0 {
             bail!("failed to close {}", self.path);
@@ -72,6 +103,9 @@ impl RawBamOut {
 
 impl Drop for RawBamOut {
     fn drop(&mut self) {
+        if !self.idx.is_null() {
+            unsafe { htslib::hts_idx_destroy(self.idx) };
+        }
         if !self.fp.is_null() {
             unsafe { htslib::bgzf_close(self.fp) };
         }
@@ -103,6 +137,119 @@ pub fn append_file(out: &mut RawBamOut, path: &str) -> Result<()> {
         bail!("{path} is not a complete block-compressed file");
     }
     append_file_range(out, path, 0, len - BGZF_EOF_LEN)
+}
+
+/// One reference of a .bai: bins with their chunks, the mapped/unmapped pseudo-bin, the linear index
+#[derive(Default)]
+struct BaiRef {
+    bins: std::collections::BTreeMap<u32, Vec<(u64, u64)>>,
+    /// file range of the reference, then mapped and unmapped read counts
+    meta: Option<[u64; 4]>,
+    linear: Vec<u64>,
+}
+
+const BAI_META_BIN: u32 = 37450;
+
+fn read_bai(path: &str) -> Result<Vec<BaiRef>> {
+    let data = std::fs::read(path)?;
+    let mut at = 0usize;
+    let mut take = |n: usize| -> Result<&[u8]> {
+        if at + n > data.len() {
+            bail!("{path} is truncated");
+        }
+        at += n;
+        Ok(&data[at - n..at])
+    };
+    if take(4)? != b"BAI\x01" {
+        bail!("{path} is not a BAM index");
+    }
+    let u32_of = |b: &[u8]| u32::from_le_bytes(b.try_into().unwrap());
+    let u64_of = |b: &[u8]| u64::from_le_bytes(b.try_into().unwrap());
+    let n_ref = u32_of(take(4)?) as usize;
+    let mut refs = Vec::with_capacity(n_ref);
+    for _ in 0..n_ref {
+        let mut r = BaiRef::default();
+        for _ in 0..u32_of(take(4)?) {
+            let bin = u32_of(take(4)?);
+            let n_chunk = u32_of(take(4)?) as usize;
+            let mut chunks = Vec::with_capacity(n_chunk);
+            for _ in 0..n_chunk {
+                chunks.push((u64_of(take(8)?), u64_of(take(8)?)));
+            }
+            if bin == BAI_META_BIN {
+                if chunks.len() != 2 {
+                    bail!("{path}: unexpected pseudo-bin");
+                }
+                r.meta = Some([chunks[0].0, chunks[0].1, chunks[1].0, chunks[1].1]);
+            } else {
+                r.bins.insert(bin, chunks);
+            }
+        }
+        for _ in 0..u32_of(take(4)?) {
+            r.linear.push(u64_of(take(8)?));
+        }
+        refs.push(r);
+    }
+    Ok(refs)
+}
+
+/// Writes the index of a BAM made by appending `parts` (path of a part's own index, and the file offset
+/// at which that part starts in the BAM), in order. The parts together are coordinate sorted.
+pub fn merge_part_indexes(parts: &[(String, u64)], n_ref: usize, no_coor: u64, out_path: &str) -> Result<()> {
+    let mut merged: Vec<BaiRef> = (0..n_ref).map(|_| BaiRef::default()).collect();
+    for (path, start) in parts {
+        let shift = |v: u64| v + (start << 16);
+        for (tid, r) in read_bai(path)?.into_iter().enumerate() {
+            if tid >= n_ref {
+                bail!("{path} has more references than the BAM");
+            }
+            let m = &mut merged[tid];
+            for (bin, chunks) in r.bins {
+                m.bins.entry(bin).or_default().extend(chunks.into_iter().map(|(a, b)| (shift(a), shift(b))));
+            }
+            if let Some(x) = r.meta {
+                let (a, b) = (shift(x[0]), shift(x[1]));
+                m.meta = Some(match m.meta {
+                    Some(y) => [y[0].min(a), y[1].max(b), y[2] + x[2], y[3] + x[3]],
+                    None => [a, b, x[2], x[3]],
+                });
+            }
+            // a window already covered by an earlier part keeps that part's offset, which is the lower one
+            for (w, v) in r.linear.into_iter().enumerate() {
+                if w >= m.linear.len() {
+                    m.linear.push(shift(v));
+                }
+            }
+        }
+    }
+    let mut w = std::io::BufWriter::new(std::fs::File::create(out_path)?);
+    w.write_all(b"BAI\x01")?;
+    w.write_all(&(n_ref as u32).to_le_bytes())?;
+    for m in &merged {
+        w.write_all(&((m.bins.len() + m.meta.is_some() as usize) as u32).to_le_bytes())?;
+        for (bin, chunks) in &m.bins {
+            w.write_all(&bin.to_le_bytes())?;
+            w.write_all(&(chunks.len() as u32).to_le_bytes())?;
+            for (a, b) in chunks {
+                w.write_all(&a.to_le_bytes())?;
+                w.write_all(&b.to_le_bytes())?;
+            }
+        }
+        if let Some(x) = m.meta {
+            w.write_all(&BAI_META_BIN.to_le_bytes())?;
+            w.write_all(&2u32.to_le_bytes())?;
+            for v in x {
+                w.write_all(&v.to_le_bytes())?;
+            }
+        }
+        w.write_all(&(m.linear.len() as u32).to_le_bytes())?;
+        for v in &m.linear {
+            w.write_all(&v.to_le_bytes())?;
+        }
+    }
+    w.write_all(&no_coor.to_le_bytes())?;
+    w.flush()?;
+    Ok(())
 }
 
 /// Builds the .bai index of a coordinate-sorted BAM.

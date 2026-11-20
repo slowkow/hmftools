@@ -37,22 +37,26 @@ concatenation and indexing are done in the process.
 - **BAM:** the same records in the same order with the same fields and attributes, compared after
   decompression. The compressed bytes differ, since the compressor differs.
 - **Other files:** byte-identical.
-- **Thread count:** Java's result depends on the thread count in two ways, and the port follows the first
-  and removes the second:
+- **Thread count:** Java's result depends on the thread count in three ways; the port follows the first
+  and removes the other two:
   - The genome is split into `2 x threads` partitions and duplicates are not matched across a partition
     boundary. The port splits the genome the same way, so it matches Java at the same thread count.
   - With more than one thread, Java writes the unplaced (fully unmapped) reads at the end of the BAM in
     an order that depends on thread timing. The port always writes them in the order Java uses with one
     thread.
+  - In regions deep enough to hold 100,000 reads at once, Java's duplicate groups depend on which
+    partitions the same thread processed earlier (REPORT.md, section 2). The port always gives the
+    result of one thread taking the partitions in order.
 
 ## Differences from the Java tool
 
 - **No external tool.** Java calls samtools to sort the interim BAM of unmapped reads, to concatenate the
   per-partition BAMs and to index the result. The port sorts the reads it moves in small per-partition files,
-  joins the partition files by copying compressed blocks, and indexes with htslib.
+  joins the partition files by copying compressed blocks, and builds the index while writing.
 - **Memory.** A few hundred MB instead of about 20 GB.
 - **`-compress_level N`** (not a Java option): the deflate level of the output BAM, 1 to 12, default 4.
-  Level 4 gives a file no larger than Java's in less time; level 5 is about 2.5% smaller and 7% slower.
+  Level 4 gives a file within about 0.5% of Java's size (smaller on some inputs, larger on others);
+  level 5 is about 2.5% smaller and 7% slower.
 - **`compare_bams a.bam b.bam [threads]`** as the first argument compares two BAMs record by record. It
   treats integer attributes of different widths as equal and accepts a different order of the unplaced
   reads at the end.
