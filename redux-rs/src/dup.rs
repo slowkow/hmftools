@@ -1,0 +1,739 @@
+//! Duplicate identification: fragment coordinates, the read cache and duplicate groups
+//! (Java FragmentCoords, ReadCache, DuplicateGroup, Statistics).
+
+use crate::rec::*;
+use crate::unmap::extract_supp_alignment;
+use rust_htslib::bam;
+use std::collections::HashMap;
+
+#[derive(Clone, Debug)]
+pub struct FragmentCoords {
+    pub chr_lower: String,
+    pub chr_upper: String,
+    pub pos_lower: i32,
+    pub pos_upper: i32,
+    pub lower_forward: bool,
+    pub upper_forward: bool,
+    /// forward = F1R2
+    pub frag_forward: bool,
+    pub read_is_lower: bool,
+    /// the supplementary read's own unclipped 5' position and orientation
+    pub supp: Option<(i32, bool)>,
+    pub unmapped_sourced: bool,
+    pub unpaired: bool,
+    pub key: String,
+    pub key_non_oriented: Option<String>,
+}
+
+fn form_coordinate(chr: &str, pos: i32, forward: bool) -> String {
+    if forward { format!("{chr}:{pos}") } else { format!("{chr}:{pos}:R") }
+}
+
+impl FragmentCoords {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        chr_lower: &str, chr_upper: &str, pos_lower: i32, pos_upper: i32, lower_forward: bool, upper_forward: bool, frag_forward: bool,
+        read_is_lower: bool, supp: Option<(i32, bool)>, is_unmapped: bool, key_by_frag_orient: bool, unpaired: bool,
+    ) -> Self {
+        let mut key_non_oriented = None;
+        let key;
+        if unpaired {
+            let mut c = format!("{chr_lower}:{pos_lower}_{pos_upper}");
+            if if read_is_lower { !lower_forward } else { !upper_forward } {
+                c.push_str("_R");
+            }
+            if supp.is_some() {
+                c.push_str("_S");
+            }
+            key = c;
+        } else {
+            let lower = form_coordinate(chr_lower, pos_lower, lower_forward);
+            if pos_upper == NO_POSITION {
+                key = if is_unmapped {
+                    format!("{lower}_N")
+                } else if supp.is_some() {
+                    format!("{lower}_S")
+                } else {
+                    lower
+                };
+            } else {
+                let upper = form_coordinate(chr_upper, pos_upper, upper_forward);
+                let mut k = format!("{lower}_{upper}_{}", if read_is_lower { "L" } else { "U" });
+                if supp.is_some() {
+                    k.push_str("_S");
+                }
+                if key_by_frag_orient && !frag_forward {
+                    key = format!("{k}_V");
+                    key_non_oriented = Some(k);
+                } else {
+                    key = k;
+                }
+            }
+        }
+        FragmentCoords {
+            chr_lower: chr_lower.to_string(),
+            chr_upper: chr_upper.to_string(),
+            pos_lower,
+            pos_upper,
+            lower_forward,
+            upper_forward,
+            frag_forward,
+            read_is_lower,
+            supp,
+            unmapped_sourced: is_unmapped,
+            unpaired,
+            key,
+            key_non_oriented,
+        }
+    }
+
+    pub fn read_position(&self) -> i32 {
+        match self.supp {
+            Some((p, _)) => p,
+            None => {
+                if self.read_is_lower || self.unmapped_sourced { self.pos_lower } else { self.pos_upper }
+            }
+        }
+    }
+    pub fn read_forward(&self) -> bool {
+        match self.supp {
+            Some((_, f)) => f,
+            None => {
+                if self.read_is_lower || self.unmapped_sourced { self.lower_forward } else { self.upper_forward }
+            }
+        }
+    }
+    pub fn key_non_oriented(&self) -> &str {
+        self.key_non_oriented.as_deref().unwrap_or(&self.key)
+    }
+
+    /// FragmentCoords.fromRead. `names` are the reference names by index.
+    pub fn from_read(rec: &bam::Record, names: &[String], use_fragment_orientation: bool) -> Self {
+        Self::from_read_as(rec, names, use_fragment_orientation, has(rec, FLAG_SUPPLEMENTARY))
+    }
+
+    /// FragmentCoords.fromRead(read, useFragmentOrientation, isSupplementary): with `is_supplementary` false a
+    /// supplementary read gives its own coordinates
+    pub fn from_read_as(rec: &bam::Record, names: &[String], use_fragment_orientation: bool, is_supplementary: bool) -> Self {
+        let is_paired = has(rec, FLAG_PAIRED);
+        let is_unmapped = has(rec, FLAG_UNMAPPED);
+        let mate_unmapped = has(rec, FLAG_MATE_UNMAPPED);
+        let name = |tid: i32| -> &str { if tid >= 0 { &names[tid as usize] } else { "*" } };
+
+        let mut mate_chr: String = "*".to_string();
+        let mut mate_forward = true;
+        let mut mate_pos = NO_POSITION;
+        if is_paired && !mate_unmapped {
+            mate_chr = name(rec.mtid()).to_string();
+            mate_forward = !has(rec, FLAG_MATE_REVERSE);
+            // without a mate cigar the mate is taken as fully aligned
+            let fallback;
+            let mate_cigar: &[u8] = match aux_str(rec, b"MC") {
+                Some(mc) => mc,
+                None => {
+                    fallback = format!("{}M", rec.seq_len());
+                    fallback.as_bytes()
+                }
+            };
+            mate_pos = five_prime_unclipped_str(mate_start(rec), mate_cigar, mate_forward);
+        }
+
+        let mut supp = None;
+        let read_chr: String;
+        let read_forward: bool;
+        let read_pos: i32;
+        if !is_paired || !is_unmapped {
+            let mut chr = name(rec.tid()).to_string();
+            let mut fwd = !has(rec, FLAG_REVERSE);
+            let mut pos = five_prime_unclipped(rec);
+            if is_supplementary {
+                supp = Some((pos, fwd));
+                let sd = extract_supp_alignment(aux_str(rec, b"SA")).expect("supplementary read without supplementary alignment data");
+                chr = String::from_utf8_lossy(sd.chromosome).to_string();
+                fwd = sd.strand == b'+';
+                pos = five_prime_unclipped_str(sd.position, sd.cigar, fwd);
+                if !is_paired {
+                    mate_chr = chr.clone();
+                    mate_forward = !fwd;
+                    mate_pos = three_prime_unclipped_str(sd.position, sd.cigar, fwd);
+                }
+            } else if !is_paired {
+                mate_chr = chr.clone();
+                mate_forward = !fwd;
+                mate_pos = three_prime_unclipped(rec);
+            }
+            read_chr = chr;
+            read_forward = fwd;
+            read_pos = pos;
+        } else {
+            read_chr = mate_chr.clone();
+            read_forward = mate_forward;
+            read_pos = mate_pos;
+        }
+
+        if is_unmapped || (is_paired && mate_unmapped) {
+            let read_is_lower = !is_unmapped;
+            return Self::new(
+                &read_chr, "*", read_pos, NO_POSITION, read_forward, read_forward, true, read_is_lower, supp, is_unmapped, false, !is_paired,
+            );
+        }
+
+        let read_is_lower = if read_chr != mate_chr {
+            rec.tid() < rec.mtid()
+        } else if read_pos != mate_pos {
+            read_pos < mate_pos
+        } else {
+            has(rec, FLAG_FIRST)
+        };
+        let frag_forward = !is_paired || (read_is_lower == has(rec, FLAG_FIRST));
+        if read_is_lower {
+            Self::new(
+                &read_chr, &mate_chr, read_pos, mate_pos, read_forward, mate_forward, frag_forward, read_is_lower, supp, is_unmapped,
+                use_fragment_orientation, !is_paired,
+            )
+        } else {
+            Self::new(
+                &mate_chr, &read_chr, mate_pos, read_pos, mate_forward, read_forward, frag_forward, read_is_lower, supp, is_unmapped,
+                use_fragment_orientation, !is_paired,
+            )
+        }
+    }
+}
+
+pub struct ReadInfo {
+    pub read: bam::Record,
+    pub coords: FragmentCoords,
+}
+
+pub struct DuplicateGroup {
+    pub umi: Option<String>,
+    pub coords: FragmentCoords,
+    pub reads: Vec<bam::Record>,
+    pub non_consensus_reads: Vec<bam::Record>,
+    pub consensus_read: Option<bam::Record>,
+    /// index into `reads` of the read kept as primary when no consensus is formed
+    pub primary_read: Option<usize>,
+    pub dual_strand: bool,
+    pub poly_g_unmapped: bool,
+}
+
+impl DuplicateGroup {
+    pub fn new(reads: Vec<bam::Record>, coords: FragmentCoords) -> Self {
+        DuplicateGroup {
+            umi: None,
+            coords,
+            reads,
+            non_consensus_reads: Vec::new(),
+            consensus_read: None,
+            primary_read: None,
+            dual_strand: false,
+            poly_g_unmapped: false,
+        }
+    }
+    pub fn total_read_count(&self) -> usize {
+        self.reads.len() + self.non_consensus_reads.len()
+    }
+    /// DuplicateGroup.calculateFirstInPairCount
+    pub fn first_in_pair_count(&self) -> i32 {
+        let first = |r: &bam::Record| !has(r, FLAG_PAIRED) || has(r, FLAG_FIRST);
+        let mut count = self.reads.iter().filter(|r| first(r)).count() + self.non_consensus_reads.iter().filter(|r| first(r)).count();
+        let total = self.total_read_count();
+        if !(count as f32 >= 0.5f32 * total as f32) {
+            count = total - count;
+        }
+        count as i32
+    }
+}
+
+pub struct FragmentCoordReads {
+    pub duplicate_groups: Vec<DuplicateGroup>,
+    pub single_reads: Vec<ReadInfo>,
+}
+
+impl FragmentCoordReads {
+    pub fn total_read_count(&self) -> usize {
+        self.duplicate_groups.iter().map(|g| g.total_read_count()).sum::<usize>() + self.single_reads.len()
+    }
+    /// FragmentCoordReads.minReadPositionStart
+    pub fn min_read_position_start(&self) -> i32 {
+        let mut min = self.single_reads.iter().map(|r| start(&r.read)).min().unwrap_or(-1);
+        for g in &self.duplicate_groups {
+            let gmin = g.reads.iter().map(start).min().unwrap_or(-1);
+            if min < 0 || gmin > 0 && gmin < min {
+                min = gmin;
+            }
+        }
+        min
+    }
+}
+
+/// String.hashCode over the key, then HashMap's spread of the high bits
+fn java_spread_hash(key: &str) -> u32 {
+    let mut h: i32 = 0;
+    for &b in key.as_bytes() {
+        h = h.wrapping_mul(31).wrapping_add(b as i32);
+    }
+    let h = h as u32;
+    h ^ (h >> 16)
+}
+
+struct Entry {
+    coords: FragmentCoords,
+    reads: Vec<bam::Record>,
+    hash: u32,
+    seq: u64,
+}
+
+/// ReadPositionGroup with a map that can be walked in the order of a java.util.HashMap: by bucket of the
+/// table's current capacity, then by insertion. (Buckets that Java would turn into trees are not modelled.)
+struct ReadPositionGroup {
+    tid: i32,
+    start: i32,
+    end: i32,
+    map: HashMap<String, Entry>,
+    capacity: u32,
+    next_seq: u64,
+}
+
+impl ReadPositionGroup {
+    fn add_read(&mut self, coords: FragmentCoords, read: bam::Record) {
+        if let Some(e) = self.map.get_mut(&coords.key) {
+            e.reads.push(read);
+            return;
+        }
+        let hash = java_spread_hash(&coords.key);
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        self.map.insert(coords.key.clone(), Entry { coords, reads: vec![read], hash, seq });
+        if self.map.len() as u32 > self.capacity / 4 * 3 {
+            self.capacity *= 2;
+        }
+    }
+    fn read_count(&self) -> usize {
+        self.map.values().map(|e| e.reads.len()).sum()
+    }
+    fn min_read_position(&self) -> i32 {
+        let mut min = -1;
+        for e in self.map.values() {
+            let m = e.reads.iter().map(start).min().unwrap_or(-1);
+            if min < 0 || m < min {
+                min = m;
+            }
+        }
+        min
+    }
+    fn order_key(&self, e: &Entry) -> (u32, u64) {
+        (e.hash & (self.capacity - 1), e.seq)
+    }
+    /// keys in java.util.HashMap iteration order
+    fn ordered_keys(&self) -> Vec<String> {
+        let mut v: Vec<(&String, (u32, u64))> = self.map.iter().map(|(k, e)| (k, self.order_key(e))).collect();
+        v.sort_by_key(|x| x.1);
+        v.into_iter().map(|x| x.0.clone()).collect()
+    }
+}
+
+pub const DEFAULT_GROUP_SIZE: i32 = 200;
+pub const DEFAULT_MAX_SOFT_CLIP: i32 = 130;
+pub const DEFAULT_POP_DISTANCE_CHECK: i32 = 100;
+pub const DEFAULT_LOG_READ_COUNT_THRESHOLD: i32 = 100_000;
+pub const DEFAULT_DYNAMIC_READ_COUNT_THRESHOLD: i32 = 100_000;
+pub const MAX_DISTANCE_FOR_REVERSE_STRAND_DUPLICATES: i32 = 1000;
+
+pub struct ReadCache {
+    group_size: i32,
+    max_soft_clip: i32,
+    default_distance_check: i32,
+    pop_distance_check: i32,
+    use_fragment_orientation: bool,
+    read_count_reduction_threshold: i32,
+    check_read_count_reduction: bool,
+    current_read_min_position: i32,
+    current_tid: i32,
+    groups: Vec<ReadPositionGroup>,
+    pop_position_check: i32,
+    check_size_read_count: i32,
+    last_cache_read_count: i32,
+    log_cache_read_count: i32,
+    check_log_cache_read_count: i32,
+}
+
+impl ReadCache {
+    pub fn new(
+        group_size: i32, max_soft_clip: i32, use_fragment_orientation: bool, pop_distance_check: i32, dynamic_read_count_threshold: i32,
+        log_cache_read_count: i32,
+    ) -> Self {
+        ReadCache {
+            group_size,
+            max_soft_clip,
+            default_distance_check: pop_distance_check,
+            pop_distance_check,
+            use_fragment_orientation,
+            read_count_reduction_threshold: dynamic_read_count_threshold,
+            check_read_count_reduction: false,
+            current_read_min_position: 0,
+            current_tid: -2,
+            groups: Vec::new(),
+            pop_position_check: 0,
+            check_size_read_count: 0,
+            last_cache_read_count: 0,
+            log_cache_read_count,
+            check_log_cache_read_count: (log_cache_read_count as f64 * 0.1).round() as i32,
+        }
+    }
+
+    pub fn illumina(use_fragment_orientation: bool) -> Self {
+        Self::new(
+            DEFAULT_GROUP_SIZE, DEFAULT_MAX_SOFT_CLIP, use_fragment_orientation, DEFAULT_POP_DISTANCE_CHECK,
+            DEFAULT_DYNAMIC_READ_COUNT_THRESHOLD, DEFAULT_LOG_READ_COUNT_THRESHOLD,
+        )
+    }
+
+    pub fn current_read_min_position(&self) -> i32 {
+        self.current_read_min_position
+    }
+
+    /// ReadCache.processRead
+    pub fn process_read(&mut self, read: bam::Record, names: &[String]) {
+        let left_clip = left_soft_clip(read.raw_cigar());
+        if left_clip > self.max_soft_clip {
+            crate::warn!(
+                "read({}) leftClip({}) exceeds maxSoftClipLength({})",
+                String::from_utf8_lossy(read.qname()), left_clip, self.max_soft_clip
+            );
+        }
+        let coords = FragmentCoords::from_read(&read, names, self.use_fragment_orientation);
+        let tid = read.tid();
+        let pos = start(&read);
+        let gi = self.get_or_create_group(tid, coords.read_position());
+        self.groups[gi].add_read(coords, read);
+        self.current_read_min_position = pos;
+        if self.current_tid != tid {
+            self.current_tid = tid;
+            self.pop_position_check = 0;
+        }
+        self.check_cache_size(false);
+    }
+
+    fn get_or_create_group(&mut self, tid: i32, fragment_position: i32) -> usize {
+        let mut index = 0;
+        while index < self.groups.len() {
+            let g = &self.groups[index];
+            if g.tid != tid {
+                index += 1;
+                continue;
+            }
+            if fragment_position >= g.start && fragment_position <= g.end {
+                return index;
+            }
+            if fragment_position < g.start {
+                break;
+            }
+            index += 1;
+        }
+        let gs = self.group_size;
+        // Java % and floorDiv
+        let remainder = fragment_position % gs;
+        let (start, end);
+        if remainder == 0 {
+            end = gs * fragment_position.div_euclid(gs);
+            start = end - gs + 1;
+        } else {
+            start = gs * fragment_position.div_euclid(gs) + 1;
+            end = start + gs - 1;
+        }
+        self.groups.insert(index, ReadPositionGroup { tid, start, end, map: HashMap::new(), capacity: 16, next_seq: 0 });
+        index
+    }
+
+    /// ReadCache.popReads
+    pub fn pop_reads(&mut self) -> Option<FragmentCoordReads> {
+        if let Some(r) = self.pop_passed_reads() {
+            return Some(r);
+        }
+        if self.check_read_count_reduction && self.last_cache_read_count >= self.read_count_reduction_threshold {
+            return self.purge_above_read_reduction_threshold();
+        }
+        None
+    }
+
+    fn collect(mut popped: Vec<((usize, u32, u64), Entry)>) -> Option<FragmentCoordReads> {
+        if popped.is_empty() {
+            return None;
+        }
+        popped.sort_by_key(|p| p.0);
+        let mut duplicate_groups = Vec::new();
+        let mut single_reads = Vec::new();
+        for (_, e) in popped {
+            if e.reads.len() > 1 {
+                duplicate_groups.push(DuplicateGroup::new(e.reads, e.coords));
+            } else {
+                let mut reads = e.reads;
+                single_reads.push(ReadInfo { read: reads.pop().unwrap(), coords: e.coords });
+            }
+        }
+        Some(FragmentCoordReads { duplicate_groups, single_reads })
+    }
+
+    fn pop_passed_reads(&mut self) -> Option<FragmentCoordReads> {
+        if let Some(g) = self.groups.first() {
+            if g.tid == self.current_tid && self.current_read_min_position < self.pop_position_check + self.pop_distance_check {
+                return None;
+            }
+        }
+        self.pop_position_check = (self.current_read_min_position / self.pop_distance_check) * self.pop_distance_check;
+        let pop_lower = self.current_read_min_position - self.max_soft_clip;
+        let pop_upper = self.current_read_min_position - 1;
+        let mut popped: Vec<((usize, u32, u64), Entry)> = Vec::new();
+        let mut group_index = 0;
+        // position in the original list, to keep the popped fragments in list order
+        let mut list_index = 0;
+        while group_index < self.groups.len() {
+            let current_tid = self.current_tid;
+            let current_pos = self.current_read_min_position;
+            let group = &mut self.groups[group_index];
+            let take_all = group.tid != current_tid || group.end < pop_lower;
+            let cap_mask = group.capacity - 1;
+            if take_all {
+                for (_, e) in group.map.drain() {
+                    popped.push(((list_index, e.hash & cap_mask, e.seq), e));
+                }
+            } else {
+                let mut keys: Vec<String> = Vec::new();
+                for (k, e) in &group.map {
+                    let read_position = e.coords.read_position();
+                    if e.coords.read_forward() {
+                        if read_position > pop_lower {
+                            continue;
+                        }
+                    } else {
+                        let last = e.reads.last().unwrap();
+                        if read_position > pop_upper && start(last) + MAX_DISTANCE_FOR_REVERSE_STRAND_DUPLICATES > current_pos {
+                            continue;
+                        }
+                    }
+                    keys.push(k.clone());
+                }
+                for k in keys {
+                    let e = group.map.remove(&k).unwrap();
+                    popped.push(((list_index, e.hash & cap_mask, e.seq), e));
+                }
+            }
+            list_index += 1;
+            if group.map.is_empty() {
+                self.groups.remove(group_index);
+                continue;
+            }
+            group_index += 1;
+        }
+        Self::collect(popped)
+    }
+
+    /// ReadCache.evictAll
+    pub fn evict_all(&mut self) -> Option<FragmentCoordReads> {
+        let mut popped = Vec::new();
+        for (gi, group) in self.groups.iter_mut().enumerate() {
+            let cap_mask = group.capacity - 1;
+            for (_, e) in group.map.drain() {
+                popped.push(((gi, e.hash & cap_mask, e.seq), e));
+            }
+        }
+        self.groups.clear();
+        self.pop_position_check = (self.current_read_min_position / self.pop_distance_check) * self.pop_distance_check;
+        Self::collect(popped)
+    }
+
+    fn purge_above_read_reduction_threshold(&mut self) -> Option<FragmentCoordReads> {
+        self.check_read_count_reduction = false;
+        if self.groups.iter().any(|g| g.tid != self.current_tid) {
+            return None;
+        }
+        let cached_read_count = self.cached_read_count() as i64;
+        let cached_frag_count = self.cached_frag_coord_groups() as i64;
+        let average_group_size = cached_read_count as f64 / cached_frag_count as f64;
+        if average_group_size < 2.0 {
+            return None;
+        }
+        let target_read_count = cached_read_count as f64 * 0.5;
+        let group_size_threshold = (average_group_size * 0.5).max(2.0);
+        let mut reads_popped: i64 = 0;
+        let mut popped: Vec<((usize, u32, u64), Entry)> = Vec::new();
+        let mut group_index = 0;
+        let mut list_index = 0;
+        while group_index < self.groups.len() {
+            if (cached_read_count - reads_popped) as f64 <= target_read_count {
+                break;
+            }
+            let group = &mut self.groups[group_index];
+            let cap_mask = group.capacity - 1;
+            let mut removed = false;
+            for k in group.ordered_keys() {
+                if (group.map[&k].reads.len() as f64) < group_size_threshold {
+                    continue;
+                }
+                let e = group.map.remove(&k).unwrap();
+                reads_popped += e.reads.len() as i64;
+                popped.push(((list_index, e.hash & cap_mask, e.seq), e));
+                removed = true;
+                if (cached_read_count - reads_popped) as f64 <= target_read_count {
+                    break;
+                }
+            }
+            list_index += 1;
+            if removed && group.map.is_empty() {
+                self.groups.remove(group_index);
+                continue;
+            }
+            group_index += 1;
+        }
+        if reads_popped > 0 {
+            self.check_cache_size(true);
+        }
+        // every fragment purged here is a duplicate group, also one of a single read
+        if popped.is_empty() {
+            return None;
+        }
+        popped.sort_by_key(|p| p.0);
+        Some(FragmentCoordReads {
+            duplicate_groups: popped.into_iter().map(|(_, e)| DuplicateGroup::new(e.reads, e.coords)).collect(),
+            single_reads: Vec::new(),
+        })
+    }
+
+    pub fn min_cached_read_start(&self) -> i32 {
+        self.groups.iter().map(|g| g.min_read_position()).min().unwrap_or(-1)
+    }
+
+    fn check_cache_size(&mut self, force_update: bool) {
+        if self.log_cache_read_count == 0 {
+            return;
+        }
+        if !force_update {
+            self.check_size_read_count += 1;
+            if self.check_size_read_count < self.check_log_cache_read_count {
+                return;
+            }
+            self.check_size_read_count = 0;
+        }
+        let new_read_count = self.cached_read_count() as i32;
+        if new_read_count >= self.log_cache_read_count && (new_read_count - self.last_cache_read_count).abs() >= self.log_cache_read_count {
+            self.last_cache_read_count = new_read_count;
+            self.check_read_count_reduction = true;
+        }
+        if force_update {
+            self.last_cache_read_count = new_read_count;
+        }
+        self.check_pos_check_adjust(new_read_count);
+    }
+
+    fn check_pos_check_adjust(&mut self, cached_read_count: i32) {
+        if self.pop_distance_check == self.default_distance_check {
+            return;
+        }
+        if cached_read_count < self.read_count_reduction_threshold {
+            self.pop_distance_check = self.default_distance_check;
+        } else {
+            let multiple = ((cached_read_count as f64 / self.read_count_reduction_threshold as f64).round() as i32).min(9);
+            let adjust_fraction = (10 - multiple) as f64 / 10.0;
+            self.pop_distance_check = (self.default_distance_check as f64 * adjust_fraction).round() as i32;
+        }
+    }
+
+    #[cfg(test)]
+    pub fn cached_read_position_groups(&self) -> usize {
+        self.groups.len()
+    }
+    pub fn cached_read_count(&self) -> usize {
+        self.groups.iter().map(|g| g.read_count()).sum()
+    }
+    pub fn cached_frag_coord_groups(&self) -> usize {
+        self.groups.iter().map(|g| g.map.len()).sum()
+    }
+}
+
+/// Statistics: duplicate group sizes, keyed by rounded size; the size written is the first one seen for the key.
+#[derive(Default, Clone)]
+pub struct Statistics {
+    pub total_reads: i64,
+    pub duplicate_reads: i64,
+    pub duplicate_groups: i64,
+    /// (rounded size, first size seen, count, dual strand count)
+    pub frequencies: Vec<(i32, i32, i64, i64)>,
+    /// Statistics.Ultima
+    pub ultima: crate::ultima::UltimaStats,
+    pub umi: crate::umi::UmiStatistics,
+}
+
+/// Statistics.roundFrequency
+pub fn round_frequency(frequency: i32) -> i32 {
+    let round = |x: f32| (x + 0.5).floor() as i32;
+    if frequency <= 10 {
+        frequency
+    } else if frequency <= 100 {
+        round(frequency as f32 / 10.0) * 10
+    } else if frequency <= 1000 {
+        round(frequency as f32 / 100.0) * 100
+    } else {
+        round(frequency as f32 / 1000.0) * 1000
+    }
+}
+
+impl Statistics {
+    fn add_frequency(&mut self, duplicate_count: i32, count: i64, dual: i64) {
+        let rounded = round_frequency(duplicate_count);
+        match self.frequencies.iter_mut().find(|f| f.0 == rounded) {
+            Some(f) => {
+                f.2 += count;
+                f.3 += dual;
+            }
+            None => self.frequencies.push((rounded, duplicate_count, count, dual)),
+        }
+    }
+    pub fn add_non_duplicate_counts(&mut self, fragment_count: usize) {
+        if fragment_count > 0 {
+            self.add_frequency(1, fragment_count as i64, 0);
+        }
+    }
+    pub fn add_duplicate_group(&mut self, fragment_count: usize) {
+        self.add_frequency(fragment_count as i32, 1, 0);
+        self.duplicate_groups += 1;
+        self.duplicate_reads += fragment_count as i64 - 1;
+    }
+    /// Statistics.addUmiGroup
+    pub fn add_umi_group(&mut self, fragment_count: usize, has_dual_strand: bool) {
+        self.add_frequency(fragment_count as i32, 1, has_dual_strand as i64);
+        self.duplicate_groups += 1;
+        self.duplicate_reads += fragment_count as i64 - 1;
+    }
+    pub fn merge(&mut self, other: &Statistics) {
+        self.umi.merge(&other.umi);
+        self.total_reads += other.total_reads;
+        self.duplicate_reads += other.duplicate_reads;
+        self.duplicate_groups += other.duplicate_groups;
+        self.ultima.merge(&other.ultima);
+        // Java walks the other map's values in HashMap order of the Integer keys, which matters only for
+        // which first-seen size a new rounded key takes; a key has one value in `other`, so order is free
+        for f in &other.frequencies {
+            self.add_frequency(f.1, f.2, f.3);
+        }
+    }
+    /// Statistics.writeDuplicateStats
+    pub fn write_duplicate_stats(&self, filename: &str, include_dual_strand: bool) -> anyhow::Result<()> {
+        let mut out = String::from("DuplicateReadCount\tFrequency");
+        if include_dual_strand {
+            out.push_str("\tDualStrandFrequency");
+        }
+        out.push('\n');
+        let mut f = self.frequencies.clone();
+        f.sort_by_key(|x| x.0);
+        for (_, first, count, dual) in f {
+            out.push_str(&format!("{first}\t{count}"));
+            if include_dual_strand {
+                out.push_str(&format!("\t{dual}"));
+            }
+            out.push('\n');
+        }
+        std::fs::write(filename, out)?;
+        Ok(())
+    }
+}
