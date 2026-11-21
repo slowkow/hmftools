@@ -31,7 +31,7 @@ Java's, and the other output files are byte-identical. See README.md for how the
 - The R plots (`-bqr_write_plot`, `-write_msi_plots`): accepted with a warning.
 - The separate tools in the same jar: the microsatellite site finder (`ms_sites`) and the MSI model
   training (`MsModelBuilder`).
-- A whole-genome run from raw alignments, a Linux build, reference genome 37.
+- A whole-genome run from raw alignments, reference genome 37.
 
 ## Design notes
 
@@ -72,8 +72,22 @@ network disk, so the 16-thread wall times show the disk, not the tools:
 
 At 16 threads both tools spent the same time in each phase (first pass about 9 minutes, partitions 16
 to 18, joining and indexing 9), all bound by the disk. The 16-thread Rust run was made before the index
-was built while writing. The output BAM was 77.7 GB against Java's 77.4 GB. A whole genome on a local
-disk has not been timed.
+was built while writing. The output BAM was 77.7 GB against Java's 77.4 GB. The Linux runs below
+are on a local disk.
+
+Linux (x86-64, 16 virtual CPUs, 128 GB, local SSD; built with the stock Debian 12 toolchain), same
+vendor data, Java 17:
+
+| Input | Threads | Java wall / CPU / memory | Rust wall / CPU / memory |
+|---|---|---|---|
+| chr21 slice | 4 | 385 s / 429 s / 33.8 GB | 153 s / 154 s / 0.4 GB |
+| chr21 + chr22 + unplaced reads | 16 | 1,295 s / 2,131 s / 33.2 GB | 401 s / 929 s / 0.9 GB |
+| Whole genome, 86 GB | 16 | 3,030 s / 31,074 s / 35.7 GB | 1,583 s / 16,693 s / 1.6 GB |
+
+CPU is user time. In the whole-genome run Rust's phases were 3 minutes for the first pass, 20 for the
+partitions and 4 for joining, jitter and the index; Java's were 5, 32 and 8. The BAMs match except
+for the order of unplaced reads and, in the whole genome, the same few hundred duplicate flags on one
+very deep contig that differ on macOS at 16 threads (Java's result there depends on thread timing).
 
 One thread, taken while other jobs were running; CPU time is the fairer figure:
 

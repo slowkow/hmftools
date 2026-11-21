@@ -26,6 +26,8 @@ Inputs:
 | Illumina, chr21 + chr22 + unplaced reads realigned | 16 threads | 114,593,080 | identical apart from the order of the unplaced reads; 40 million reads unmapped in the first pass |
 | Illumina whole genome, vendor (DRAGEN) alignments, 86 GB | 1 thread | 1,780,126,609 | BAM and all four side files identical |
 | The same | 16 threads | 1,780,126,609 | identical up to record 1,706,028,352; then about 500 duplicate flags differ on one very deep decoy contig, where Java depends on thread timing (section 2), and with them `duplicate_freq.tsv` |
+| The same, on Linux (x86-64) | 16 threads | 1,780,126,609 | the same result as on macOS: identical up to the same record, then duplicate flags on the deep contig; BQR, jitter and microsatellite files identical. Rust 26 min and 1.6 GB, Java 50 min and 35.7 GB, local SSD |
+| Two smaller vendor inputs on Linux | 4 and 16 threads | 114 M in the larger | BAMs identical apart from the order of unplaced reads; Rust 2.5 and 3.2 times faster |
 | Illumina, 6.6 M reads | 14 option runs: no consensus, `-drop_duplicates` (with and without consensus), `-skip_duplicate_marking`, `-unmap_mt`, `-unmap_alt_decoy`, `-std_chr_only`, `-skip_unmapping`, `-skip_fully_unmapped`, `-specific_regions`, `-specific_chr`, `-read_length`, `-output_id` | 1.6 to 7.0 M | all identical |
 | Illumina + UMIs | `-umi_enabled`; duplex with `+` and `_` delimiters; `-umi_variable_length`; `-umi_defined_ids`; `-umi_base_diff_stats` | 27.2 M | BAM, side files and UMI statistics files identical; 586,632 dual-strand groups in the duplex run |
 | SBX tumor | 1 and 8 threads | 23,819,453 | identical |
@@ -140,6 +142,8 @@ None of these is a difference between the port and Java at one thread.
 
 ## 5. Timeline
 
+- Day 2, later: first Linux build and runs (x86-64 cloud VM): whole genome in 26 minutes against
+  Java's 50 at 16 threads, same comparison result as on macOS.
 - Day 2: whole genome compared at 1 and 16 threads; the read cache's dependence on earlier partitions
   found and followed; index built while writing.
 - Day 1: Java profiled; Illumina path, both unmapping passes, consensus, output; first identical BAM.
