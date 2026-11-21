@@ -75,6 +75,11 @@ to 18, joining and indexing 9), all bound by the disk. The 16-thread Rust run wa
 was built while writing. The output BAM was 77.7 GB against Java's 77.4 GB. The Linux runs below
 are on a local disk.
 
+After the second optimisation pass, the same whole genome on macOS at 16 threads from an external SSD
+took 1,013 s (5,469 s CPU, 1.1 GB): first pass 2.7 minutes, partitions 10, joining the partition files
+and the rest 4.2. All 1,780,126,609 records and the four side files are identical to Java's one-thread
+output. The Java and Linux figures in this section were measured before that pass.
+
 Linux (x86-64, 16 virtual CPUs, 128 GB, local SSD; built with the stock Debian 12 toolchain), same
 vendor data, Java 17:
 
