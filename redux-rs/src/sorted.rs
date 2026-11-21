@@ -6,7 +6,7 @@ use crate::rec::*;
 use anyhow::Result;
 use rust_htslib::bam;
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 const READ_POS_CACHE_BUFFER: i32 = 30;
 const MIN_WRITE_COUNT: usize = 10;
@@ -53,7 +53,11 @@ impl PartialEq for Entry {
 impl Eq for Entry {}
 
 pub struct SortedBamWriter {
-    records: BTreeSet<Entry>,
+    /// the held records by start position; each list is in order of arrival and is sorted when written
+    records: BTreeMap<i32, Vec<Entry>>,
+    cached: usize,
+    /// emptied lists, kept for reuse
+    spare: Vec<Vec<Entry>>,
     current_tid: i32,
     last_written_position: i32,
     upper_bound_position: i32,
@@ -78,7 +82,9 @@ impl SortedBamWriter {
     /// SortedBamConfig(positionBuffer, readPosCacheBuffer, minWriteCount)
     pub fn with_config(position_buffer: i32, read_pos_cache_buffer: i32, min_write_count: usize) -> Self {
         SortedBamWriter {
-            records: BTreeSet::new(),
+            records: BTreeMap::new(),
+            cached: 0,
+            spare: Vec::new(),
             current_tid: -2,
             last_written_position: 0,
             upper_bound_position: 0,
@@ -111,7 +117,7 @@ impl SortedBamWriter {
 
     #[cfg(test)]
     pub fn cached(&self) -> usize {
-        self.records.len()
+        self.cached
     }
 
     pub fn can_write_record(&self, rec: &bam::Record) -> bool {
@@ -124,20 +130,35 @@ impl SortedBamWriter {
 
     pub fn add_record(&mut self, rec: bam::Record, out: &mut RawBamOut) -> Result<()> {
         let s = start(&rec);
-        self.records.insert(Entry { start: s, counter: self.read_count, rec });
+        let entry = Entry { start: s, counter: self.read_count, rec };
+        match self.records.entry(s) {
+            std::collections::btree_map::Entry::Occupied(mut o) => o.get_mut().push(entry),
+            std::collections::btree_map::Entry::Vacant(v) => {
+                let mut list = self.spare.pop().unwrap_or_default();
+                list.push(entry);
+                v.insert(list);
+            }
+        }
+        self.cached += 1;
         self.read_count += 1;
         self.min_cached_position = if self.min_cached_position == 0 { s } else { self.min_cached_position.min(s) };
         if self.upper_writable_position < self.min_cached_position {
             return Ok(());
         }
         let upper = self.upper_writable_position;
-        let writable = self.records.iter().take_while(|e| e.start <= upper).take(self.min_write_count).count();
+        let mut writable = 0;
+        for (_, list) in self.records.range(..=upper) {
+            writable += list.len();
+            if writable >= self.min_write_count {
+                break;
+            }
+        }
         if writable < self.min_write_count {
             return Ok(());
         }
         self.write_records(Some(upper), out)?;
-        self.min_cached_position = match self.records.first() {
-            Some(e) => e.start,
+        self.min_cached_position = match self.records.first_key_value() {
+            Some((&start, _)) => start,
             None => self.upper_writable_position + 1,
         };
         Ok(())
@@ -145,29 +166,38 @@ impl SortedBamWriter {
 
     /// Writes the records starting at or before `upper`, or all of them.
     fn write_records(&mut self, upper: Option<i32>, out: &mut RawBamOut) -> Result<()> {
-        let Some(first) = self.records.first() else { return Ok(()) };
+        let Some((&first_start, _)) = self.records.first_key_value() else { return Ok(()) };
         if let Some(u) = upper {
-            if first.start > u {
+            if first_start > u {
                 return Ok(());
             }
         }
-        if first.start < self.last_written_position {
+        if first_start < self.last_written_position {
             anyhow::bail!(
                 "sorted BAM cache writing earlier(readStart={} vs last={}) from {} records",
-                first.start, self.last_written_position, self.records.len()
+                first_start, self.last_written_position, self.cached
             );
         }
         let mut last = self.last_written_position;
-        while let Some(e) = self.records.first() {
-            if upper.is_some_and(|u| e.start > u) {
+        while let Some((&start, _)) = self.records.first_key_value() {
+            if upper.is_some_and(|u| start > u) {
                 break;
             }
-            let e = self.records.pop_first().unwrap();
-            out.write(&e.rec)?;
-            last = e.start;
-            self.reads_written += 1;
-            if self.pool.len() < POOL_MAX {
-                self.pool.push(e.rec);
+            let (_, mut list) = self.records.pop_first().unwrap();
+            if list.len() > 1 {
+                list.sort();
+            }
+            for e in list.drain(..) {
+                out.write(&e.rec)?;
+                self.reads_written += 1;
+                self.cached -= 1;
+                if self.pool.len() < POOL_MAX {
+                    self.pool.push(e.rec);
+                }
+            }
+            last = start;
+            if self.spare.len() < POOL_MAX {
+                self.spare.push(list);
             }
         }
         self.last_written_position = last;

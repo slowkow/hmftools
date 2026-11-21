@@ -212,7 +212,7 @@ pub struct ReadView<'a> {
 
 impl<'a> ReadView<'a> {
     pub fn new(rec: &'a bam::Record) -> Self {
-        ReadView { rec, bases: rec.seq().as_bytes(), quals: rec.qual(), cigar: rec.raw_cigar(), start: start(rec), end: end(rec) }
+        ReadView { rec, bases: seq_bytes(rec), quals: rec.qual(), cigar: rec.raw_cigar(), start: start(rec), end: end(rec) }
     }
     fn unclipped_start(&self) -> i32 {
         self.start - left_soft_clip(self.cigar)
@@ -658,6 +658,49 @@ impl ConsensusReads {
         let offsets: Vec<i32> = reads.iter().map(|r| r.unclipped_start() - state.unclipped_pos_start).collect();
         let mut location_bases = vec![NO_BASE; read_count];
         let mut location_quals = vec![INVALID_BASE_QUAL; read_count];
+        // the usual case: every read covers every consensus base, so no read is ever out of range and the
+        // per-read values are only gathered where the reads disagree
+        let all_cover = offsets.iter().zip(reads).all(|(&o, r)| o <= 0 && base_length as i64 - o as i64 <= r.bases.len() as i64);
+        if all_cover && read_count > 0 {
+            let rows: Vec<(&[u8], &[u8])> = reads
+                .iter()
+                .zip(&offsets)
+                .map(|(r, &o)| {
+                    let s = (-o) as usize;
+                    (&r.bases[s..s + base_length], &r.quals[s..s + base_length])
+                })
+                .collect();
+            let half = 0.5 * read_count as f64;
+            for base_index in 0..base_length {
+                let first_base = rows[0].0[base_index];
+                let mut has_mismatch = false;
+                let mut max_qual: i32 = -1;
+                let mut uncertain_qual_count = 0;
+                for (b, q) in &rows {
+                    has_mismatch |= b[base_index] != first_base;
+                    let q = q[base_index] as i8 as i32;
+                    max_qual = max_qual.max(q);
+                    uncertain_qual_count += (q <= BASE_QUAL_MINIMUM) as i32;
+                }
+                if !has_mismatch {
+                    state.bases[base_index] = first_base;
+                    state.base_qualities[base_index] = if uncertain_qual_count as f64 >= half { BASE_QUAL_MINIMUM } else { max_qual };
+                } else {
+                    for (r, (b, q)) in rows.iter().enumerate() {
+                        location_bases[r] = b[base_index];
+                        location_quals[r] = q[base_index] as i8 as i32;
+                    }
+                    let mut base_position = state.unclipped_pos_start + base_index as i32;
+                    if base_position < 1 || base_position > chromosome_length {
+                        base_position = INVALID_POSITION;
+                    }
+                    let pair = self.determine_base_and_qual(&location_bases, &location_quals, chromosome, base_position, is_dual_strand, &is_first_in_pair);
+                    state.bases[base_index] = pair.base;
+                    state.base_qualities[base_index] = pair.qual;
+                }
+            }
+            return;
+        }
         for base_index in 0..base_length {
             let mut has_mismatch = false;
             let mut max_qual: i32 = -1;

@@ -260,7 +260,7 @@ fn aux_field_len(aux: &[u8]) -> usize {
         _ => 0,
     };
     match t {
-        b'Z' | b'H' => 3 + aux[3..].iter().position(|&c| c == 0).unwrap() + 1,
+        b'Z' | b'H' => 3 + memchr::memchr(0, &aux[3..]).unwrap() + 1,
         b'B' => {
             let n = u32::from_le_bytes([aux[4], aux[5], aux[6], aux[7]]) as usize;
             8 + n * fixed(aux[3])
@@ -522,5 +522,44 @@ mod tests {
         assert_eq!(tags, vec![&b"MD"[..], b"NM", b"UM", b"AS"]);
         aux_block_set(&mut aux, b"MD", None);
         assert_eq!(aux_spans(&aux).len(), 3);
+    }
+}
+
+/// The two bases of each packed sequence byte.
+static SEQ_PAIRS: [[u8; 2]; 256] = {
+    let codes = *b"=ACMGRSVTWYHKDBN";
+    let mut t = [[0u8; 2]; 256];
+    let mut i = 0;
+    while i < 256 {
+        t[i] = [codes[i >> 4], codes[i & 0xf]];
+        i += 1;
+    }
+    t
+};
+
+/// The read bases as letters (the same as `rec.seq().as_bytes()`, decoded two bases at a time).
+pub fn seq_bytes(rec: &bam::Record) -> Vec<u8> {
+    let n = rec.seq_len();
+    let encoded = rec.seq().encoded;
+    let mut out = Vec::with_capacity(n + 1);
+    for &b in &encoded[..n.div_ceil(2)] {
+        out.extend_from_slice(&SEQ_PAIRS[b as usize]);
+    }
+    out.truncate(n);
+    out
+}
+
+#[cfg(test)]
+mod seq_tests {
+    use super::*;
+
+    #[test]
+    fn seq_bytes_matches_htslib() {
+        for bases in [&b""[..], b"A", b"AC", b"ACGTN", b"NNACGTRYKMSWBDHV=ACGTACGTA"] {
+            let mut rec = bam::Record::new();
+            rec.set(b"r", None, bases, &vec![30u8; bases.len()]);
+            assert_eq!(seq_bytes(&rec), rec.seq().as_bytes());
+            assert_eq!(seq_bytes(&rec), bases);
+        }
     }
 }

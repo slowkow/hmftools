@@ -80,6 +80,11 @@ took 1,013 s (5,469 s CPU, 1.1 GB): first pass 2.7 minutes, partitions 10, joini
 and the rest 4.2. All 1,780,126,609 records and the four side files are identical to Java's one-thread
 output. The Java and Linux figures in this section were measured before that pass.
 
+Since then the partition files are appended to the output while later partitions run (and deleted as
+they are appended). On the same run this saved no time (1,034 s; identical output): the external
+disk writes about 300 MB/s of compressed data, which bounds the second copy of the output whenever
+it is made. A third pass over the profile took 6% of the instructions off the one-thread test.
+
 Linux (x86-64, 16 virtual CPUs, 128 GB, local SSD; built with the stock Debian 12 toolchain), same
 vendor data, Java 17:
 

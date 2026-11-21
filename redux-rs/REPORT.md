@@ -150,12 +150,23 @@ None of these is a difference between the port and Java at one thread.
   - reference bases: the FASTA is read at offsets worked out from the index rather than a byte at a
     time through htslib, the previous block is kept, and ranges are copied by block (about 5%);
   - attributes are found by walking the record's attribute block, not through htslib's lookup (2%).
+- A third pass took another 6% (765 to 720 billion instructions on the same run), identical output:
+  a consensus path for the usual case of reads that all cover every base, bases decoded two at a
+  time (3%); the sorted writer holds a list of records per start position rather than one tree of
+  whole records (2%); string attributes are skipped with a vectorised search (1%).
+- The partition files are now appended to the output BAM while later partitions are still running,
+  and each is deleted once appended, so less temporary disk is needed. On the whole genome (16
+  threads, external USB SSD) this gave no time saving (17.2 against 16.9 minutes): that disk writes
+  about 300 MB/s of compressed data, and the second copy of the output is bound by it whenever it
+  happens. A disk with headroom should gain up to half of the joining time; not measured.
 - What remains is mostly output compression, about half of the CPU. It is at the fastest setting that
   keeps Java's file size; `-compress_level 3` saves about 9% of CPU for a 4.8% larger BAM and
   `-compress_level 1` about 21% for 7% larger (measured before the later changes above).
 
 ## 5. Timeline
 
+- Day 4: third optimisation pass (consensus, sorted writer, attributes); partition files joined while
+  the partitions run.
 - Day 3: second optimisation pass (allocation, recalibration loop, reference access); a regression
   script reruns all 88 stored Java baselines.
 - Day 2, later: first Linux build and runs (x86-64 cloud VM): whole genome in 26 minutes against

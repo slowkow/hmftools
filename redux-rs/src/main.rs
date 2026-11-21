@@ -284,7 +284,37 @@ fn run_full(
     let worker_count = config.threads.min(partitions.len()).max(1);
     let outputs: Vec<std::sync::Mutex<Option<partition::PartitionOutput>>> = (0..partitions.len()).map(|_| std::sync::Mutex::new(None)).collect();
     let cache_sync = dup::CacheSync::new(partitions.len());
+    // the final BAM is written under a temporary name while the partitions run: a joiner thread appends each
+    // part as soon as it and all earlier parts are complete, so little is left to copy when the last one ends
+    let final_tmp = format!("{temp_prefix}.joined");
+    let join_state = JoinState::new(partitions.len());
+    let mut joined: Option<(out::RawBamOut, Vec<(String, u64)>)> = None;
     std::thread::scope(|scope| -> Result<()> {
+        let joiner = if config.write_bam {
+            let mut final_out = out::RawBamOut::create(&final_tmp, config.compress_level)?;
+            final_out.write_header(&header)?;
+            final_out.flush()?;
+            let (join_state, part_paths) = (&join_state, &part_paths);
+            Some(scope.spawn(move || -> Result<Option<(out::RawBamOut, Vec<(String, u64)>)>> {
+                // each part has its own index; with the offset at which the part starts they give the final index
+                let mut part_indexes = Vec::new();
+                let mut part_start = final_out.compressed_offset();
+                for (i, p) in part_paths.iter().enumerate() {
+                    if !join_state.wait_for(i) {
+                        return Ok(None);
+                    }
+                    part_indexes.push((format!("{p}.bai"), part_start));
+                    out::append_file(&mut final_out, p)?;
+                    part_start += std::fs::metadata(p)?.len() - out::BGZF_EOF_LEN;
+                    if !config.keep_interim_bams {
+                        let _ = std::fs::remove_file(p);
+                    }
+                }
+                Ok(Some((final_out, part_indexes)))
+            }))
+        } else {
+            None
+        };
         let mut handles = Vec::new();
         for _ in 0..worker_count {
             handles.push(scope.spawn(|| -> Result<()> {
@@ -312,18 +342,38 @@ fn run_full(
                     pr.process_partition(&partitions[i], &mut reader)?;
                     pr.publish_cache_sync();
                     *outputs[i].lock().unwrap() = Some(pr.finish()?);
+                    join_state.part_done(i);
                 } })();
                 // a failed partition must not leave later ones waiting for its count
                 if let (Err(_), Some(i)) = (&result, taken) {
                     cache_sync.publish_empty(i);
                 }
+                if result.is_err() {
+                    join_state.fail();
+                }
                 result
             }));
         }
+        let mut result = Ok(());
         for h in handles {
-            h.join().unwrap()?;
+            let r = h.join().unwrap();
+            if result.is_ok() {
+                result = r;
+            }
         }
-        Ok(())
+        if result.is_err() {
+            join_state.fail();
+        }
+        if let Some(j) = joiner {
+            let r = j.join().unwrap();
+            if result.is_ok() {
+                joined = r?;
+            }
+        }
+        result
+    })
+    .inspect_err(|_| {
+        let _ = std::fs::remove_file(&final_tmp);
     })?;
     info!("all partition tasks complete");
 
@@ -350,17 +400,7 @@ fn run_full(
     }
 
     if config.write_bam {
-        let mut final_out = out::RawBamOut::create(&final_bam, config.compress_level)?;
-        final_out.write_header(&header)?;
-        final_out.flush()?;
-        // each part has its own index; with the offset at which the part starts they give the final index
-        let mut part_indexes = Vec::new();
-        let mut part_start = final_out.compressed_offset();
-        for p in &part_paths {
-            part_indexes.push((format!("{p}.bai"), part_start));
-            out::append_file(&mut final_out, p)?;
-            part_start += std::fs::metadata(p)?.len() - out::BGZF_EOF_LEN;
-        }
+        let Some((mut final_out, part_indexes)) = joined else { anyhow::bail!("the partition files were not joined") };
         if let Some(r) = &stage1_result {
             for c in &r.full_unmapped_chunks {
                 out::append_file_range(&mut final_out, &c.path, c.start, c.end)?;
@@ -374,6 +414,7 @@ fn run_full(
             }
         }
         final_out.close()?;
+        std::fs::rename(&final_tmp, &final_bam)?;
         temp_files.extend(part_paths.iter().cloned());
         let final_index = format!("{final_bam}.bai");
         if part_indexes.iter().all(|(p, _)| std::path::Path::new(p).exists()) {
@@ -430,6 +471,35 @@ fn run_full(
     }
     info!("Redux complete, mins({:.3})", start.elapsed().as_secs_f64() / 60.0);
     Ok(())
+}
+
+/// Tells the joiner thread which partition files are complete.
+struct JoinState {
+    /// per part: complete; then whether a partition failed
+    state: std::sync::Mutex<(Vec<bool>, bool)>,
+    changed: std::sync::Condvar,
+}
+
+impl JoinState {
+    fn new(parts: usize) -> Self {
+        JoinState { state: std::sync::Mutex::new((vec![false; parts], false)), changed: std::sync::Condvar::new() }
+    }
+    fn part_done(&self, i: usize) {
+        self.state.lock().unwrap().0[i] = true;
+        self.changed.notify_all();
+    }
+    fn fail(&self) {
+        self.state.lock().unwrap().1 = true;
+        self.changed.notify_all();
+    }
+    /// Waits until part `i` is complete; false when a partition failed instead.
+    fn wait_for(&self, i: usize) -> bool {
+        let mut s = self.state.lock().unwrap();
+        while !s.0[i] && !s.1 {
+            s = self.changed.wait(s).unwrap();
+        }
+        !s.1
+    }
 }
 
 /// ReduxApplication.createPartitionThreads: the regions of each partition.
