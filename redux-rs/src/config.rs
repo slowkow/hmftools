@@ -75,8 +75,9 @@ pub struct Config {
     /// DuplicatesConfig.SbxMaxDuplicateDistance (-sbx_max_dup_dist)
     pub sbx_max_dup_dist: i32,
     pub umi: crate::umi::UmiConfig,
-    /// not a Java option: the deflate level of the output BAM (libdeflate levels 1-12). The default, 4, gives a
-    /// file no larger than Java's (zlib level 5) in less time; 5 is about 2.5% smaller and 7% slower.
+    /// not a Java option: the deflate level of the output BAM (htslib levels 0-9). The default, 4, gives a file
+    /// within about 0.5% of Java's size (zlib level 5); 5 is about 2.5% smaller and 7% slower, 3 about 5% larger
+    /// and 9% faster, 1 about 7% larger and 21% faster.
     pub compress_level: u32,
 }
 
@@ -169,7 +170,7 @@ impl Config {
             ultima_drop_qual_tags: sequencing_type == SequencingType::Ultima && args.has_flag("ultima_drop_qual_tags"),
             sbx_max_dup_dist: args.integer("sbx_max_dup_dist", crate::sbx::DEFAULT_SBX_MAX_DUPLICATE_DISTANCE)?,
             umi,
-            compress_level: args.integer("compress_level", 4)?.clamp(0, 12) as u32,
+            compress_level: args.integer("compress_level", 4)?.clamp(0, 9) as u32,
             args,
         })
     }

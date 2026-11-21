@@ -6,7 +6,6 @@ use crate::dup::{DuplicateGroup, FragmentCoords};
 use crate::rec::*;
 use crate::unmap::extract_supp_alignment;
 use rust_htslib::bam::{self, record::{Cigar, CigarString}};
-use rust_htslib::faidx;
 use std::collections::HashMap;
 
 mod sbx_indel;
@@ -61,11 +60,15 @@ impl ConsensusStatistics {
 
 /// Reference bases for one thread, read in blocks (Java consensus.RefGenome over a cached reference).
 pub struct RefBases {
-    reader: faidx::Reader,
+    reader: crate::refgenome::FastaReader,
     lengths: HashMap<String, i32>,
     chr: String,
     block_start: i32,
     block: Vec<u8>,
+    /// the block used before this one: fragments on either side of a block boundary alternate
+    prev_chr: String,
+    prev_start: i32,
+    prev_block: Vec<u8>,
     #[cfg(test)]
     mock: Option<crate::tests::util::MockRefGenome>,
 }
@@ -74,10 +77,10 @@ const REF_BLOCK: i32 = 1 << 16;
 
 impl RefBases {
     pub fn open(path: &str) -> anyhow::Result<Self> {
-        let reader = faidx::Reader::from_path(path)?;
+        let reader = crate::refgenome::FastaReader::open(path)?;
         let mut lengths = HashMap::new();
         for n in reader.seq_names()? {
-            let len = reader.fetch_seq_len(&n) as i32;
+            let len = reader.seq_len(&n) as i32;
             lengths.insert(n, len);
         }
         Ok(RefBases {
@@ -86,6 +89,9 @@ impl RefBases {
             chr: String::new(),
             block_start: 0,
             block: Vec::new(),
+            prev_chr: String::new(),
+            prev_start: 0,
+            prev_block: Vec::new(),
             #[cfg(test)]
             mock: None,
         })
@@ -108,10 +114,15 @@ impl RefBases {
         let len = self.chromosome_length(chr);
         let start = ((pos - 1) / REF_BLOCK) * REF_BLOCK + 1;
         let end = (start + REF_BLOCK - 1).min(len);
-        self.block = self.reader.fetch_seq(chr, (start - 1) as usize, (end - 1) as usize).unwrap_or_default();
-        self.chr.clear();
-        self.chr.push_str(chr);
-        self.block_start = start;
+        std::mem::swap(&mut self.block, &mut self.prev_block);
+        std::mem::swap(&mut self.chr, &mut self.prev_chr);
+        std::mem::swap(&mut self.block_start, &mut self.prev_start);
+        if !(self.block_start == start && !self.block.is_empty() && self.chr == chr) {
+            self.block = self.reader.fetch(chr, (start - 1) as usize, (end - 1) as usize).unwrap_or_default();
+            self.chr.clear();
+            self.chr.push_str(chr);
+            self.block_start = start;
+        }
     }
     /// RefGenome.getRefBase: NO_BASE beyond the chromosome end
     pub fn ref_base(&mut self, chr: &str, pos: i32) -> u8 {
@@ -139,8 +150,14 @@ impl RefBases {
             return Some(m.bases(chr, start, end));
         }
         let mut out = Vec::with_capacity((end - start + 1) as usize);
-        for pos in start..=end {
-            out.push(self.ref_base(chr, pos));
+        let mut pos = start;
+        while pos <= end {
+            // brings in the block holding this position; the rest of the range within it is copied in one go
+            self.ref_base(chr, pos);
+            let offset = (pos - self.block_start) as usize;
+            let count = ((end - pos + 1) as usize).min(self.block.len() - offset);
+            out.extend_from_slice(&self.block[offset..offset + count]);
+            pos += count as i32;
         }
         Some(out)
     }

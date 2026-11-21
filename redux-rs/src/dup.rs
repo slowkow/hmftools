@@ -4,12 +4,10 @@
 use crate::rec::*;
 use crate::unmap::extract_supp_alignment;
 use rust_htslib::bam;
-use std::collections::HashMap;
+use hashbrown::HashTable;
 
 #[derive(Clone, Debug)]
 pub struct FragmentCoords {
-    pub chr_lower: String,
-    pub chr_upper: String,
     pub pos_lower: i32,
     pub pos_upper: i32,
     pub lower_forward: bool,
@@ -22,11 +20,38 @@ pub struct FragmentCoords {
     pub unmapped_sourced: bool,
     pub unpaired: bool,
     pub key: String,
-    pub key_non_oriented: Option<String>,
+    /// the key without the fragment orientation suffix is its first `non_oriented_len` bytes
+    non_oriented_len: usize,
 }
 
-fn form_coordinate(chr: &str, pos: i32, forward: bool) -> String {
-    if forward { format!("{chr}:{pos}") } else { format!("{chr}:{pos}:R") }
+fn push_int(s: &mut String, v: i32) {
+    let mut buf = [0u8; 12];
+    let mut i = buf.len();
+    let mut n = (v as i64).unsigned_abs();
+    loop {
+        i -= 1;
+        buf[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    if v < 0 {
+        i -= 1;
+        buf[i] = b'-';
+    }
+    // digits and a sign are ASCII
+    s.push_str(unsafe { std::str::from_utf8_unchecked(&buf[i..]) });
+}
+
+/// chr:pos, with :R on the reverse strand
+fn push_coordinate(s: &mut String, chr: &str, pos: i32, forward: bool) {
+    s.push_str(chr);
+    s.push(':');
+    push_int(s, pos);
+    if !forward {
+        s.push_str(":R");
+    }
 }
 
 impl FragmentCoords {
@@ -35,44 +60,42 @@ impl FragmentCoords {
         chr_lower: &str, chr_upper: &str, pos_lower: i32, pos_upper: i32, lower_forward: bool, upper_forward: bool, frag_forward: bool,
         read_is_lower: bool, supp: Option<(i32, bool)>, is_unmapped: bool, key_by_frag_orient: bool, unpaired: bool,
     ) -> Self {
-        let mut key_non_oriented = None;
-        let key;
+        // the key is built in one allocation: this runs for every read
+        let mut key = String::with_capacity(chr_lower.len() + chr_upper.len() + 40);
         if unpaired {
-            let mut c = format!("{chr_lower}:{pos_lower}_{pos_upper}");
+            key.push_str(chr_lower);
+            key.push(':');
+            push_int(&mut key, pos_lower);
+            key.push('_');
+            push_int(&mut key, pos_upper);
             if if read_is_lower { !lower_forward } else { !upper_forward } {
-                c.push_str("_R");
+                key.push_str("_R");
             }
             if supp.is_some() {
-                c.push_str("_S");
+                key.push_str("_S");
             }
-            key = c;
         } else {
-            let lower = form_coordinate(chr_lower, pos_lower, lower_forward);
+            push_coordinate(&mut key, chr_lower, pos_lower, lower_forward);
             if pos_upper == NO_POSITION {
-                key = if is_unmapped {
-                    format!("{lower}_N")
+                if is_unmapped {
+                    key.push_str("_N");
                 } else if supp.is_some() {
-                    format!("{lower}_S")
-                } else {
-                    lower
-                };
-            } else {
-                let upper = form_coordinate(chr_upper, pos_upper, upper_forward);
-                let mut k = format!("{lower}_{upper}_{}", if read_is_lower { "L" } else { "U" });
-                if supp.is_some() {
-                    k.push_str("_S");
+                    key.push_str("_S");
                 }
-                if key_by_frag_orient && !frag_forward {
-                    key = format!("{k}_V");
-                    key_non_oriented = Some(k);
-                } else {
-                    key = k;
+            } else {
+                key.push('_');
+                push_coordinate(&mut key, chr_upper, pos_upper, upper_forward);
+                key.push_str(if read_is_lower { "_L" } else { "_U" });
+                if supp.is_some() {
+                    key.push_str("_S");
                 }
             }
         }
+        let non_oriented_len = key.len();
+        if !unpaired && pos_upper != NO_POSITION && key_by_frag_orient && !frag_forward {
+            key.push_str("_V");
+        }
         FragmentCoords {
-            chr_lower: chr_lower.to_string(),
-            chr_upper: chr_upper.to_string(),
             pos_lower,
             pos_upper,
             lower_forward,
@@ -83,7 +106,7 @@ impl FragmentCoords {
             unmapped_sourced: is_unmapped,
             unpaired,
             key,
-            key_non_oriented,
+            non_oriented_len,
         }
     }
 
@@ -104,7 +127,7 @@ impl FragmentCoords {
         }
     }
     pub fn key_non_oriented(&self) -> &str {
-        self.key_non_oriented.as_deref().unwrap_or(&self.key)
+        &self.key[..self.non_oriented_len]
     }
 
     /// FragmentCoords.fromRead. `names` are the reference names by index.
@@ -120,11 +143,11 @@ impl FragmentCoords {
         let mate_unmapped = has(rec, FLAG_MATE_UNMAPPED);
         let name = |tid: i32| -> &str { if tid >= 0 { &names[tid as usize] } else { "*" } };
 
-        let mut mate_chr: String = "*".to_string();
+        let mut mate_chr: &str = "*";
         let mut mate_forward = true;
         let mut mate_pos = NO_POSITION;
         if is_paired && !mate_unmapped {
-            mate_chr = name(rec.mtid()).to_string();
+            mate_chr = name(rec.mtid());
             mate_forward = !has(rec, FLAG_MATE_REVERSE);
             // without a mate cigar the mate is taken as fully aligned
             let fallback;
@@ -139,26 +162,28 @@ impl FragmentCoords {
         }
 
         let mut supp = None;
-        let read_chr: String;
+        let sa_chr: std::borrow::Cow<str>;
+        let read_chr: &str;
         let read_forward: bool;
         let read_pos: i32;
         if !is_paired || !is_unmapped {
-            let mut chr = name(rec.tid()).to_string();
+            let mut chr: &str = name(rec.tid());
             let mut fwd = !has(rec, FLAG_REVERSE);
             let mut pos = five_prime_unclipped(rec);
             if is_supplementary {
                 supp = Some((pos, fwd));
                 let sd = extract_supp_alignment(aux_str(rec, b"SA")).expect("supplementary read without supplementary alignment data");
-                chr = String::from_utf8_lossy(sd.chromosome).to_string();
+                sa_chr = String::from_utf8_lossy(sd.chromosome);
+                chr = &sa_chr;
                 fwd = sd.strand == b'+';
                 pos = five_prime_unclipped_str(sd.position, sd.cigar, fwd);
                 if !is_paired {
-                    mate_chr = chr.clone();
+                    mate_chr = chr;
                     mate_forward = !fwd;
                     mate_pos = three_prime_unclipped_str(sd.position, sd.cigar, fwd);
                 }
             } else if !is_paired {
-                mate_chr = chr.clone();
+                mate_chr = chr;
                 mate_forward = !fwd;
                 mate_pos = three_prime_unclipped(rec);
             }
@@ -166,7 +191,7 @@ impl FragmentCoords {
             read_forward = fwd;
             read_pos = pos;
         } else {
-            read_chr = mate_chr.clone();
+            read_chr = mate_chr;
             read_forward = mate_forward;
             read_pos = mate_pos;
         }
@@ -174,7 +199,7 @@ impl FragmentCoords {
         if is_unmapped || (is_paired && mate_unmapped) {
             let read_is_lower = !is_unmapped;
             return Self::new(
-                &read_chr, "*", read_pos, NO_POSITION, read_forward, read_forward, true, read_is_lower, supp, is_unmapped, false, !is_paired,
+                read_chr, "*", read_pos, NO_POSITION, read_forward, read_forward, true, read_is_lower, supp, is_unmapped, false, !is_paired,
             );
         }
 
@@ -188,12 +213,12 @@ impl FragmentCoords {
         let frag_forward = !is_paired || (read_is_lower == has(rec, FLAG_FIRST));
         if read_is_lower {
             Self::new(
-                &read_chr, &mate_chr, read_pos, mate_pos, read_forward, mate_forward, frag_forward, read_is_lower, supp, is_unmapped,
+                read_chr, mate_chr, read_pos, mate_pos, read_forward, mate_forward, frag_forward, read_is_lower, supp, is_unmapped,
                 use_fragment_orientation, !is_paired,
             )
         } else {
             Self::new(
-                &mate_chr, &read_chr, mate_pos, read_pos, mate_forward, read_forward, frag_forward, read_is_lower, supp, is_unmapped,
+                mate_chr, read_chr, mate_pos, read_pos, mate_forward, read_forward, frag_forward, read_is_lower, supp, is_unmapped,
                 use_fragment_orientation, !is_paired,
             )
         }
@@ -277,6 +302,11 @@ fn java_spread_hash(key: &str) -> u32 {
     h ^ (h >> 16)
 }
 
+/// Spreads Java's 32-bit hash over the 64 bits the table uses
+fn table_hash(hash: u32) -> u64 {
+    (hash as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+}
+
 struct Entry {
     coords: FragmentCoords,
     reads: Vec<bam::Record>,
@@ -290,46 +320,38 @@ struct ReadPositionGroup {
     tid: i32,
     start: i32,
     end: i32,
-    map: HashMap<String, Entry>,
+    /// keyed by the fragment key held in each entry, hashed with Java's hash
+    map: HashTable<Entry>,
     capacity: u32,
     next_seq: u64,
 }
 
 impl ReadPositionGroup {
     fn add_read(&mut self, coords: FragmentCoords, read: bam::Record) {
-        if let Some(e) = self.map.get_mut(&coords.key) {
+        let hash = java_spread_hash(&coords.key);
+        if let Some(e) = self.map.find_mut(table_hash(hash), |e| e.hash == hash && e.coords.key == coords.key) {
             e.reads.push(read);
             return;
         }
-        let hash = java_spread_hash(&coords.key);
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.map.insert(coords.key.clone(), Entry { coords, reads: vec![read], hash, seq });
+        self.map.insert_unique(table_hash(hash), Entry { coords, reads: vec![read], hash, seq }, |e| table_hash(e.hash));
         if self.map.len() as u32 > self.capacity / 4 * 3 {
             self.capacity *= 2;
         }
     }
     fn read_count(&self) -> usize {
-        self.map.values().map(|e| e.reads.len()).sum()
+        self.map.iter().map(|e| e.reads.len()).sum()
     }
     fn min_read_position(&self) -> i32 {
         let mut min = -1;
-        for e in self.map.values() {
+        for e in self.map.iter() {
             let m = e.reads.iter().map(start).min().unwrap_or(-1);
             if min < 0 || m < min {
                 min = m;
             }
         }
         min
-    }
-    fn order_key(&self, e: &Entry) -> (u32, u64) {
-        (e.hash & (self.capacity - 1), e.seq)
-    }
-    /// keys in java.util.HashMap iteration order
-    fn ordered_keys(&self) -> Vec<String> {
-        let mut v: Vec<(&String, (u32, u64))> = self.map.iter().map(|(k, e)| (k, self.order_key(e))).collect();
-        v.sort_by_key(|x| x.1);
-        v.into_iter().map(|x| x.0.clone()).collect()
     }
 }
 
@@ -526,7 +548,7 @@ impl ReadCache {
             start = gs * fragment_position.div_euclid(gs) + 1;
             end = start + gs - 1;
         }
-        self.groups.insert(index, ReadPositionGroup { tid, start, end, map: HashMap::new(), capacity: 16, next_seq: 0 });
+        self.groups.insert(index, ReadPositionGroup { tid, start, end, map: HashTable::new(), capacity: 16, next_seq: 0 });
         index
     }
 
@@ -579,27 +601,20 @@ impl ReadCache {
             let take_all = group.tid != current_tid || group.end < pop_lower;
             let cap_mask = group.capacity - 1;
             if take_all {
-                for (_, e) in group.map.drain() {
+                for e in group.map.drain() {
                     popped.push(((list_index, e.hash & cap_mask, e.seq), e));
                 }
             } else {
-                let mut keys: Vec<String> = Vec::new();
-                for (k, e) in &group.map {
+                let passed = |e: &mut Entry| {
                     let read_position = e.coords.read_position();
                     if e.coords.read_forward() {
-                        if read_position > pop_lower {
-                            continue;
-                        }
+                        read_position <= pop_lower
                     } else {
                         let last = e.reads.last().unwrap();
-                        if read_position > pop_upper && start(last) + MAX_DISTANCE_FOR_REVERSE_STRAND_DUPLICATES > current_pos {
-                            continue;
-                        }
+                        !(read_position > pop_upper && start(last) + MAX_DISTANCE_FOR_REVERSE_STRAND_DUPLICATES > current_pos)
                     }
-                    keys.push(k.clone());
-                }
-                for k in keys {
-                    let e = group.map.remove(&k).unwrap();
+                };
+                for e in group.map.extract_if(passed) {
                     popped.push(((list_index, e.hash & cap_mask, e.seq), e));
                 }
             }
@@ -618,7 +633,7 @@ impl ReadCache {
         let mut popped = Vec::new();
         for (gi, group) in self.groups.iter_mut().enumerate() {
             let cap_mask = group.capacity - 1;
-            for (_, e) in group.map.drain() {
+            for e in group.map.drain() {
                 popped.push(((gi, e.hash & cap_mask, e.seq), e));
             }
         }
@@ -651,11 +666,16 @@ impl ReadCache {
             let group = &mut self.groups[group_index];
             let cap_mask = group.capacity - 1;
             let mut removed = false;
-            for k in group.ordered_keys() {
-                if (group.map[&k].reads.len() as f64) < group_size_threshold {
+            // java.util.HashMap iteration order: by bucket of the current capacity, then by insertion
+            let mut order: Vec<(u32, u64, u32, usize)> =
+                group.map.iter().map(|e| (e.hash & cap_mask, e.seq, e.hash, e.reads.len())).collect();
+            order.sort_unstable();
+            for (_, seq, hash, len) in order {
+                if (len as f64) < group_size_threshold {
                     continue;
                 }
-                let e = group.map.remove(&k).unwrap();
+                let Ok(found) = group.map.find_entry(table_hash(hash), |e| e.seq == seq) else { unreachable!() };
+                let e = found.remove().0;
                 reads_popped += e.reads.len() as i64;
                 popped.push(((list_index, e.hash & cap_mask, e.seq), e));
                 removed = true;

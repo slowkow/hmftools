@@ -139,9 +139,24 @@ None of these is a difference between the port and Java at one thread.
 - The jitter analysis costs about one second where Java allocates for every read and builds every
   table twice.
 - Memory is a few hundred MB against about 20 GB.
+- A later pass over the profile cut the port's own CPU by about a third on a one-thread run (vendor
+  chr21 slice: 98.9 s to 63.6 s of user time, 1,313 to 765 billion instructions), with identical output:
+  - the fragment key of each read is built in one allocation, and the read cache keeps each key once
+    in a table hashed with Java's hash, instead of copying and re-hashing it (18% of instructions);
+  - a faster allocator, mimalloc, is the default build (13%);
+  - the recalibration loop works out the positions to count once per aligned block rather than testing
+    each base (12%);
+  - reference bases: the FASTA is read at offsets worked out from the index rather than a byte at a
+    time through htslib, the previous block is kept, and ranges are copied by block (about 5%);
+  - attributes are found by walking the record's attribute block, not through htslib's lookup (2%).
+- What remains is mostly output compression, about half of the CPU. It is at the fastest setting that
+  keeps Java's file size; `-compress_level 3` saves about 9% of CPU for a 4.8% larger BAM and
+  `-compress_level 1` about 21% for 7% larger (measured before the later changes above).
 
 ## 5. Timeline
 
+- Day 3: second optimisation pass (allocation, recalibration loop, reference access); a regression
+  script reruns all 88 stored Java baselines.
 - Day 2, later: first Linux build and runs (x86-64 cloud VM): whole genome in 26 minutes against
   Java's 50 at 16 threads, same comparison result as on macOS.
 - Day 2: whole genome compared at 1 and 16 threads; the read cache's dependence on earlier partitions

@@ -13,6 +13,9 @@ that is worth knowing, is in [REPORT.md](REPORT.md).
 cargo build --release
 ```
 
+The default build uses the mimalloc allocator, which is about 13% faster here than the system one;
+`cargo build --release --no-default-features` builds without it.
+
 The binary is `target/release/redux-rs`. It links htslib statically (through `rust-htslib`), so samtools
 is not needed at run time.
 
@@ -54,9 +57,10 @@ concatenation and indexing are done in the process.
   per-partition BAMs and to index the result. The port sorts the reads it moves in small per-partition files,
   joins the partition files by copying compressed blocks, and builds the index while writing.
 - **Memory.** A few hundred MB instead of about 20 GB.
-- **`-compress_level N`** (not a Java option): the deflate level of the output BAM, 1 to 12, default 4.
+- **`-compress_level N`** (not a Java option): the deflate level of the output BAM, 0 to 9, default 4.
   Level 4 gives a file within about 0.5% of Java's size (smaller on some inputs, larger on others);
-  level 5 is about 2.5% smaller and 7% slower.
+  level 5 is about 2.5% smaller and 7% slower, level 3 about 5% larger and 9% faster, level 1 about 7%
+  larger and 21% faster. Compression is about half of the CPU time.
 - **`compare_bams a.bam b.bam [threads]`** as the first argument compares two BAMs record by record. It
   treats integer attributes of different widths as equal and accepts a different order of the unplaced
   reads at the end.

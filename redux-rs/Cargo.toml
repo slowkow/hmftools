@@ -6,8 +6,15 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.104"
 flate2 = "1.1.11"
+hashbrown = "0.17.1"
 libm = "0.2.16"
+mimalloc = { version = "0.1.52", default-features = false, optional = true }
 rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate", "bzip2", "lzma"] }
+
+[features]
+default = ["mimalloc"]
+# a faster allocator for the many small per-read allocations; build with --no-default-features to use the system one
+mimalloc = ["dep:mimalloc"]
 
 [profile.release]
 panic = "abort"

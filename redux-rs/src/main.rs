@@ -1,5 +1,9 @@
 //! REDUX in Rust: a port of hmftools REDUX 2.1 (see ../redux).
 
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod args;
 mod bamin;
 mod bqr;
@@ -471,7 +475,7 @@ fn set_read_length(config: &mut Config, genome: &refgenome::RefGenome) -> Result
             max_len = max_len.max(rec.seq_len() as i32);
             if rec.is_paired() {
                 paired = true;
-                mate_cigar |= rec.aux(b"MC").is_ok();
+                mate_cigar |= rec::has_aux(&rec, b"MC");
             }
             if config.is_sbx() {
                 sbx_sampler.process_sample_record(&rec);

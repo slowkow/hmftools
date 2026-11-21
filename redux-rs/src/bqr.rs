@@ -438,6 +438,20 @@ fn ref_base_code(base: u8) -> u8 {
     }
 }
 
+/// The dense row id of a consensus type and quality seen for the first time, if any are left.
+#[cold]
+#[inline(never)]
+fn assign_combo(combo_keys: &mut Vec<u32>, combo_ids: &mut [u8; 3 * 256], combo: usize) -> u8 {
+    let id = if combo_keys.len() < MAX_COMBOS {
+        combo_keys.push(alt_qual_key((combo >> 8) as u32, 0, (combo & 0xff) as u32));
+        (combo_keys.len() - 1) as u8
+    } else {
+        COMBO_NONE
+    };
+    combo_ids[combo] = id;
+    id
+}
+
 /// BaseQualityData.processReadBase for a base which is not held in the dense rows: finds or adds its AltQualityCount.
 #[cold]
 #[inline(never)]
@@ -1090,20 +1104,6 @@ impl<'a> BqrRegionReader<'a> {
         self.created_max = self.created_max.max(index);
     }
 
-    /// The dense row id of a consensus type and quality seen for the first time, if any are left.
-    #[cold]
-    #[inline(never)]
-    fn assign_combo(&mut self, combo: usize) -> u8 {
-        let id = if self.combo_keys.len() < MAX_COMBOS {
-            self.combo_keys.push(alt_qual_key((combo >> 8) as u32, 0, (combo & 0xff) as u32));
-            (self.combo_keys.len() - 1) as u8
-        } else {
-            COMBO_NONE
-        };
-        self.combo_ids[combo] = id;
-        id
-    }
-
     /// BaseQualityData.processReadBase: one more read base of this type, base and quality on the given strand.
     #[inline(always)]
     fn count_read_base(&mut self, index: usize, read_type: ConsensusType, base_code: u8, quality: i8, pos_strand: bool) {
@@ -1112,7 +1112,7 @@ impl<'a> BqrRegionReader<'a> {
             let combo = ((read_type as usize) << 8) | quality as u8 as usize;
             let mut id = self.combo_ids[combo];
             if id == COMBO_UNSET {
-                id = self.assign_combo(combo);
+                id = assign_combo(&mut self.combo_keys, &mut self.combo_ids, combo);
             }
             if id != COMBO_NONE {
                 let c = &mut self.dense[index * DENSE_WIDTH + id as usize * 2 + (!pos_strand) as usize];
@@ -1158,6 +1158,10 @@ impl<'a> BqrRegionReader<'a> {
         let mut duplex_base_index = -1;
         if is_sbx && read_type == ConsensusType::Dual {
             duplex_base_index = tags.duplex_base_index.unwrap_or(-1);
+        }
+        if !is_ultima && duplex_base_index < 0 {
+            self.handle_alignment_plain(rec, quals, length, start_read_index, ref_pos);
+            return;
         }
         let t0 = if is_ultima { tags.t0.expect("Ultima read without t0 tag") } else { &[][..] };
 
@@ -1217,6 +1221,101 @@ impl<'a> BqrRegionReader<'a> {
         }
 
         if read_used {
+            self.total_reads_used += 1;
+        }
+    }
+
+    /// handle_alignment for the common case of a read with neither Ultima's extra quality rule nor an SBX duplex
+    /// boundary. The positions to count are worked out before the loop instead of being tested for each base.
+    fn handle_alignment_plain(&mut self, rec: &bam::Record, quals: &[u8], length: i32, start_read_index: i32, ref_pos: i32) {
+        let read_pos_strand = !rec.is_reverse();
+        let read_type = self.current_read_type;
+        let ref_seq = self.ref_seq.as_ref().unwrap();
+        let seq_start = ref_seq.start;
+        let first_valid = seq_start + REF_SEQ_BUFFER;
+        let last_valid = ref_seq.end - REF_SEQ_BUFFER;
+        let (min_start, max_end) = (self.min_read_start_position, self.max_read_end_position);
+
+        let end_pos = ref_pos + length - 1;
+        let mut lo = ref_pos.max(first_valid);
+        if min_start > 0 {
+            lo = lo.max(min_start);
+        }
+        let mut hi = end_pos.min(last_valid);
+        // a block running past the last valid position ends the read without counting it as used, unless the
+        // fragment boundary stops it first
+        let mut counts_as_used = end_pos <= last_valid;
+        if max_end > 0 {
+            let break_pos = (max_end + 1).max(lo);
+            if break_pos <= hi {
+                hi = break_pos - 1;
+                counts_as_used = true;
+            }
+        }
+        if lo > hi {
+            return;
+        }
+
+        let count = (hi - lo + 1) as usize;
+        let first_read_index = (start_read_index + (lo - ref_pos)) as usize;
+        let first_index = (lo - seq_start) as usize;
+        let seq = rec.seq().encoded;
+        let quals = &quals[first_read_index..first_read_index + count];
+        let ref_bases = &ref_seq.bases[first_index - 1..first_index + count + 1];
+        let slots = &mut self.slots[first_index..first_index + count];
+        let dense = &mut self.dense[first_index * DENSE_WIDTH..(first_index + count) * DENSE_WIDTH];
+        let strand = (!read_pos_strand) as usize;
+        let type_bits = (read_type as usize) << 8;
+        let mut read_used = false;
+        let mut max_index = self.max_index;
+        let (mut created_min, mut created_max) = (self.created_min, self.created_max);
+
+        for k in 0..count {
+            let read_index = first_read_index + k;
+            let base_code = (seq[read_index >> 1] >> ((!read_index & 1) << 2)) & 0xf;
+            if base_code == BAM_BASE_N {
+                continue;
+            }
+            let quality = quals[k] as i8;
+            read_used = true;
+
+            let slot = &mut slots[k];
+            if slot.flags & FLAG_PRESENT == 0 {
+                // create_slot
+                let tnc = [ref_bases[k], ref_bases[k + 1], ref_bases[k + 2]];
+                *slot = PosData { tnc, flags: FLAG_PRESENT | (ref_base_code(tnc[1]) << REF_CODE_SHIFT), ..EMPTY_POS_DATA };
+                let index = first_index + k;
+                max_index = index as i32;
+                created_min = created_min.min(index);
+                created_max = created_max.max(index);
+            }
+            slot.aligned_count = slot.aligned_count.wrapping_add(1);
+
+            // BaseQualAdjustment.isUncertainBaseQual
+            if quality <= BASE_QUAL_MINIMUM {
+                continue;
+            }
+            // count_read_base
+            if base_code == slot.flags >> REF_CODE_SHIFT {
+                let combo = type_bits | quality as u8 as usize;
+                let mut id = self.combo_ids[combo];
+                if id == COMBO_UNSET {
+                    id = assign_combo(&mut self.combo_keys, &mut self.combo_ids, combo);
+                }
+                if id != COMBO_NONE {
+                    let c = &mut dense[k * DENSE_WIDTH + id as usize * 2 + strand];
+                    *c = c.wrapping_add(1);
+                    continue;
+                }
+            }
+            let key = alt_qual_key(read_type as u32, base_code as u32, quality as u8 as u32);
+            add_listed_base(slot, &mut self.arena, key, read_pos_strand);
+        }
+
+        self.max_index = max_index;
+        self.created_min = created_min;
+        self.created_max = created_max;
+        if read_used && counts_as_used {
             self.total_reads_used += 1;
         }
     }

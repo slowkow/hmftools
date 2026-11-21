@@ -158,8 +158,8 @@ fn check_unpaired(
     };
     let fragment_coords = create_fragment_coords(&read);
 
-    assert_eq!(expected_chr, fragment_coords.chr_lower);
-    assert_eq!(expected_chr, fragment_coords.chr_upper);
+    // the chromosome names are held only in the key; an unpaired read's key names the one chromosome of both ends
+    assert_eq!(Some(expected_chr), fragment_coords.key.split(':').next());
     assert_eq!(position_lower, fragment_coords.pos_lower);
     assert_eq!(position_upper, fragment_coords.pos_upper);
     assert_eq!(FORWARD, fragment_coords.lower_forward);

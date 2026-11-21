@@ -1,6 +1,6 @@
 //! Helpers over htslib records that follow htsjdk's SAMRecord semantics where REDUX depends on them.
 
-use rust_htslib::bam::{self, record::Aux};
+use rust_htslib::bam;
 use rust_htslib::htslib;
 
 pub const FLAG_PAIRED: u16 = 0x1;
@@ -171,28 +171,49 @@ pub fn calc_cigar_aligned_length(cigar: &[u8]) -> i32 {
     total
 }
 
+/// The attribute with this tag, from its type byte on. The block is walked here: htslib's lookup is called for
+/// several tags of every read and showed in profiles.
+#[inline]
+fn aux_find<'a>(rec: &'a bam::Record, tag: &[u8; 2]) -> Option<&'a [u8]> {
+    let aux = aux_bytes(rec);
+    let mut i = 0;
+    while i + 3 <= aux.len() {
+        let n = aux_field_len(&aux[i..]);
+        if aux[i] == tag[0] && aux[i + 1] == tag[1] {
+            return Some(&aux[i + 2..i + n]);
+        }
+        i += n;
+    }
+    None
+}
+
 /// A string (Z) attribute.
 pub fn aux_str<'a>(rec: &'a bam::Record, tag: &[u8; 2]) -> Option<&'a [u8]> {
-    match rec.aux(tag) {
-        Ok(Aux::String(s)) => Some(s.as_bytes()),
-        _ => None,
+    let field = aux_find(rec, tag)?;
+    if field[0] != b'Z' {
+        return None;
     }
+    let value = &field[1..field.len() - 1];
+    // as rust-htslib, which gives no value for a string that is not UTF-8
+    if value.is_ascii() || std::str::from_utf8(value).is_ok() { Some(value) } else { None }
 }
 
 pub fn aux_int(rec: &bam::Record, tag: &[u8; 2]) -> Option<i64> {
-    match rec.aux(tag) {
-        Ok(Aux::I8(v)) => Some(v as i64),
-        Ok(Aux::U8(v)) => Some(v as i64),
-        Ok(Aux::I16(v)) => Some(v as i64),
-        Ok(Aux::U16(v)) => Some(v as i64),
-        Ok(Aux::I32(v)) => Some(v as i64),
-        Ok(Aux::U32(v)) => Some(v as i64),
+    let field = aux_find(rec, tag)?;
+    let v = &field[1..];
+    match field[0] {
+        b'c' => Some(v[0] as i8 as i64),
+        b'C' => Some(v[0] as i64),
+        b's' => Some(i16::from_le_bytes([v[0], v[1]]) as i64),
+        b'S' => Some(u16::from_le_bytes([v[0], v[1]]) as i64),
+        b'i' => Some(i32::from_le_bytes([v[0], v[1], v[2], v[3]]) as i64),
+        b'I' => Some(u32::from_le_bytes([v[0], v[1], v[2], v[3]]) as i64),
         _ => None,
     }
 }
 
 pub fn has_aux(rec: &bam::Record, tag: &[u8; 2]) -> bool {
-    rec.aux(tag).is_ok()
+    aux_find(rec, tag).is_some()
 }
 
 fn aux_offset(b: &htslib::bam1_t) -> usize {
