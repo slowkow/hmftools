@@ -1,7 +1,10 @@
 # esvee-rs: status
 
 A port of ESVEE 2.1, one module per step, each checked against the Java step's output given the same
-input. The Java reference is upstream master of 2026-11-19 (the fix for prep BAM loading is needed).
+input. The Java reference is upstream master at commit `ca04e6c39d` (2026-11-20) (the fix for prep BAM loading is needed).
+
+How to build and run: [README.md](README.md). What was compared, the Java findings and the
+measurements in full: [REPORT.md](REPORT.md).
 
 | Step | Status |
 |---|---|
@@ -9,11 +12,10 @@ input. The Java reference is upstream master of 2026-11-19 (the fix for prep BAM
 | assembly | ported; raw VCF, assembly.tsv, breakend.tsv and the optional TSVs identical to Java run at one thread with constant identity hashes (`-XX:hashCode=2`), at any Rust thread count, in 41 option cases (Illumina, public SBX and Ultima, exome, germline-only, tumor-only, SAGA, decoy); BWA-MEM is the same C source as Java's JNI library, built with the crate; all 20 Java test classes ported; not ported: the assembly visualiser; genome 37 untested |
 | depth | ported; identical VCF to Java on a small tumor/normal input and 22 synthetic inputs, at 1 and 8 threads; not ported: htsjdk record validation behind `-bam_validation STRICT` |
 | caller | ported; unfiltered, somatic and germline VCFs identical to Java on the small input and in 96 option cases; all 18 Java unit tests ported; SBX, Ultima and genome 37 not yet run on real data of those kinds |
+| end to end | on the small input every output of the Rust chain at 8 threads equals the Java reference chain (one thread, `-XX:hashCode=2`): prep BAMs and TSVs, assembly.tsv, breakend.tsv, raw / ref_depth / unfiltered / somatic / germline VCFs |
+| whole genome | run with the port at 8 threads; not yet compared with Java (a Java one-thread baseline is still running) |
 
-Depth, small input (2,425 variants, two BAMs): Java 10.4 s / 1.6–4.6 GB at 8 threads and 19.6 s at one;
-Rust 0.9 s / 63 MB and 5.8 s / 34 MB.
-
-Caller, small input (2,425 records): Java 11 s / 2.5–5 GB; Rust 1.1 s / 240 MB.
+## Measurements
 
 Prep, small input (120 M reads, two BAMs): Java 55–58 s / 40–44 GB at 8 threads and about 240 s / 5.8 GB
 at one; Rust 10–22 s / 2.3–2.6 GB and 67 s / 1.4 GB. Java's prep output depends on thread count (the
@@ -22,3 +24,11 @@ partitions share a cache of spanning reads); the port gives Java's one-thread re
 Assembly, small input: Java 6.5–18 s / 6–8 GB at 8 threads and 30 s at one; Rust 2.7–3 s / 1.5 GB and
 17 s. Java's assembly output changes from run to run even at one thread (sets of objects iterated in
 identity-hash order) and with thread count; the reference is Java with every identity hash made equal.
+
+Depth, small input (2,425 variants, two BAMs): Java 10.4 s / 1.6–4.6 GB at 8 threads and 19.6 s at one;
+Rust 0.9 s / 63 MB and 5.8 s / 34 MB.
+
+Caller, small input (2,425 records): Java 11 s / 2.5–5 GB; Rust 1.1 s / 240 MB.
+
+Whole genome (tumor/normal pair), Rust at 8 threads: prep 672 s / 5.1 GB, assembly 149 s / 33.4 GB peak
+footprint, depth 55 s / 0.7 GB, caller 2.6 s / 0.5 GB. Assembly memory is being worked on.
