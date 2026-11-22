@@ -1,24 +1,26 @@
 //! Read: a BAM record with the cached and adjusted state the assembler keeps for it (Java assembly.read.Read).
 
 use std::cell::Cell;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Mutex, OnceLock};
 
 use crate::assembly::common_utils::IndelCoords;
 use crate::assembly::constants::*;
 use crate::assembly::globals::READ_ID_TRIMMER;
+use crate::assembly::mem_stats;
 use crate::assembly::orientation::Orientation;
-use crate::assembly::ptr::A;
+use crate::assembly::ptr::{A, H};
+use crate::assembly::read::read_heap;
 use crate::assembly::read::read_adjustments::find_low_base_qual_trim_count;
 use crate::assembly::read::read_utils;
 use crate::assembly::sam::*;
 use crate::assembly::sequence_diff::SequenceDiffInfo;
 
-pub type ReadP = A<Read>;
+pub type ReadP = H<Read>;
 
 pub struct Read {
     record: SamRecord,
     orig_cigar_string: String,
-    cigar_string: Option<String>,
     cigar_elements: Vec<CigarElement>,
     id: OnceLock<String>,
     alignment_start: i32,
@@ -26,19 +28,22 @@ pub struct Read {
     unclipped_start: i32,
     unclipped_end: i32,
     mate_alignment_end: Cell<Option<i32>>,
-    bases: Option<Vec<u8>>,
-    base_quals: Option<Vec<u8>>,
+    /// set when bases have been trimmed
+    trimmed: Option<Box<TrimmedRead>>,
 
     mate_read: Option<ReadP>,
+    /// what this read reports about its mate once the mate itself has been released
+    mate_snapshot: Option<Box<MateSnapshot>>,
     has_junction_mate: bool,
-    supplementary_data: OnceLock<Option<SupplementaryReadData>>,
+    supplementary_data: OnceLock<Option<Box<SupplementaryReadData>>>,
 
     checked_indel_coords: Cell<bool>,
     indel_coords: Cell<Option<A<IndelCoords>>>,
     invalid_indel: bool,
 
-    indel_inferred_unclipped_start: Option<i32>,
-    indel_inferred_unclipped_end: Option<i32>,
+    /// NO_INFERRED_POSITION when not set
+    indel_inferred_unclipped_start: i32,
+    indel_inferred_unclipped_end: i32,
 
     is_reference: bool,
     has_line_tail_start: bool,
@@ -47,19 +52,50 @@ pub struct Read {
     trim_count_end: i32,
     low_qual_trimmed: bool,
     mismatches: Option<A<Vec<SequenceDiffInfo>>>,
+    /// estimate of the bytes held, for the memory diagnostics
+    approx_bytes: u32,
 }
+
+impl Drop for Read {
+    fn drop(&mut self) {
+        mem_stats::READS_LIVE.fetch_sub(1, Relaxed);
+        mem_stats::READ_BYTES_LIVE.fetch_sub(self.approx_bytes as i64, Relaxed);
+    }
+}
+
+/// The properties of a linked mate that a read reports (mate chromosome, alignment, fragment end, mapped
+/// state). When a junction group is finished and only this read still refers to its mate, the link is
+/// replaced by this copy so the mate can be freed; nothing can change the mate after that point, so the
+/// read reports the same values as it would through the link.
+#[derive(Clone, Copy)]
+struct MateSnapshot {
+    chromosome: &'static str,
+    alignment_start: i32,
+    alignment_end: i32,
+    fragment_end: i32,
+    unmapped: bool,
+}
+
+/// the bases, qualities and cigar of a read after trimming (the record keeps the original ones)
+struct TrimmedRead {
+    bases: Vec<u8>,
+    base_quals: Vec<u8>,
+    cigar_string: String,
+}
+
+/// value of the indel-inferred unclipped positions when there are none (Java null)
+const NO_INFERRED_POSITION: i32 = i32::MIN;
 
 static TRIM_LOCK: Mutex<()> = Mutex::new(());
 
 impl Read {
     pub fn new(record: SamRecord) -> ReadP {
-        let orig_cigar_string = record.cigar_string();
-        let cigar_elements = cigar_elements_from_str(&orig_cigar_string);
+        let orig_cigar_string = read_heap::string_from(&record.cigar_string());
+        let cigar_elements = read_heap::vec_from(&cigar_elements_from_str(&orig_cigar_string));
         let start = record.alignment_start;
         let mut read = Read {
             record,
             orig_cigar_string,
-            cigar_string: None,
             cigar_elements,
             id: OnceLock::new(),
             alignment_start: 0,
@@ -67,16 +103,16 @@ impl Read {
             unclipped_start: 0,
             unclipped_end: 0,
             mate_alignment_end: Cell::new(None),
-            bases: None,
-            base_quals: None,
+            trimmed: None,
             mate_read: None,
+            mate_snapshot: None,
             has_junction_mate: false,
             supplementary_data: OnceLock::new(),
             checked_indel_coords: Cell::new(false),
             indel_coords: Cell::new(None),
             invalid_indel: false,
-            indel_inferred_unclipped_start: None,
-            indel_inferred_unclipped_end: None,
+            indel_inferred_unclipped_start: NO_INFERRED_POSITION,
+            indel_inferred_unclipped_end: NO_INFERRED_POSITION,
             is_reference: false,
             has_line_tail_start: false,
             has_line_tail_end: false,
@@ -84,9 +120,23 @@ impl Read {
             trim_count_end: 0,
             low_qual_trimmed: false,
             mismatches: None,
+            approx_bytes: 0,
         };
+        let r = &read.record;
+        read.approx_bytes = (std::mem::size_of::<Read>()
+            + 16
+            + r.read_name.capacity()
+            + r.cigar.capacity() * std::mem::size_of::<CigarElement>()
+            + r.read_bases.capacity()
+            + r.base_qualities.capacity()
+            + r.aux.capacity()
+            + read.orig_cigar_string.capacity()
+            + read.cigar_elements.capacity() * std::mem::size_of::<CigarElement>()) as u32;
+        mem_stats::READS_CREATED.fetch_add(1, Relaxed);
+        mem_stats::READS_LIVE.fetch_add(1, Relaxed);
+        mem_stats::READ_BYTES_LIVE.fetch_add(read.approx_bytes as i64, Relaxed);
         read.set_boundaries(start);
-        A::new(read)
+        H::new(read)
     }
 
     fn set_boundaries(&mut self, new_read_start: i32) {
@@ -132,6 +182,31 @@ impl Read {
     pub fn clear_mate_read(&mut self) {
         self.mate_read = None;
     }
+    /// Frees what a read no longer needs once its junction group has been assembled (not part of the Java
+    /// class): the full read name, which is only used to form the id.
+    pub fn release_unused_record_data(&mut self) {
+        let _ = self.id();
+        let name_bytes = self.record.read_name.capacity();
+        self.record.read_name = String::new();
+        let freed = (name_bytes as u32).min(self.approx_bytes);
+        self.approx_bytes -= freed;
+        mem_stats::READ_BYTES_LIVE.fetch_sub(freed as i64, Relaxed);
+    }
+    /// Replaces the link to the mate by a copy of what this read reports about it (not part of the Java
+    /// class). Only for a mate that nothing else refers to, and after the junction group's assemblies are
+    /// built: from then on the mate is only reached through the mate accessors of this read.
+    pub fn replace_mate_read_with_snapshot(&mut self) {
+        if let Some(m) = &self.mate_read {
+            self.mate_snapshot = Some(Box::new(MateSnapshot {
+                chromosome: m.chromosome(),
+                alignment_start: m.alignment_start(),
+                alignment_end: m.alignment_end(),
+                fragment_end: if m.orientation().is_forward() { m.unclipped_start() } else { m.unclipped_end() },
+                unmapped: m.is_unmapped(),
+            }));
+            self.mate_read = None;
+        }
+    }
     pub fn has_junction_mate(&self) -> bool {
         self.has_junction_mate
     }
@@ -140,7 +215,7 @@ impl Read {
     }
 
     pub fn id(&self) -> &str {
-        self.id.get_or_init(|| READ_ID_TRIMMER.trim(&self.record.read_name))
+        self.id.get_or_init(|| read_heap::string_from(&READ_ID_TRIMMER.trim(&self.record.read_name)))
     }
     pub fn chromosome(&self) -> &'static str {
         self.record.reference_name
@@ -149,13 +224,13 @@ impl Read {
         &self.cigar_elements
     }
     pub fn cigar_string(&self) -> &str {
-        self.cigar_string.as_deref().unwrap_or(&self.orig_cigar_string)
+        match &self.trimmed {
+            Some(t) => &t.cigar_string,
+            None => &self.orig_cigar_string,
+        }
     }
     pub fn original_cigar_string(&self) -> &str {
         &self.orig_cigar_string
-    }
-    fn update_cigar_string(&mut self) {
-        self.cigar_string = Some(cigar_elements_to_str(&self.cigar_elements));
     }
 
     #[inline]
@@ -179,10 +254,10 @@ impl Read {
     }
 
     pub fn is_left_clipped(&self) -> bool {
-        self.unclipped_start != self.alignment_start || self.indel_inferred_unclipped_start.is_some()
+        self.unclipped_start != self.alignment_start || self.indel_inferred_unclipped_start != NO_INFERRED_POSITION
     }
     pub fn is_right_clipped(&self) -> bool {
-        self.unclipped_end != self.alignment_end || self.indel_inferred_unclipped_end.is_some()
+        self.unclipped_end != self.alignment_end || self.indel_inferred_unclipped_end != NO_INFERRED_POSITION
     }
     pub fn left_clip_length(&self) -> i32 {
         (self.alignment_start - self.unclipped_start).max(0)
@@ -193,15 +268,15 @@ impl Read {
 
     #[inline]
     pub fn get_bases(&self) -> &[u8] {
-        match &self.bases {
-            Some(b) => b,
+        match &self.trimmed {
+            Some(t) => &t.bases,
             None => &self.record.read_bases,
         }
     }
     #[inline]
     pub fn get_base_quality(&self) -> &[u8] {
-        match &self.base_quals {
-            Some(b) => b,
+        match &self.trimmed {
+            Some(t) => &t.base_quals,
             None => &self.record.base_qualities,
         }
     }
@@ -239,17 +314,26 @@ impl Read {
         if let Some(m) = &self.mate_read {
             return Some(m.chromosome());
         }
+        if let Some(m) = &self.mate_snapshot {
+            return Some(m.chromosome);
+        }
         if self.is_mate_mapped() { Some(self.record.mate_reference_name) } else { None }
     }
     pub fn mate_alignment_start(&self) -> i32 {
         if let Some(m) = &self.mate_read {
             return m.alignment_start();
         }
+        if let Some(m) = &self.mate_snapshot {
+            return m.alignment_start;
+        }
         self.record.mate_alignment_start
     }
     pub fn mate_alignment_end(&self) -> i32 {
         if let Some(m) = &self.mate_read {
             return m.alignment_end();
+        }
+        if let Some(m) = &self.mate_snapshot {
+            return m.alignment_end;
         }
         if let Some(e) = self.mate_alignment_end.get() {
             return e;
@@ -265,6 +349,9 @@ impl Read {
         if let Some(m) = &self.mate_read {
             return if m.orientation().is_forward() { m.unclipped_start() } else { m.unclipped_end() };
         }
+        if let Some(m) = &self.mate_snapshot {
+            return m.fragment_end;
+        }
         match self.record.get_string_attribute(MATE_CIGAR_ATTRIBUTE) {
             None => NO_POSITION,
             Some(mc) => get_five_prime_unclipped_position(self.mate_alignment_start(), &mc, !self.record.mate_negative_strand()),
@@ -273,6 +360,9 @@ impl Read {
     pub fn is_mate_mapped(&self) -> bool {
         if let Some(m) = &self.mate_read {
             return !m.is_unmapped();
+        }
+        if let Some(m) = &self.mate_snapshot {
+            return !m.unmapped;
         }
         self.record.read_paired() && !self.record.mate_unmapped()
     }
@@ -314,8 +404,8 @@ impl Read {
 
     pub fn supplementary_data(&self) -> Option<&SupplementaryReadData> {
         self.supplementary_data
-            .get_or_init(|| SupplementaryReadData::extract_alignment(self.record.get_string_attribute(SUPPLEMENTARY_ATTRIBUTE).as_deref()))
-            .as_ref()
+            .get_or_init(|| SupplementaryReadData::extract_alignment(self.record.get_string_attribute(SUPPLEMENTARY_ATTRIBUTE).as_deref()).map(Box::new))
+            .as_deref()
     }
 
     pub fn get_read_index_at_reference_position(&self, ref_position: i32) -> i32 {
@@ -448,14 +538,12 @@ impl Read {
             copy_array(self.get_bases(), &mut new_bases, 0, 0);
             copy_array(self.get_base_quality(), &mut new_base_quals, 0, 0);
         }
-        self.bases = Some(new_bases);
-        self.base_quals = Some(new_base_quals);
+        self.trimmed = Some(Box::new(TrimmedRead { bases: new_bases, base_quals: new_base_quals, cigar_string: cigar_elements_to_str(&self.cigar_elements) }));
         if from_start {
             self.trim_count_start += count;
         } else {
             self.trim_count_end += count;
         }
-        self.update_cigar_string();
         self.set_boundaries(new_read_start);
     }
 
@@ -476,32 +564,26 @@ impl Read {
     }
 
     pub fn set_indel_inferred_unclipped_positions(&mut self, inferred_start: Option<i32>, inferred_end: Option<i32>) {
-        self.indel_inferred_unclipped_start = inferred_start;
-        self.indel_inferred_unclipped_end = inferred_end;
+        self.indel_inferred_unclipped_start = inferred_start.unwrap_or(NO_INFERRED_POSITION);
+        self.indel_inferred_unclipped_end = inferred_end.unwrap_or(NO_INFERRED_POSITION);
     }
     pub fn has_indel_implied_unclipped_start(&self) -> bool {
-        self.indel_inferred_unclipped_start.is_some()
+        self.indel_inferred_unclipped_start != NO_INFERRED_POSITION
     }
     pub fn has_indel_implied_unclipped_end(&self) -> bool {
-        self.indel_inferred_unclipped_end.is_some()
+        self.indel_inferred_unclipped_end != NO_INFERRED_POSITION
     }
     pub fn indel_implied_unclipped_start(&self) -> i32 {
-        self.indel_inferred_unclipped_start.unwrap_or(0)
+        if self.indel_inferred_unclipped_start == NO_INFERRED_POSITION { 0 } else { self.indel_inferred_unclipped_start }
     }
     pub fn indel_implied_unclipped_end(&self) -> i32 {
-        self.indel_inferred_unclipped_end.unwrap_or(0)
+        if self.indel_inferred_unclipped_end == NO_INFERRED_POSITION { 0 } else { self.indel_inferred_unclipped_end }
     }
     pub fn min_unclipped_start(&self) -> i32 {
-        match self.indel_inferred_unclipped_start {
-            None => self.unclipped_start,
-            Some(s) => self.unclipped_start.min(s),
-        }
+        if self.indel_inferred_unclipped_start == NO_INFERRED_POSITION { self.unclipped_start } else { self.unclipped_start.min(self.indel_inferred_unclipped_start) }
     }
     pub fn max_unclipped_end(&self) -> i32 {
-        match self.indel_inferred_unclipped_end {
-            None => self.unclipped_end,
-            Some(e) => self.unclipped_end.max(e),
-        }
+        if self.indel_inferred_unclipped_end == NO_INFERRED_POSITION { self.unclipped_end } else { self.unclipped_end.max(self.indel_inferred_unclipped_end) }
     }
 
     /// the list is shared with the ReadParseState it came from, as in Java

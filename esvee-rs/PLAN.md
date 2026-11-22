@@ -30,5 +30,6 @@ Rust 0.9 s / 63 MB and 5.8 s / 34 MB.
 
 Caller, small input (2,425 records): Java 11 s / 2.5–5 GB; Rust 1.1 s / 240 MB.
 
-Whole genome (tumor/normal pair), Rust at 8 threads: prep 672 s / 5.1 GB, assembly 149 s / 33.4 GB peak
-footprint, depth 55 s / 0.7 GB, caller 2.6 s / 0.5 GB. Assembly memory is being worked on.
+Whole genome (tumor/normal pair), Rust at 8 threads: prep 672 s / 5.1 GB, assembly 124-149 s, depth
+55 s / 0.7 GB, caller 2.6 s / 0.5 GB. Assembly peak footprint 33.4 GB at first, 7.2 GB now (6.7 GB at
+one thread, 803 s), with the same output.

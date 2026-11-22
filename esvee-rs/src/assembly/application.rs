@@ -20,6 +20,7 @@ use crate::assembly::constants::*;
 use crate::assembly::globals::*;
 use crate::assembly::junction_assembler::MIN_HOTSPOT_JUNCTION_SUPPORT;
 use crate::assembly::junction_group_assembler::JunctionGroupAssembler;
+use crate::assembly::mem_stats;
 use crate::assembly::alignment::assembly_alignment::{AsmAlignP, AssemblyAlignment};
 use crate::assembly::assembly_utils::set_assembly_outcome;
 use crate::assembly::indel_builder::is_weak_indel_based_unlinked_assembly;
@@ -146,10 +147,18 @@ impl AssemblyApplication {
         let junction_count: usize = self.chr_junctions_map.values().map(|x| x.len()).sum();
         self.task_count = junction_count.min(self.config.threads.max(0) as usize);
 
+        mem_stats::init_from_env();
+        mem_stats::log_stage("start");
         self.run_primary_assembly()?;
+        mem_stats::log_stage("primary assembly done");
         self.form_phase_groups()?;
+        mem_stats::log_stage("phase sets done");
+        self.release_retained_reads();
+        mem_stats::log_stage("retained reads released");
+        mem_stats::log_assembly_breakdown(&self.junction_group_map.values().flatten().copied().collect::<Vec<_>>());
         let (final_assemblies, assembly_alignments) = self.gather_assemblies();
         self.run_alignment(&assembly_alignments)?;
+        mem_stats::log_stage("alignment done");
 
         let mut breakends: Vec<BreakendP> = Vec::new();
         for x in &assembly_alignments {
@@ -165,6 +174,7 @@ impl AssemblyApplication {
         self.results.read_writer.close();
         self.results.breakend_writer.close();
         self.results.phase_group_build_writer.close();
+        mem_stats::log_stage("output written");
 
         if perf_debug() {
             for perf_counter in &self.perf_counters {
@@ -352,7 +362,14 @@ impl AssemblyApplication {
                     let mut remote_read_extractor = RemoteReadExtractor::new(Some(bam_reader), Some(config));
                     let limit = phase_processing_limit();
                     let mut perf_counter = PerfCounter::new("PhaseSets");
+                    let mut last_memory_release = Instant::now();
                     loop {
+                        // junction groups free their reads as their assemblies finish here; hand the freed
+                        // memory back now and then rather than at the end of the stage
+                        if last_memory_release.elapsed().as_millis() >= 500 {
+                            crate::assembly::read::read_heap::release_free_memory();
+                            last_memory_release = Instant::now();
+                        }
                         let i = next.fetch_add(1, Ordering::Relaxed);
                         if i >= groups.len() {
                             perf.lock().unwrap().merge(&perf_counter);
@@ -385,6 +402,40 @@ impl AssemblyApplication {
         let total_remote_read_matched = matched.into_inner().unwrap().into_iter().max_by_key(|x| x.0).map(|x| x.1).unwrap_or(0);
         crate::info!("created {} phase sets, remote reads extracted({})", phase_groups.iter().map(|x| x.phase_sets().len()).sum::<usize>(), total_remote_read_matched);
         Ok(())
+    }
+
+    /// Phase set building has dropped the candidate reads of the assemblies it handled; the reads each
+    /// junction group kept for them can now be freed unless something still refers to them.
+    fn release_retained_reads(&mut self) {
+        // assemblies that phase set building did not clean up (phase groups over the processing limit, the
+        // assemblies left out of very large groups, branched assemblies) still hold reads; with these options
+        // nothing uses those reads from here on
+        if !write_candidate_reads() && clear_cached_read() {
+            let mut phase_groups: IdHashSet<PhaseGroupP> = IdHashSet::new();
+            for junction_group in self.junction_group_map.values().flatten() {
+                for assembly in junction_group.junction_assemblies() {
+                    assembly.m().drop_reads_after_phasing();
+                    if let Some(phase_group) = assembly.phase_group() {
+                        phase_groups.insert(phase_group);
+                    }
+                }
+            }
+            for phase_group in phase_groups.iter() {
+                for assembly in phase_group.assemblies().iter().chain(phase_group.derived_assemblies().iter()) {
+                    assembly.m().drop_reads_after_phasing();
+                }
+            }
+        }
+        let mut still_referenced = 0;
+        for junction_groups in self.junction_group_map.values() {
+            for junction_group in junction_groups {
+                still_referenced += junction_group.m().release_retained_reads();
+            }
+        }
+        crate::assembly::read::read_heap::release_free_memory();
+        if mem_stats::enabled() {
+            crate::info!("memory: reads still referenced after phase sets({})", still_referenced);
+        }
     }
 
     fn gather_assemblies(&mut self) -> (Vec<AsmP>, Vec<AsmAlignP>) {

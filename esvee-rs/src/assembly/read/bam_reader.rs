@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use rust_htslib::bam::{self, Read as _};
 
 use crate::assembly::config::AssemblyConfig;
+use crate::assembly::read::read_heap;
 use crate::assembly::sam::*;
 
 struct SampleReader {
@@ -74,27 +75,28 @@ impl BamReader {
 
 fn to_sam_record(rec: &bam::Record, names: &[&'static str], sample_index: i32) -> SamRecord {
     let name_of = |tid: i32| if tid >= 0 && (tid as usize) < names.len() { names[tid as usize] } else { NO_CHROMOSOME_NAME };
+    // the buffers of the record are allocated in the read heap (see read_heap)
     let raw_cigar = rec.raw_cigar();
-    let cigar: Vec<CigarElement> = raw_cigar.iter().map(|c| CigarElement::new((c >> 4) as i32, CigarOp::from_bam(c & 0xf))).collect();
+    let cigar: Vec<CigarElement> = read_heap::vec_from(&raw_cigar.iter().map(|c| CigarElement::new((c >> 4) as i32, CigarOp::from_bam(c & 0xf))).collect::<Vec<_>>());
     let seq = rec.seq();
     let enc = seq.encoded;
     let len = seq.len();
-    let mut read_bases = Vec::with_capacity(len);
-    for i in 0..len {
+    let mut read_bases: Vec<u8> = read_heap::vec_from(&rec.qual()[..len]);
+    for (i, base) in read_bases.iter_mut().enumerate() {
         let b = enc[i >> 1];
         let code = if i & 1 == 0 { b >> 4 } else { b & 0xf };
-        read_bases.push(BASES[code as usize]);
+        *base = BASES[code as usize];
     }
     let qual = rec.qual();
-    let base_qualities = if !qual.is_empty() && qual[0] == 0xff { Vec::new() } else { qual.to_vec() };
+    let base_qualities = if !qual.is_empty() && qual[0] == 0xff { Vec::new() } else { read_heap::vec_from(qual) };
     // auxiliary data: after the fixed fields, name, cigar, sequence and qualities
     let data = rec.inner().data;
     let l_data = rec.inner().l_data as usize;
     let core = &rec.inner().core;
     let aux_offset = core.l_qname as usize + core.n_cigar as usize * 4 + (len + 1) / 2 + len;
-    let aux = if aux_offset < l_data { unsafe { std::slice::from_raw_parts(data.add(aux_offset), l_data - aux_offset) }.to_vec() } else { Vec::new() };
+    let aux = if aux_offset < l_data { read_heap::vec_from(&copy_used_attributes(unsafe { std::slice::from_raw_parts(data.add(aux_offset), l_data - aux_offset) })) } else { Vec::new() };
     SamRecord {
-        read_name: String::from_utf8_lossy(rec.qname()).into_owned(),
+        read_name: read_heap::string_from(&String::from_utf8_lossy(rec.qname())),
         flags: rec.flags() as i32,
         reference_name: name_of(rec.tid()),
         alignment_start: rec.pos() as i32 + 1,

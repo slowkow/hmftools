@@ -13,6 +13,64 @@ pub const MATE_CIGAR_ATTRIBUTE: &str = "MC";
 pub const SUPPLEMENTARY_ATTRIBUTE: &str = "SA";
 pub const ALIGNMENT_SCORE_ATTRIBUTE: &str = "AS";
 pub const NUM_MUTATONS_ATTRIBUTE: &str = "NM";
+/// SBX / Ultima per-base quality tag read by ReadParseState
+pub const BASE_QUAL_TAG_ATTRIBUTE: &str = "UQ";
+
+/// The auxiliary tags the assembly step reads. Records loaded from the BAMs keep only these (most of a
+/// record's auxiliary data is never looked at); a tag must be added here before code can read it.
+pub const USED_ATTRIBUTES: [&str; 5] = [MATE_CIGAR_ATTRIBUTE, SUPPLEMENTARY_ATTRIBUTE, ALIGNMENT_SCORE_ATTRIBUTE, NUM_MUTATONS_ATTRIBUTE, BASE_QUAL_TAG_ATTRIBUTE];
+
+/// Length of the value of an auxiliary field of type `ty` starting at `start`, or None for an unknown type
+/// or truncated data.
+fn aux_value_length(a: &[u8], ty: u8, start: usize) -> Option<usize> {
+    Some(match ty {
+        b'A' | b'c' | b'C' => 1,
+        b's' | b'S' => 2,
+        b'i' | b'I' | b'f' => 4,
+        b'Z' | b'H' => {
+            let mut j = start;
+            while j < a.len() && a[j] != 0 {
+                j += 1;
+            }
+            j - start + 1
+        }
+        b'B' => {
+            if start + 5 > a.len() {
+                return None;
+            }
+            let sub = a[start];
+            let n = u32::from_le_bytes([a[start + 1], a[start + 2], a[start + 3], a[start + 4]]) as usize;
+            let size = match sub {
+                b'c' | b'C' => 1,
+                b's' | b'S' => 2,
+                _ => 4,
+            };
+            5 + n * size
+        }
+        _ => return None,
+    })
+}
+
+/// The fields of raw BAM auxiliary data whose tags are in `USED_ATTRIBUTES`, in their original order.
+/// Data that cannot be parsed is returned whole.
+pub fn copy_used_attributes(aux: &[u8]) -> Vec<u8> {
+    let mut kept: Vec<u8> = Vec::new();
+    let mut i = 0;
+    while i + 3 <= aux.len() {
+        let start = i + 3;
+        let Some(len) = aux_value_length(aux, aux[i + 2], start) else { return aux.to_vec() };
+        let end = start + len;
+        if end > aux.len() {
+            return aux.to_vec();
+        }
+        if USED_ATTRIBUTES.iter().any(|t| t.as_bytes() == &aux[i..i + 2]) {
+            kept.extend_from_slice(&aux[i..end]);
+        }
+        i = end;
+    }
+    kept.shrink_to_fit();
+    kept
+}
 
 pub const FLAG_READ_PAIRED: i32 = 1;
 pub const FLAG_PROPER_PAIR: i32 = 2;
@@ -552,29 +610,7 @@ impl SamRecord {
         while i + 3 <= a.len() {
             let ty = a[i + 2];
             let start = i + 3;
-            let len = match ty {
-                b'A' | b'c' | b'C' => 1,
-                b's' | b'S' => 2,
-                b'i' | b'I' | b'f' => 4,
-                b'Z' | b'H' => {
-                    let mut j = start;
-                    while j < a.len() && a[j] != 0 {
-                        j += 1;
-                    }
-                    j - start + 1
-                }
-                b'B' => {
-                    let sub = a[start];
-                    let n = u32::from_le_bytes([a[start + 1], a[start + 2], a[start + 3], a[start + 4]]) as usize;
-                    let size = match sub {
-                        b'c' | b'C' => 1,
-                        b's' | b'S' => 2,
-                        _ => 4,
-                    };
-                    5 + n * size
-                }
-                _ => return None,
-            };
+            let len = aux_value_length(a, ty, start)?;
             if a[i] == t[0] && a[i + 1] == t[1] {
                 return Some((ty, start, len));
             }

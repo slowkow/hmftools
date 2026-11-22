@@ -1,6 +1,6 @@
 //! JunctionGroupAssembler: loads the reads of a junction group and builds its junction assemblies.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::assembly::alignment::alignment_checker::AlignmentChecker;
 use crate::assembly::assembly_deduper::dedup_proximate_assemblies;
@@ -19,7 +19,8 @@ use crate::assembly::remote_region_finder::filter_low_qual_read;
 use crate::assembly::saga::SagaSequenceMatcher;
 use crate::assembly::sam::*;
 use crate::assembly::seq_tech_utils::{trim_illumina_adapter_bases, trim_sbx_uncertain_bases};
-use crate::assembly::types::junction_assembly::AsmP;
+use crate::assembly::mem_stats;
+use crate::assembly::types::junction_assembly::{start_tracking_created, take_created, AsmP};
 use crate::assembly::types::junction_group::JuncGroupP;
 
 pub struct JunctionGroupAssembler<'a> {
@@ -74,14 +75,18 @@ impl<'a> JunctionGroupAssembler<'a> {
         let mut supplementary_repeats: HashMap<String, SamRecord> = HashMap::new();
         let config = self.config;
         let read_stats = &mut self.read_stats;
-        self.bam_reader.slice_bam(config, junction_group.chromosome(), slice_start, slice_end, |record, is_reference| {
-            process_record(record, is_reference, junction_group, read_stats, &mut read_group_map, &mut supplementary_repeats);
-        });
-        for group in read_group_map.values() {
-            group.form_read_links();
+        {
+            self.bam_reader.slice_bam(config, junction_group.chromosome(), slice_start, slice_end, |record, is_reference| {
+                process_record(record, is_reference, junction_group, read_stats, &mut read_group_map, &mut supplementary_repeats);
+            });
+            for group in read_group_map.values() {
+                group.form_read_links();
+            }
+            drop(read_group_map);
+            drop(supplementary_repeats);
         }
-        drop(read_group_map);
 
+        start_tracking_created();
         let mut junction_group_assemblies: Vec<AsmP> = Vec::new();
         let mut deduped_indels: Vec<AsmP> = Vec::new();
         for junction in junction_group.junctions().iter().copied() {
@@ -117,10 +122,23 @@ impl<'a> JunctionGroupAssembler<'a> {
             }
         }
         junction_group.m().add_junction_assemblies(&junction_group_assemblies);
-        junction_group.m().clear_candidate_reads();
         for x in &junction_group_assemblies {
             x.m().clear_support_cached_reads();
+            x.m().set_read_source_group(junction_group);
         }
+        junction_group.m().set_assemblies_holding_reads(junction_group_assemblies.len());
+        // assemblies that were built and then rejected or deduplicated are not referred to again: empty them
+        // so the reads they hold can be freed (the decoy assemblies are kept for the assembly TSV)
+        let kept: HashSet<AsmP> = junction_group_assemblies.iter().chain(self.decoy_assemblies.iter()).copied().collect();
+        for assembly in take_created() {
+            if !kept.contains(&assembly) {
+                assembly.m().release_discarded();
+            }
+        }
+        // Java clears the list before the cached reads of the assemblies; the order makes no difference to
+        // the results and clearing it last lets the reads only used as junction support be freed here
+        junction_group.m().clear_candidate_reads();
+        mem_stats::READS_RETAINED.fetch_add(junction_group.retained_read_count() as i64, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

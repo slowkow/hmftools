@@ -198,3 +198,65 @@ fn test_misc_read_functions() {
     assert_eq!(40, get_read_position_at_reference_position(record, 60)); // base after insert
     assert_eq!(49, get_read_position_at_reference_position(record, 69)); // final aligned base
 }
+
+// release of reads when a junction group is finished (read::read_release; no Java counterpart)
+
+fn linked_pair(id: &str) -> (ReadP, ReadP) {
+    let bases = "A".repeat(50);
+    let first = create_read_mate(id, CHR_1, 100, &bases, "50M", CHR_1, 300, true);
+    let second = create_read_mate(id, CHR_1, 300, &bases, "50M", CHR_1, 100, false);
+    first.m().bam_record_mut().set_flag(FLAG_READ_PAIRED, true);
+    first.m().bam_record_mut().set_flag(FLAG_FIRST_OF_PAIR, true);
+    second.m().bam_record_mut().set_flag(FLAG_READ_PAIRED, true);
+    second.m().bam_record_mut().set_flag(FLAG_FIRST_OF_PAIR, false);
+    second.m().bam_record_mut().set_flag(FLAG_READ_REVERSE_STRAND, true);
+    Read::make_read_links(&first, &second);
+    assert!(first.mate_read().is_some() && second.mate_read().is_some());
+    (first, second)
+}
+
+#[test]
+fn test_release_unreferenced_reads() {
+    use crate::assembly::read::read_release::release_unreferenced_reads;
+
+    // a pair nothing else refers to is freed: the mate links are removed and nothing is retained
+    let (first, second) = linked_pair("READ_01");
+    let retained = release_unreferenced_reads(vec![first, second]);
+    assert!(retained.is_empty());
+
+    // a pair with one read in use: that read is retained and reports its mate from a copy
+    let (first, second) = linked_pair("READ_02");
+    let holder = first.clone();
+    let (mate_chromosome, mate_start, mate_end, mate_fragment_end) = (holder.mate_chromosome(), holder.mate_alignment_start(), holder.mate_alignment_end(), holder.mate_fragment_end());
+    let mate_mapped = holder.is_mate_mapped();
+    let retained = release_unreferenced_reads(vec![first, second]);
+    assert_eq!(1, retained.len());
+    assert!(retained[0] == holder);
+    assert!(holder.mate_read().is_none());
+    assert_eq!(mate_chromosome, holder.mate_chromosome());
+    assert_eq!(mate_start, holder.mate_alignment_start());
+    assert_eq!(mate_end, holder.mate_alignment_end());
+    assert_eq!(mate_fragment_end, holder.mate_fragment_end());
+    assert_eq!(mate_mapped, holder.is_mate_mapped());
+    drop(retained);
+    assert_eq!(1, holder.strong_count());
+
+    // both reads in use: they stay linked until neither is, then both are freed
+    let (first, second) = linked_pair("READ_03");
+    let (holder1, holder2) = (first.clone(), second.clone());
+    let retained = release_unreferenced_reads(vec![first, second]);
+    assert_eq!(2, retained.len());
+    assert!(holder1.mate_read() == Some(&holder2) && holder2.mate_read() == Some(&holder1));
+    drop(holder1);
+    drop(holder2);
+    let retained = release_unreferenced_reads(retained);
+    assert!(retained.is_empty());
+
+    // a read without a mate link
+    let single = create_read("READ_04", 100, &"A".repeat(50), "50M");
+    let holder = single.clone();
+    let retained = release_unreferenced_reads(vec![single]);
+    assert_eq!(1, retained.len());
+    drop(holder);
+    assert!(release_unreferenced_reads(retained).is_empty());
+}

@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use crate::assembly::assembly_utils::{self, find_matching_assembly};
 use crate::assembly::common_utils::{is_discordant_fragment as record_is_discordant_fragment, is_line_insert_pair};
 use crate::assembly::constants::*;
-use crate::assembly::globals::{has_paired_reads, phase_processing_limit, write_candidate_reads};
+use crate::assembly::globals::{clear_cached_read, has_paired_reads, phase_processing_limit, write_candidate_reads};
 use crate::assembly::phase::assembly_linker::{is_assembly_indel_link, is_facing_assembly_candidate, try_assembly_facing, try_assembly_indel, try_assembly_overlap};
 use crate::assembly::phase::local_sequence_matcher::LocalSequenceMatcher;
 use crate::assembly::phase::remote_read_extractor::{collect_candidate_remote_regions, purge_supplementary_reads, RemoteReadExtractor};
@@ -878,6 +878,13 @@ impl<'a, 'b> PhaseSetBuilder<'a, 'b> {
                 if !in_facing_link {
                     branched_assemblies_to_remove.push(assembly);
                 }
+            }
+        }
+        // not in Java: with the candidate and cached reads of these assemblies dropped, their junction groups
+        // can free the reads (done after the loop so that no assembly of this phase group still holds one)
+        if !write_candidate_reads() && clear_cached_read() {
+            for assembly in self.assemblies().clone() {
+                assembly.m().candidate_reads_dropped();
             }
         }
         for branched_assembly in branched_assemblies_to_remove {

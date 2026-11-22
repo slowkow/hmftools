@@ -14,13 +14,16 @@ use crate::assembly::types::SupportType;
 
 pub type SupP = A<SupportRead>;
 
+/// value of the reference mismatch count before it is set (Java null)
+const NO_REF_BASE_MISMATCHES: i32 = i32::MIN;
+
 pub struct SupportRead {
     type_: SupportType,
-    id: String,
+    id: Box<str>,
     chromosome: &'static str,
     alignment_start: i32,
     alignment_end: i32,
-    cigar: String,
+    cigar: Box<str>,
     unclipped_start: i32,
     unclipped_end: i32,
     mate_chromosome: Option<&'static str>,
@@ -32,7 +35,7 @@ pub struct SupportRead {
     is_discordant: bool,
     is_reference: bool,
     sample_index: i32,
-    supplementary_data: Option<SupplementaryReadData>,
+    supplementary_data: Option<Box<SupplementaryReadData>>,
     map_qual: i32,
     insert_size: i32,
     trim_count_start: i32,
@@ -49,9 +52,16 @@ pub struct SupportRead {
     ext_base_mismatches: i32,
     ext_base_overlap: i32,
     medium_qual_count: i32,
-    ref_base_mismatches: Option<i32>,
-    mismatch_info: String,
+    /// NO_REF_BASE_MISMATCHES until set
+    ref_base_mismatches: i32,
+    mismatch_info: Box<str>,
     read: Option<ReadP>,
+}
+
+impl Drop for SupportRead {
+    fn drop(&mut self) {
+        crate::assembly::mem_stats::SUPPORT_READS_LIVE.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 impl SupportRead {
@@ -62,14 +72,15 @@ impl SupportRead {
             (Some(NO_CHROMOSOME_NAME), NO_POSITION, NO_POSITION, NO_POSITION)
         };
         let indel = read.indel_coords();
+        crate::assembly::mem_stats::SUPPORT_READS_LIVE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         A::new(SupportRead {
             type_,
-            id: read.id().to_string(),
+            id: read.id().into(),
             chromosome: read.chromosome(),
             alignment_start: read.alignment_start(),
             alignment_end: read.alignment_end(),
             flags: read.get_flags(),
-            cigar: read.cigar_string().to_string(),
+            cigar: read.cigar_string().into(),
             unclipped_start: read.unclipped_start(),
             unclipped_end: read.unclipped_end(),
             mate_chromosome,
@@ -79,7 +90,7 @@ impl SupportRead {
             is_reference: read.is_reference(),
             sample_index: read.sample_index(),
             is_discordant: is_discordant_fragment(read),
-            supplementary_data: read.supplementary_data().cloned(),
+            supplementary_data: read.supplementary_data().cloned().map(Box::new),
             base_length: read.bases_length(),
             insert_size: inferred_insert_size_abs(read.bam_record()),
             trim_count_start: read.trim_count_start(),
@@ -91,8 +102,8 @@ impl SupportRead {
             ext_base_matches: matches,
             ext_base_mismatches: mismatches,
             ext_base_overlap: 0,
-            ref_base_mismatches: None,
-            mismatch_info: String::new(),
+            ref_base_mismatches: NO_REF_BASE_MISMATCHES,
+            mismatch_info: Box::default(),
             medium_qual_count: if is_sbx() && type_ == SupportType::Junction { set_sbx_medium_qual_count(read) } else { 0 },
             junction_read_start_distance: junct_read_start_distance,
             full_assembly_index: -1,
@@ -103,6 +114,11 @@ impl SupportRead {
         })
     }
 
+    /// estimate of the bytes held, for the memory diagnostics
+    pub fn approx_bytes(&self) -> usize {
+        std::mem::size_of::<SupportRead>() + 16 + self.id.len() + self.cigar.len() + self.mismatch_info.len()
+            + self.supplementary_data.as_ref().map_or(0, |s| std::mem::size_of::<SupplementaryReadData>() + s.cigar.capacity())
+    }
     pub fn type_(&self) -> SupportType {
         self.type_
     }
@@ -186,7 +202,7 @@ impl SupportRead {
         if self.is_flag_set(FLAG_MATE_REVERSE_STRAND) { Orientation::Reverse } else { Orientation::Forward }
     }
     pub fn supplementary_data(&self) -> Option<&SupplementaryReadData> {
-        self.supplementary_data.as_ref()
+        self.supplementary_data.as_deref()
     }
     pub fn map_qual(&self) -> i32 {
         self.map_qual
@@ -244,20 +260,20 @@ impl SupportRead {
         self.medium_qual_count
     }
     pub fn reference_mismatches(&self) -> i32 {
-        self.ref_base_mismatches.unwrap_or(-1)
+        if self.ref_base_mismatches == NO_REF_BASE_MISMATCHES { -1 } else { self.ref_base_mismatches }
     }
     pub fn has_reference_mismatches(&self) -> bool {
-        self.ref_base_mismatches.is_some()
+        self.ref_base_mismatches != NO_REF_BASE_MISMATCHES
     }
     pub fn mismatch_info(&self) -> &str {
         &self.mismatch_info
     }
     pub fn set_extension_match_info(&mut self, read_info: &ReadParseState) {
-        self.mismatch_info = read_info.mismatch_info();
+        self.mismatch_info = read_info.mismatch_info().into();
         self.ext_base_overlap = read_info.evaluated_base_count() - 1;
     }
     pub fn set_reference_mismatches(&mut self, mismatches: i32) {
-        self.ref_base_mismatches = Some(mismatches);
+        self.ref_base_mismatches = mismatches;
     }
     pub fn cached_read(&self) -> Option<&ReadP> {
         self.read.as_ref()
@@ -306,7 +322,7 @@ impl SupportRead {
         allow_read_match || self.flags != other.flags
     }
     pub fn matches_fragment_read(&self, other: &Read, allow_read_match: bool) -> bool {
-        if self.id != other.id() {
+        if &*self.id != other.id() {
             return false;
         }
         allow_read_match || self.flags != other.get_flags()
@@ -333,7 +349,7 @@ impl std::fmt::Display for SupportRead {
             self.full_assembly_orientation.as_byte(),
             self.ext_base_matches,
             self.ext_base_mismatches,
-            self.ref_base_mismatches.unwrap_or(-1)
+            self.reference_mismatches()
         )
     }
 }

@@ -14,6 +14,7 @@ use crate::assembly::ref_base_seq_builder::RefBaseSeqBuilder;
 use crate::assembly::saga::{SagaJunctionInfo, SagaSequenceMatch, SagaSequenceMatcher};
 use crate::assembly::sam::{cigar_elements_to_str, CigarElement};
 use crate::assembly::types::assembly_stats::AssemblyStats;
+use crate::assembly::types::junction_group::JuncGroupP;
 use crate::assembly::types::junction::JuncP;
 use crate::assembly::types::phase_group::PhaseGroupP;
 use crate::assembly::types::phase_set::PhaseSetP;
@@ -27,9 +28,39 @@ use crate::assembly::ref_genome::RefGenomeInterface;
 
 pub type AsmP = P<JunctionAssembly>;
 
+thread_local! {
+    /// assemblies created on this thread since `start_tracking_created`, see `take_created`
+    static CREATED: std::cell::RefCell<Option<Vec<AsmP>>> = const { std::cell::RefCell::new(None) };
+}
+
+fn new_tracked(assembly: JunctionAssembly) -> AsmP {
+    let assembly = P::new(assembly);
+    crate::assembly::mem_stats::ASSEMBLIES_CREATED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    CREATED.with(|c| {
+        if let Some(created) = c.borrow_mut().as_mut() {
+            created.push(assembly);
+        }
+    });
+    assembly
+}
+
+/// Starts a record of the assemblies created on this thread. Assemblies live for the whole run, so the
+/// ones a task creates and then discards are found through this record and emptied (`release_discarded`).
+pub fn start_tracking_created() {
+    CREATED.with(|c| *c.borrow_mut() = Some(Vec::new()));
+}
+
+/// Ends the record and returns the assemblies created since `start_tracking_created`.
+pub fn take_created() -> Vec<AsmP> {
+    CREATED.with(|c| c.borrow_mut().take()).unwrap_or_default()
+}
+
 pub struct JunctionAssembly {
     assembly_id: i32,
     junction: JuncP,
+    /// the junction group whose reads this assembly's candidate lists refer to, until they are dropped
+    /// (for the release of the group's reads; not in the Java class)
+    read_source_group: Option<JuncGroupP>,
     junction_index: i32,
     ref_base_position: i32,
     ref_base_cigar_elements: Vec<CigarElement>,
@@ -90,9 +121,10 @@ impl JunctionAssembly {
             },
         };
         let junction_index = if junction.is_forward() { 0 } else { bases.len() as i32 - 1 };
-        P::new(JunctionAssembly {
+        new_tracked(JunctionAssembly {
             assembly_id: -1,
             junction,
+            read_source_group: None,
             junction_index,
             ref_base_position: junction.position,
             ref_base_cigar_elements: Vec::new(),
@@ -167,9 +199,10 @@ impl JunctionAssembly {
             Some(r) => r.id().to_string(),
             None => support.first().map(|s| s.id().to_string()).unwrap_or_default(),
         };
-        P::new(JunctionAssembly {
+        new_tracked(JunctionAssembly {
             assembly_id: -1,
             junction,
+            read_source_group: None,
             junction_index,
             ref_base_position: ref_side_soft_clip.position,
             ref_base_cigar_elements: initial_assembly.ref_base_cigar_elements.clone(),
@@ -202,9 +235,10 @@ impl JunctionAssembly {
     /// the test constructor JunctionAssembly(junction, bases, quals, junctionIndex)
     pub fn new_test(junction: JuncP, bases: &[u8], quals: &[u8], junction_index: i32) -> AsmP {
         let ref_base_position = if junction.is_forward() { junction.position - junction_index } else { junction.position + (bases.len() as i32 - junction_index) - 1 };
-        P::new(JunctionAssembly {
+        new_tracked(JunctionAssembly {
             assembly_id: -1,
             junction,
+            read_source_group: None,
             junction_index,
             ref_base_position,
             ref_base_cigar_elements: Vec::new(),
@@ -356,6 +390,41 @@ impl JunctionAssembly {
     }
     pub fn unmapped_reads_mut(&mut self) -> &mut Vec<ReadP> {
         &mut self.unmapped_candidates
+    }
+    /// Empties an assembly that was created and then discarded, so that the reads and buffers it holds
+    /// are freed (Java leaves this to the garbage collector). The assembly must not be used afterwards.
+    pub fn release_discarded(&mut self) {
+        self.support = Vec::new();
+        self.candidate_support = Vec::new();
+        self.concordant_candidates = Vec::new();
+        self.unmapped_candidates = Vec::new();
+        self.bases = Vec::new();
+        self.base_quals = Vec::new();
+        self.repeat_info = Vec::new();
+        self.ref_side_soft_clips = Vec::new();
+        self.remote_regions = Vec::new();
+        crate::assembly::mem_stats::ASSEMBLIES_RELEASED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    pub fn set_read_source_group(&mut self, junction_group: JuncGroupP) {
+        self.read_source_group = Some(junction_group);
+    }
+    /// To be called once the candidate reads and the cached reads of the support have been dropped at the
+    /// end of phase set building: tells the junction group, which frees its reads when all of its
+    /// assemblies have reported.
+    pub fn candidate_reads_dropped(&mut self) {
+        if let Some(junction_group) = self.read_source_group.take() {
+            junction_group.m().assembly_reads_dropped();
+        }
+    }
+    /// Drops the reads an assembly still refers to once phase set building is over (not in Java, where
+    /// assemblies that phase set building skipped keep them to the end): nothing looks at the candidate
+    /// reads or the cached reads of the support after that stage, and no statistics are taken here.
+    pub fn drop_reads_after_phasing(&mut self) {
+        self.clear_candidate_support();
+        for read in &self.support {
+            read.m().clear_cached_read();
+        }
+        self.read_source_group = None;
     }
     pub fn clear_candidate_support(&mut self) {
         self.candidate_support = Vec::new();

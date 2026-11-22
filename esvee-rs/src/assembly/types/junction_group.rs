@@ -1,9 +1,12 @@
 //! JunctionGroup: junctions close enough to share one BAM slice.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use crate::assembly::common_utils::positions_overlap;
 use crate::assembly::constants::BAM_READ_JUNCTION_BUFFER;
 use crate::assembly::ptr::P;
 use crate::assembly::read::read::ReadP;
+use crate::assembly::read::read_release::release_unreferenced_reads;
 use crate::assembly::types::junction::JuncP;
 use crate::assembly::types::junction_assembly::AsmP;
 use crate::assembly::types::remote_region::RemoteRegion;
@@ -16,6 +19,11 @@ pub struct JunctionGroup {
     junctions: Vec<JuncP>,
     candidate_reads: Vec<ReadP>,
     final_candidate_read_count: usize,
+    /// reads still referenced by assemblies after the group was assembled (kept so that their mate links
+    /// can be removed once nothing uses them; not in the Java class)
+    retained_reads: Vec<ReadP>,
+    /// assemblies of this group whose candidate reads have not been dropped yet
+    assemblies_holding_reads: AtomicUsize,
     index: i32,
     junction_assemblies: Vec<AsmP>,
 }
@@ -28,6 +36,8 @@ impl JunctionGroup {
             junctions: vec![junction],
             candidate_reads: Vec::new(),
             final_candidate_read_count: 0,
+            retained_reads: Vec::new(),
+            assemblies_holding_reads: AtomicUsize::new(0),
             index: -1,
             junction_assemblies: Vec::new(),
         }
@@ -79,9 +89,39 @@ impl JunctionGroup {
     pub fn add_candidate_read(&mut self, read: ReadP) {
         self.candidate_reads.push(read);
     }
+    /// JunctionGroup.clearCandidateReads. Java drops the list and leaves the reads to the garbage collector;
+    /// here the reads nothing else refers to are freed and the others are kept for a later check.
     pub fn clear_candidate_reads(&mut self) {
         self.final_candidate_read_count = self.candidate_reads.len();
-        self.candidate_reads = Vec::new();
+        let mut reads = std::mem::take(&mut self.candidate_reads);
+        reads.append(&mut self.retained_reads);
+        self.retained_reads = release_unreferenced_reads(reads);
+        self.retained_reads.shrink_to_fit();
+        for read in &self.retained_reads {
+            read.m().release_unused_record_data();
+        }
+    }
+    /// Repeats the check on the reads kept by `clear_candidate_reads`; returns how many are still in use.
+    pub fn release_retained_reads(&mut self) -> usize {
+        if !self.retained_reads.is_empty() {
+            self.retained_reads = release_unreferenced_reads(std::mem::take(&mut self.retained_reads));
+        }
+        self.retained_reads.len()
+    }
+    /// Sets the number of assemblies that will report through `assembly_reads_dropped`.
+    pub fn set_assemblies_holding_reads(&mut self, count: usize) {
+        self.assemblies_holding_reads.store(count, Ordering::Release);
+    }
+    /// One of the group's assemblies has dropped its reads at the end of phase set building (called from
+    /// the phase set tasks). After the last one the reads kept for them are freed; a read that something
+    /// still refers to stays for the check after phase set building.
+    pub fn assembly_reads_dropped(&mut self) {
+        if self.assemblies_holding_reads.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.release_retained_reads();
+        }
+    }
+    pub fn retained_read_count(&self) -> usize {
+        self.retained_reads.len()
     }
     pub fn candidate_read_count(&self) -> usize {
         self.final_candidate_read_count.max(self.candidate_reads.len())

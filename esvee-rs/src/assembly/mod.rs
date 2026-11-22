@@ -16,6 +16,7 @@ pub mod junction_assembler;
 pub mod junction_group_assembler;
 pub mod junction_read_types;
 pub mod line_utils;
+pub mod mem_stats;
 pub mod orientation;
 pub mod perf;
 pub mod output;

@@ -8,7 +8,7 @@ use crate::assembly::common_utils::{above_min_qual, below_min_qual, is_medium_ba
 use crate::assembly::globals::is_ultima;
 use crate::assembly::ptr::A;
 use crate::assembly::read::read::ReadP;
-use crate::assembly::sam::{CigarElement, CigarOp, SamRecord};
+use crate::assembly::sam::{CigarElement, CigarOp, SamRecord, BASE_QUAL_TAG_ATTRIBUTE};
 use crate::assembly::sequence_builder::calc_mismatch_penalty;
 use crate::assembly::sequence_diff::{BaseQualType, SequenceDiffInfo, SequenceDiffType};
 use crate::common::fmt::java_fixed;
@@ -39,7 +39,7 @@ pub struct ReadParseState {
 
 /// UltimaBamUtils.extractLowQualIndices
 pub fn ultima_extract_low_qual_indices(record: &SamRecord) -> Vec<i32> {
-    let Some(qual_tag) = record.get_string_attribute("UQ") else { return Vec::new() };
+    let Some(qual_tag) = record.get_string_attribute(BASE_QUAL_TAG_ATTRIBUTE) else { return Vec::new() };
     let Some((_, indices)) = qual_tag.split_once('=') else { panic!("invalid UQ tag: {qual_tag}") };
     let mut values = Vec::new();
     // String.split drops trailing empty items

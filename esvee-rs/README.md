@@ -130,8 +130,10 @@ real data in any step.
 - **Log lines** have the Java text. Timings in them differ, and with `-perf_log_time` fewer items
   exceed a given threshold. The caller prints the lines about its reference data together once the
   data is loaded.
-- **Memory** is lower in every step on the small input (REPORT.md, section 5). The assembly step's
-  memory on a whole genome is high (33 GB) and is being worked on.
+- **Memory** is lower in every step on the small input (REPORT.md, section 5). On a whole genome the
+  assembly step peaks at about 7 GB, plus the mapped BWA index image of 5-6 GB.
+- **`ESVEE_MEM_STATS=1`** makes the assembly step log its memory use and live object counts at each
+  stage.
 
 ## Tests
 

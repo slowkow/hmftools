@@ -30,7 +30,8 @@ port was made; they are outside this repository, because the outputs are derived
   against 44 GB (section 5).
 - A whole-genome tumor/normal pair has been run through the Rust chain at 8 threads in 14.6 minutes.
   **Its output has not yet been compared with Java**: the Java one-thread baseline is still running.
-  The assembly step peaks at 33.4 GB on that input, which is being worked on.
+  The assembly step peaked at 33.4 GB on that input at first; it now peaks at 7.2 GB with the same
+  output (section 5).
 - Not ported: the assembly visualiser, and htsjdk's record validation behind `-bam_validation` in the
   depth step. Not tested: reference genome 37 on real data, in any step (section 6).
 
@@ -718,7 +719,7 @@ chain at 8 threads (`baseline/esvee/rust/wgs_t8/status`):
 | Step | Wall | Peak footprint |
 |---|---|---|
 | prep | 672 s | 5.1 GB |
-| assembly | 149 s | 33.4 GB |
+| assembly | 149 s | 33.4 GB (7.2 GB after the changes below) |
 | depth | 55 s | 0.7 GB |
 | caller | 2.6 s | 0.5 GB |
 | total | 878 s (14.6 min) | |
@@ -726,10 +727,47 @@ chain at 8 threads (`baseline/esvee/rust/wgs_t8/status`):
 - **This output has not yet been compared with Java.** A Java one-thread baseline for the same input is
   still running. Until it is compared, the whole-genome run shows only that the port completes and how
   long it takes.
-- **Assembly memory** of 33.4 GB is high and is being worked on. One known cause: reads refer to their
-  mates in a cycle that is never freed.
 - The prep step appears to be limited by the disk on this input: other jobs were running, and system
   time was more than a quarter of user time.
+
+### Whole genome, assembly memory
+
+The first whole-genome assembly run peaked at 33.4 GB. Every one of the 29.4 million reads loaded was
+still allocated at the end, about 1 kB each. Two things held them. A read and its mate refer to each
+other, so counting references never freed a pair. And assemblies that were built and then rejected or
+deduplicated (160,000 of 245,000) were never freed, so the reads supporting them stayed too. In Java
+the garbage collector frees both.
+
+The changes, all in `src/assembly`, measured as peak footprint at 8 threads:
+
+| Change | Peak |
+|---|---|
+| before | 33.4 GB |
+| when a junction group is done, free its reads that nothing else refers to, and empty the assemblies it built and discarded | 13.2 GB |
+| a read whose mate is freed keeps a copy of the five mate values it reports; records keep only the attributes the step reads (MC, SA, AS, NM, UQ); a junction group frees its remaining reads once all of its assemblies are past phase set building | 9.1 GB |
+| assemblies left unprocessed by phase set building drop their reads after that stage | 9.1 GB (78,000 reads alive after phase sets down to 1) |
+| reads allocated from their own mimalloc heap, so the memory they held goes back to the system | 8.8 GB |
+| smaller read and support-read objects (Read 512 to 368 bytes, SupportRead 280 to 200 bytes) | 7.2 GB |
+
+| Run | Threads | Wall | Peak footprint | Max RSS |
+|---|---|---|---|---|
+| before | 8 | 124-149 s | 33.4 GB | 31-38 GB |
+| after | 8 | 124-127 s | 7.2 GB | 12.9 GB |
+| before | 1 | 883 s | 33.3 GB | 28.2 GB |
+| after | 1 | 803 s | 6.7 GB | 11.8 GB |
+
+- RSS includes the BWA index image of about 5-6 GB, which is a file mapping and not part of the
+  footprint.
+- Each run's `assembly.tsv`, `breakend.tsv` and raw VCF equal the first whole-genome run. All 41
+  option cases of section 2.2 are still identical to Java.
+- What is left at the peak, early in phase set building: 4.3 million candidate reads that assemblies
+  keep for phase set building, as Java does (3.3 GB), and support reads, remote regions and assemblies
+  (2.8 GB).
+- `ESVEE_MEM_STATS=1` adds log lines with the footprint and live object counts at each stage. Without it
+  the log is unchanged.
+- The separate read heap needs the default `mimalloc` feature, which uses mimalloc 3, whose heaps can be
+  used from any thread. With an older mimalloc, or with `--no-default-features`, reads come from the
+  global allocator and the memory that freed reads held is returned less well.
 
 ## 6. Not ported, not tested
 
