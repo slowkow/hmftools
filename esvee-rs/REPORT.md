@@ -24,7 +24,7 @@ port was made; they are outside this repository, because the outputs are derived
   count, and Java's assembly output changes from run to run even at one thread (section 3). The
   reference is Java at one thread with every identity hash made equal (`-XX:hashCode=2`). The port
   gives that result at any thread count.
-- 79 findings about the Java code are recorded in section 4: 11 in prep, 32 in assembly, 19 in depth,
+- 83 findings about the Java code are recorded in section 4: 11 in prep, 36 in assembly, 19 in depth,
   17 in the caller. The port reproduces those that change the output.
 - On the small input at 8 threads the Rust chain takes 24 s against Java's 95 s, with a peak of 1.9 GB
   against 44 GB (section 5).
@@ -124,8 +124,8 @@ nothing random to allow for. Text positions come from AWT font metrics, so Java'
 machine's fonts; the port holds the metrics of the machine it was compared on (macOS). The drawing
 code (`src/common/vis`: SVG as JFreeSVG writes it, the HTML that j2html renders, the hmf-common view
 models) is checked by 15 unit tests against values dumped from the Java classes on synthetic input.
-The Java package has no unit tests. The port takes 0.5 to 5 s on these cases where Java takes 65 to
-157 s; a run without the flag is as fast as before (2.7 to 2.9 s on the small pair).
+The Java package has no unit tests. The port takes 0.5 to 5 s on these cases where Java takes 65 s to 34
+minutes; a run without the flag is as fast as before (2.7 to 2.9 s on the small pair).
 
 ### 2.3 Depth
 
@@ -510,6 +510,32 @@ the notes mark explicitly as not observed say so.
   `mConfig.ReferenceIds.get(0)`, which throws `IndexOutOfBoundsException` in a tumor-only run, for
   every assembly; likewise `TumorIds.get(0)` in a germline-only run. The exception is caught as in
   A31, so `-run_assembly_vis` gives no files in those modes. Reproduced.
+- **A33. `assembly/vis/AssemblyVisualiser.java:553-562,606`** (visualiser) Only the soft clip on the
+  breakend's side is taken off the alignment's cigar, but the assembly bases passed with it are the
+  aligned part alone. For an alignment clipped at both ends (the middle of a chain) the remaining clip
+  reads past the end of the string: `StringIndexOutOfBoundsException` at
+  `BaseSeqViewModel.java:183`, and no file for that assembly alignment. Seen for 4 of 8 chains of the
+  small pair and 3 of the SBX case (one more SBX chain fails two lines earlier, at `:179`, on a matched
+  base); this is the cause as read from the code and the stack trace.
+  Reproduced (no file).
+- **A34. `assembly/vis/ReadViewModel.java:401-402`** (visualiser) `handleHomology` is passed `readBases`
+  for both the bases and the base qualities, so reads drawn across a homology are shaded by the
+  character codes of their bases, which are all above the cut-off: no quality shading. Reproduced.
+- **A35. Visualiser: objects changed while drawing.** `AssemblyVisualiser.java:568,575` reverses
+  `AlignData.cigarElements()` (the alignment's own list, or a `subList` view of it) and
+  `ReadViewModel.java:387,389-398` reverses `Read.cigarElements()` (when the read has no recorded
+  mismatches) and the array of `Read.getBaseQuality()`, all in place. The step's outputs are already
+  written, but an alignment that is the first segment of two breakends, or a read drawn twice, is
+  seen changed the second time. The port keeps these lists per object for the length of the
+  visualiser run, as Java does. In the 96 files compared it made no difference: a build that started
+  from the unchanged lists every time wrote the same files.
+- **A36. Visualiser, small things.** The rows REF and REFPAIR hold the text `TODO` and DP is always 0
+  (`AssemblyVisualiser.java:337-341`). Breakends are paired in the poll order of a `PriorityQueue`
+  (`:732-735`), which for breakends on the same alignment is the order of the heap; reproduced.
+  `ReadViewModel.java:169-170` would exit with status 0 on an error (not reachable: `create` tests the
+  same condition first). `-purple_dir` is read by nothing but the switch that keeps reads cached
+  (`AssemblyConfig.java:321`); the vis files are the same with and without it. Java takes 65 s to 34
+  minutes for the vis cases, the port 0.5 to 5 s.
 
 **Crash**
 
