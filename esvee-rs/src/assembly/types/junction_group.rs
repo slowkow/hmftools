@@ -89,6 +89,10 @@ impl JunctionGroup {
     pub fn add_candidate_read(&mut self, read: ReadP) {
         self.candidate_reads.push(read);
     }
+    /// takes reads out of the list again (not part of the Java class)
+    pub fn remove_candidate_reads(&mut self, reads: &[ReadP]) {
+        self.candidate_reads.retain(|x| !reads.contains(x));
+    }
     /// JunctionGroup.clearCandidateReads. Java drops the list and leaves the reads to the garbage collector;
     /// here the reads nothing else refers to are freed and the others are kept for a later check.
     pub fn clear_candidate_reads(&mut self) {

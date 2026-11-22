@@ -249,7 +249,7 @@ impl VariantFilters {
             if self.below_weak_junction_min_af(var) {
                 add.add(FilterType::WeakJuncMinAf);
             }
-            if self.below_min_support(var) {
+            if self.below_min_support(variants, var) {
                 add.add(FilterType::MinSupport);
             }
             if self.below_min_quality(variants, var) {
@@ -297,7 +297,7 @@ impl VariantFilters {
         }
     }
 
-    fn below_min_support(&self, var: &Variant) -> bool {
+    fn below_min_support(&self, variants: &[Variant], var: &Variant) -> bool {
         if var.is_saga_matched {
             return false;
         }
@@ -310,12 +310,19 @@ impl VariantFilters {
         } as f64;
 
         let breakend = var.start();
+        let java_c2 = crate::common::compat::java("C2");
         for genotype in &breakend.context.genotypes {
             let mut fragment_count = Breakend::fragment_count_of(genotype);
-            if var.is_sgl() && breakend.line_site_breakend.is_some() {
-                // Java asks the paired LINE breakend for the count of this same genotype object, so
-                // the breakend's own count is added a second time
-                fragment_count += Breakend::fragment_count_of(genotype);
+            if let (true, Some(line)) = (var.is_sgl(), breakend.line_site_breakend) {
+                if java_c2 {
+                    // Java (C2): asks the paired LINE breakend for the count of this same genotype object,
+                    // so the breakend's own count is added a second time
+                    fragment_count += Breakend::fragment_count_of(genotype);
+                } else {
+                    // the support of the paired breakend in the same sample
+                    let pair = variants[line.var as usize].breakend(line.se as usize);
+                    fragment_count += pair.context.genotype(&genotype.sample).map(Breakend::fragment_count_of).unwrap_or(0);
+                }
             }
             if fragment_count as f64 >= support_threshold {
                 return false;

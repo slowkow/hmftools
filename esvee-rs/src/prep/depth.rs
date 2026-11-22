@@ -16,8 +16,13 @@ pub struct DepthTracker {
 
 impl DepthTracker {
     pub fn new(start: i32, end: i32, window_size: i32) -> Self {
-        // as in Java the division is of integers, so a last partial window is not counted
-        let windows = (end - start + 1) / window_size;
+        let length = end - start + 1;
+        let windows = if crate::common::compat::java("P3") {
+            // Java: (int)ceil(length / size) divides integers first, so a last partial window is left out
+            length / window_size
+        } else {
+            (length + window_size - 1) / window_size
+        };
         DepthTracker { start, end, window_size, window_depth: vec![0; windows.max(0) as usize] }
     }
 
@@ -30,7 +35,12 @@ impl DepthTracker {
 
     pub fn calc_depth(&self, position: i32) -> f64 {
         match self.window_index(position) {
-            Some(i) if i < self.window_depth.len() => self.window_depth[i] as f64 / self.window_size as f64,
+            Some(i) if i < self.window_depth.len() => {
+                // a last partial window (only present when P3 is corrected) is averaged over its own length
+                let window_start = self.start + i as i32 * self.window_size;
+                let window_length = (window_start + self.window_size - 1).min(self.end) - window_start + 1;
+                self.window_depth[i] as f64 / window_length as f64
+            }
             _ => 0.0,
         }
     }
@@ -49,7 +59,8 @@ impl DepthTracker {
             return;
         }
         let mut window_start = self.start + index as i32 * self.window_size;
-        let mut window_end = window_start + self.window_size - 1;
+        // the clamp only acts on a last partial window
+        let mut window_end = (window_start + self.window_size - 1).min(self.end);
         loop {
             let window_range = window_end.min(read_end) - read_start.max(window_start) + 1;
             if window_range < 0 || window_range > self.window_size {
@@ -65,7 +76,7 @@ impl DepthTracker {
                 break;
             }
             window_start = window_end + 1;
-            window_end = window_start + self.window_size - 1;
+            window_end = (window_start + self.window_size - 1).min(self.end);
         }
     }
 }

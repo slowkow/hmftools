@@ -4,6 +4,7 @@
 //! which support the reference (REF: a read over the breakend; REFPAIR: a read on each side), and writes
 //! the VCF again with those counts and the allele fraction (AF) added.
 
+use crate::common::compat;
 use anyhow::{bail, Result};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Mutex;
@@ -59,24 +60,147 @@ use vcf::{VariantContext, VcfHeader, VcfWriter};
 const HUMAN_CHROMOSOMES: [&str; 24] =
     ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X", "Y"];
 
-/// ExcludedRegions.getPolyGRegions. Only the positions are used: DepthAnnotator.excludeVariant tests a
-/// variant's position against them without looking at its chromosome.
-const POLY_G_REGIONS_V37: [(i32, i32); 3] = [(33141260, 33141700), (41218427, 41218467), (42646418, 42646458)];
-const POLY_G_REGIONS_V38: [(i32, i32); 3] = [(32916190, 32916630), (41216410, 41216450), (44569050, 44569090)];
+/// ExcludedRegions.getPolyGRegions
+const POLY_G_REGIONS_V37: [(&str, i32, i32); 3] = [("2", 33141260, 33141700), ("4", 41218427, 41218467), ("17", 42646418, 42646458)];
+const POLY_G_REGIONS_V38: [(&str, i32, i32); 3] = [("chr2", 32916190, 32916630), ("chr4", 41216410, 41216450), ("chr17", 44569050, 44569090)];
 
 const ALLELE_FRACTION_DESC: &str = "Allele frequency of the breakend";
 const REF_DEPTH_DESC: &str = "Count of reads mapping across this breakend";
 const REF_DEPTH_PAIR_DESC: &str = "Count of reference read pairs spanning this breakend supporting the reference allele";
 
+/// DepthAnnotator.excludeVariant
 fn exclude_variant(config: &DepthConfig, chromosome: &str, position: i32) -> bool {
     let poly_g = if config.is_38 { &POLY_G_REGIONS_V38 } else { &POLY_G_REGIONS_V37 };
-    if poly_g.iter().any(|(start, end)| position >= *start && position <= *end) {
+    // D3: Java tests the position alone against the poly-G regions, so a variant at those positions is
+    // dropped on any chromosome
+    let any_chromosome = compat::java("D3");
+    if poly_g.iter().any(|(chr, start, end)| (any_chromosome || *chr == chromosome) && position >= *start && position <= *end) {
         return true;
     }
-    if config.specific_regions.is_empty() {
-        return false;
+    if !config.specific_regions.is_empty() {
+        return !config.specific_regions.iter().any(|(chr, start, end)| chr == chromosome && position >= *start && position <= *end);
     }
-    !config.specific_regions.iter().any(|(chr, start, end)| chr == chromosome && position >= *start && position <= *end)
+    // -specific_chr (D14; the list is empty with Java behaviour)
+    !config.specific_chromosomes.is_empty() && !config.specific_chromosomes.iter().any(|chr| chr == chromosome)
+}
+
+/// The records to annotate, by chromosome, in the order the chromosomes are processed and written: the
+/// reading loop of DepthAnnotator.run with the chromosome loops that follow it. Also whether any record
+/// was left after the exclusions (in Java, whether its map of chromosomes has an entry).
+fn group_by_chromosome(config: &DepthConfig, records: impl IntoIterator<Item = VariantContext>) -> (Vec<(String, Vec<VariantContext>)>, bool) {
+    // D2: the copy Java makes of each record takes getFilters(), which is an empty set and not null for a
+    // record whose FILTER is missing, so every unfiltered record is written as PASS
+    let missing_filter_is_pass = compat::java("D2");
+    // D5: Java starts a new list whenever the chromosome changes and puts it in place of an earlier one,
+    // so of a chromosome which appears in two blocks only the last is kept
+    let last_block_only = compat::java("D5");
+    // D4: Java only goes over the names of the human chromosomes; records on any other contig are dropped
+    let human_only = compat::java("D4");
+
+    // each chromosome's blocks of consecutive records, chromosomes in order of first appearance
+    let mut blocks: Vec<(String, Vec<Vec<VariantContext>>)> = Vec::new();
+    let mut index_of: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut current: Option<usize> = None;
+    for mut variant in records {
+        if exclude_variant(config, &variant.chromosome, variant.position) {
+            continue;
+        }
+        if current.is_none_or(|i| blocks[i].0 != variant.chromosome) {
+            let index = *index_of.entry(variant.chromosome.clone()).or_insert_with(|| {
+                blocks.push((variant.chromosome.clone(), Vec::new()));
+                blocks.len() - 1
+            });
+            if last_block_only {
+                blocks[index].1.clear();
+            }
+            blocks[index].1.push(Vec::new());
+            current = Some(index);
+        }
+        if missing_filter_is_pass {
+            variant.filters.get_or_insert_with(Vec::new);
+        }
+        blocks[current.unwrap()].1.last_mut().unwrap().push(variant);
+    }
+
+    // the human chromosomes in their own order, then (corrected) the other contigs as they first appeared
+    let mut by_chromosome: Vec<Option<(String, Vec<VariantContext>)>> = blocks.into_iter().map(|(chr, blocks)| Some((chr, merge_blocks(blocks)))).collect();
+    let mut ordered = Vec::with_capacity(by_chromosome.len());
+    for name in HUMAN_CHROMOSOMES {
+        if let Some(&index) = index_of.get(&config.versioned_chromosome(name)) {
+            ordered.extend(by_chromosome[index].take());
+        }
+    }
+    if !human_only {
+        ordered.extend(by_chromosome.into_iter().flatten());
+    }
+    (ordered, !index_of.is_empty())
+}
+
+/// One list from a chromosome's blocks of records. The variants of a chromosome are sliced, and the
+/// output is indexed, in order of position, so the blocks are merged by position: each block keeps its
+/// own order, and of two records at one position the one from the earlier block comes first.
+fn merge_blocks(mut blocks: Vec<Vec<VariantContext>>) -> Vec<VariantContext> {
+    if blocks.len() == 1 {
+        return blocks.pop().unwrap();
+    }
+    let mut merged = Vec::with_capacity(blocks.iter().map(|b| b.len()).sum());
+    let mut heads: Vec<std::iter::Peekable<std::vec::IntoIter<VariantContext>>> = blocks.into_iter().map(|b| b.into_iter().peekable()).collect();
+    loop {
+        let mut next: Option<(usize, i32)> = None;
+        for (index, head) in heads.iter_mut().enumerate() {
+            if let Some(variant) = head.peek() {
+                if next.is_none_or(|(_, position)| variant.position < position) {
+                    next = Some((index, variant.position));
+                }
+            }
+        }
+        let Some((index, _)) = next else { break };
+        merged.extend(heads[index].next());
+    }
+    merged
+}
+
+/// The text of the warning when no record is left to annotate. D15: Java's message has one placeholder
+/// and two arguments, so it shows the number of records where the file name was meant.
+fn all_filtered_message(vcf_count: i32, input_vcf: &str) -> String {
+    if compat::java("D15") { format!("all variants filtered from vcf({vcf_count})") } else { format!("all variants filtered from vcf({input_vcf})") }
+}
+
+/// The header lines of the tags this step writes: the first part of DepthAnnotator.writeVcf.
+fn add_header_lines(config: &DepthConfig, header: &mut VcfHeader) {
+    if !header.defs.has_info(ALLELE_FRACTION) {
+        header.add_info_line(ALLELE_FRACTION, 1, "Float", ALLELE_FRACTION_DESC);
+    }
+    if !header.defs.has_format(ALLELE_FRACTION) {
+        header.add_format_line(ALLELE_FRACTION, 1, "Float", ALLELE_FRACTION_DESC);
+    }
+    // D11: with -vcf_tag_prefix Java only adds the lines of the prefixed tags when the input already has
+    // the lines of the plain ones, so on a VCF from the assembly step the writer stops at the first record
+    let java_prefix_lines = compat::java("D11");
+    for (tag, description) in [(REF_DEPTH, REF_DEPTH_DESC), (REF_DEPTH_PAIR, REF_DEPTH_PAIR_DESC)] {
+        let had_plain = header.defs.has_format(tag);
+        if !had_plain {
+            header.add_format_line(tag, 1, "Integer", description);
+            header.add_info_line(tag, 1, "Integer", description);
+        }
+        if config.vcf_tag_prefix.is_none() {
+            continue;
+        }
+        let prefixed = config.vcf_tag(tag);
+        if java_prefix_lines {
+            if had_plain {
+                header.add_format_line(&prefixed, 1, "Integer", description);
+                header.add_info_line(&prefixed, 1, "Integer", description);
+            }
+        } else {
+            if !header.defs.has_format(&prefixed) {
+                header.add_format_line(&prefixed, 1, "Integer", description);
+            }
+            if !header.defs.has_info(&prefixed) {
+                header.add_info_line(&prefixed, 1, "Integer", description);
+            }
+        }
+    }
 }
 
 /// The keys of a java.util.HashMap<Integer, ?> in iteration order, given the order they were first put.
@@ -103,16 +227,14 @@ fn java_hash_map_order(keys_in_insertion_order: &[i32]) -> Vec<i32> {
 }
 
 /// DepthAnnotator.analyseVariantDistribution: debug figures on how the variants group
-fn analyse_variant_distribution(config: &DepthConfig, chr_variants: &std::collections::HashMap<String, Vec<VariantContext>>) {
+fn analyse_variant_distribution(config: &DepthConfig, chr_variants: &[(String, Vec<VariantContext>)]) {
     let mut frequency_keys: Vec<i32> = Vec::new();
     let mut frequencies: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
     let mut total_groups = 0;
     let mut total_variants = 0i32;
     let mut estimated_reads = 0i64;
 
-    for name in HUMAN_CHROMOSOMES {
-        let chromosome = config.versioned_chromosome(name);
-        let Some(variants) = chr_variants.get(&chromosome) else { continue };
+    for (chromosome, variants) in chr_variants {
         let mut solo_variants = 0;
         let mut group_count = 0;
         let mut index = 0;
@@ -174,26 +296,11 @@ fn write_vcf(config: &DepthConfig, header: &mut VcfHeader, tasks: &[DepthTask]) 
     let output_vcf = form_output_file(config.output_dir.as_deref(), sample_id, "ref_depth.vcf.gz", config.output_id.as_deref());
     info!("writing VCF: {}", output_vcf);
 
-    if !header.defs.has_info(ALLELE_FRACTION) {
-        header.add_info_line(ALLELE_FRACTION, 1, "Float", ALLELE_FRACTION_DESC);
-    }
-    if !header.defs.has_format(ALLELE_FRACTION) {
-        header.add_format_line(ALLELE_FRACTION, 1, "Float", ALLELE_FRACTION_DESC);
-    }
-    for (tag, description) in [(REF_DEPTH, REF_DEPTH_DESC), (REF_DEPTH_PAIR, REF_DEPTH_PAIR_DESC)] {
-        if !header.defs.has_format(tag) {
-            header.add_format_line(tag, 1, "Integer", description);
-            header.add_info_line(tag, 1, "Integer", description);
-        } else if config.vcf_tag_prefix.is_some() {
-            header.add_format_line(&config.vcf_tag(tag), 1, "Integer", description);
-            header.add_info_line(&config.vcf_tag(tag), 1, "Integer", description);
-        }
-    }
+    add_header_lines(config, header);
 
+    // the tasks are in the order of the chromosomes (see group_by_chromosome)
     let mut writer = VcfWriter::create(&output_vcf, header)?;
-    for name in HUMAN_CHROMOSOMES {
-        let chromosome = config.versioned_chromosome(name);
-        let Some(task) = tasks.iter().find(|x| x.chromosome() == chromosome) else { continue };
+    for task in tasks {
         for variant in &task.variants {
             writer.write(&variant.encode(header)?)?;
         }
@@ -345,38 +452,25 @@ fn annotate(argv: &[String]) -> Result<()> {
         }
     }
 
-    // a chromosome's variants are those of its last run of consecutive records
-    let mut chr_variants: std::collections::HashMap<String, Vec<VariantContext>> = std::collections::HashMap::new();
-    let mut current_chromosome = String::new();
     let mut vcf_count = 0;
+    let mut records: Vec<VariantContext> = Vec::with_capacity(lines.len());
     for line in &lines {
         vcf_count += 1;
-        let variant = match VariantContext::parse(line, &header) {
-            Ok(variant) => variant,
+        match VariantContext::parse(line, &header) {
+            Ok(variant) => records.push(variant),
             Err(e) => {
                 error!("error reading vcf({}): {}", config.input_vcf, e);
                 std::process::exit(1);
             }
-        };
-        if exclude_variant(&config, &variant.chromosome, variant.position) {
-            continue;
         }
-        if variant.chromosome != current_chromosome {
-            current_chromosome = variant.chromosome.clone();
-            chr_variants.insert(current_chromosome.clone(), Vec::new());
-        }
-        let mut variant = variant;
-        // the copy Java makes of each record takes getFilters(), which is an empty set for a record whose
-        // FILTER is missing, so every unfiltered record leaves as PASS
-        variant.filters.get_or_insert_with(Vec::new);
-        chr_variants.get_mut(&current_chromosome).unwrap().push(variant);
     }
     drop(lines);
+    let (chr_variants, any_record) = group_by_chromosome(&config, records);
 
     info!("loaded {} variants from vcf({})", vcf_count, config.input_vcf);
 
-    if chr_variants.is_empty() {
-        warn!("all variants filtered from vcf({})", vcf_count);
+    if !any_record {
+        warn!("{}", all_filtered_message(vcf_count, &config.input_vcf));
         return write_vcf(&config, &mut header, &[]);
     }
 
@@ -385,9 +479,7 @@ fn annotate(argv: &[String]) -> Result<()> {
     }
 
     let mut tasks: Vec<DepthTask> = Vec::new();
-    for name in HUMAN_CHROMOSOMES {
-        let chromosome = config.versioned_chromosome(name);
-        let Some(variants) = chr_variants.remove(&chromosome) else { continue };
+    for (chromosome, variants) in chr_variants {
         let mut task = DepthTask::new(&chromosome, &config, genotype_ids.clone());
         task.add_variants(variants)?;
         tasks.push(task);
@@ -401,7 +493,7 @@ fn annotate(argv: &[String]) -> Result<()> {
     if let Some(unmap_regions_file) = &config.unmap_regions_file {
         let unmapped_region_depth = unmapped::UnmappedRegionDepth::load(unmap_regions_file)?;
         let mut variants: Vec<&mut VariantContext> = tasks.iter_mut().flat_map(|t| t.variants.iter_mut()).collect();
-        unmapped_region_depth.set_unmapped_regions_depth(config.sample_ids.len(), &mut variants)?;
+        unmapped_region_depth.set_unmapped_regions_depth(&genotype_ids, &config.vcf_tag(REF_DEPTH), &config.vcf_tag(REF_DEPTH_PAIR), &mut variants)?;
     }
 
     write_vcf(&config, &mut header, &tasks)?;

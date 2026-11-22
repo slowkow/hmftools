@@ -3,6 +3,7 @@
 use std::cmp::Ordering;
 use std::path::Path;
 
+use crate::common::compat;
 use crate::assembly::alignment::assembly_alignment::AsmAlignP;
 use crate::assembly::alignment::breakend::BreakendP;
 use crate::assembly::assembly_utils::reverse_complement_str;
@@ -130,6 +131,53 @@ fn priority_queue_order<T: Copy>(items: &[T], compare: impl Fn(&T, &T) -> Orderi
     out
 }
 
+/// The part of an alignment's cigar (not empty) that goes with its aligned bases, as a range of elements.
+pub(crate) fn aligned_cigar_range(cigar: &[crate::assembly::sam::CigarElement], forward_breakend: bool) -> (usize, usize) {
+    let n = cigar.len();
+    if compat::java("A33") {
+        // Java: takes off only the clip at the breakend's side, though the bases are the aligned part alone;
+        // an alignment clipped at both ends then reads past the end of the bases
+        if forward_breakend {
+            if cigar[n - 1].op.is_clipping() { (0, n - 1) } else { (0, n) }
+        } else if cigar[0].op.is_clipping() {
+            (1, n)
+        } else {
+            (0, n)
+        }
+    } else {
+        let lo = if cigar[0].op.is_clipping() { 1 } else { 0 };
+        let hi = if n > lo && cigar[n - 1].op.is_clipping() { n - 1 } else { n };
+        (lo, hi)
+    }
+}
+
+/// The heading of a vis file
+pub(crate) fn variant_title(tumor_ids: &[String], reference_ids: &[String]) -> VisResult<String> {
+    if compat::java("A32") {
+        // Java: takes the first tumor and the first reference id, and fails when either is missing
+        let tumor = tumor_ids.first().ok_or_else(|| index_error(0, 0))?;
+        let reference = reference_ids.first().ok_or_else(|| index_error(0, 0))?;
+        return Ok(format!("{tumor}[normal: {reference}]"));
+    }
+    let tumor = tumor_ids.first().map(String::as_str).unwrap_or("");
+    Ok(match reference_ids.first() {
+        Some(reference) => format!("{tumor}[normal: {reference}]"),
+        None => tumor.to_string(),
+    })
+}
+
+/// The sample id that starts the name of a vis file
+pub(crate) fn file_sample_id<'a>(tumor_ids: &'a [String], reference_ids: &'a [String]) -> VisResult<&'a String> {
+    // Java: the first tumor id, so a run without a tumor sample fails here. Corrected: the first reference
+    // id then
+    let first_id = match tumor_ids.first() {
+        Some(id) => Some(id),
+        None if compat::java("A32") => None,
+        None => reference_ids.first(),
+    };
+    first_id.ok_or_else(|| index_error(0, 0))
+}
+
 fn extract_breakend_info(
     config: &AssemblyConfig, state: &mut VisState, paired_breakend: &PairedBreakendInfo, is_ref_reversed: bool, full_assembly_seq: &str,
     last_seq_end: Option<i32>,
@@ -155,13 +203,7 @@ fn extract_breakend_info(
     if n == 0 {
         return Err(index_error(if breakend.orient == Orientation::Forward { -1 } else { 0 }, 0));
     }
-    let (lo, hi) = if breakend.orient == Orientation::Forward {
-        if cigar[n - 1].op.is_clipping() { (0, n - 1) } else { (0, n) }
-    } else if cigar[0].op.is_clipping() {
-        (1, n)
-    } else {
-        (0, n)
-    };
+    let (lo, hi) = aligned_cigar_range(cigar, breakend.orient == Orientation::Forward);
     let mut reverse_assembly_seq = paired_breakend.is_assembly_reversed;
     if is_ref_reversed {
         cigar[lo..hi].reverse();
@@ -465,10 +507,9 @@ impl<'a> AssemblyVisualiser<'a> {
     }
 
     fn render_variant_info(&self) -> VisResult<String> {
-        let tumor = self.config.tumor_ids.first().ok_or_else(|| index_error(0, 0))?;
-        let reference = self.config.reference_ids.first().ok_or_else(|| index_error(0, 0))?;
         let strong_style = CssBuilder::empty().font_weight("bold");
-        Ok(tag("div", &[("style", &strong_style.to_string())], &escape(&format!("{tumor}[normal: {reference}]"))))
+        let title = variant_title(&self.config.tumor_ids, &self.config.reference_ids)?;
+        Ok(tag("div", &[("style", &strong_style.to_string())], &escape(&title)))
     }
 
     fn render_variant_and_sample_support_table(&self, breakends: &[BreakendP]) -> VisResult<String> {
@@ -709,7 +750,7 @@ impl<'a> AssemblyVisualiser<'a> {
     }
 
     fn get_filename(&self, info: &str) -> VisResult<String> {
-        let sample_id = self.config.tumor_ids.first().ok_or_else(|| index_error(0, 0))?;
+        let sample_id = file_sample_id(&self.config.tumor_ids, &self.config.reference_ids)?;
         Ok(format!("{}_{}.html", sample_id, info.replace(':', "_")))
     }
 }

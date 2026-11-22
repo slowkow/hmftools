@@ -2,9 +2,10 @@
 //! paired breakends, written to `<output_dir>/vis/` when `-run_assembly_vis` is given with specific junctions.
 //!
 //! Java changes objects while it draws: the cigar list of an alignment and the cigar list and base
-//! qualities of a read are reversed in place, and stay that way for whatever is drawn next. The outputs of
-//! the step are written before the visualiser runs, so only later drawings see this. [`VisState`] keeps
-//! those lists apart from the assembly objects and carries them from one drawing to the next.
+//! qualities of a read are reversed in place, and stay that way for whatever is drawn next (finding A35).
+//! The outputs of the step are written before the visualiser runs, so only later drawings see this.
+//! [`VisState`] keeps those lists apart from the assembly objects; with Java behaviour it carries them from
+//! one drawing to the next, otherwise each drawing gets a fresh copy.
 
 pub mod assembly_visualiser;
 pub mod read_view_model;
@@ -16,6 +17,7 @@ use crate::assembly::alignment::assembly_alignment::AsmAlignP;
 use crate::assembly::config::AssemblyConfig;
 use crate::assembly::read::read::ReadP;
 use crate::assembly::sam::{CigarElement, CigarOp};
+use crate::common::compat;
 use crate::common::vis::svg::VisCigarOp;
 
 // AssemblyVisConstants
@@ -40,10 +42,18 @@ pub struct VisState {
 impl VisState {
     /// AlignData.cigarElements()
     pub fn align_cigar(&mut self, alignment: AlignP) -> &mut Vec<CigarElement> {
+        if !compat::java("A35") {
+            // corrected: every drawing starts from the alignment's own list
+            self.align_cigars.remove(&alignment.addr());
+        }
         self.align_cigars.entry(alignment.addr()).or_insert_with(|| alignment.cigar_elements().clone())
     }
     /// Read.cigarElements() and Read.getBaseQuality()
     pub fn read(&mut self, read: &ReadP) -> &mut ReadVisState {
+        if !compat::java("A35") {
+            // corrected: every drawing starts from the read's own cigar and base qualities
+            self.reads.remove(&read.addr());
+        }
         self.reads.entry(read.addr()).or_insert_with(|| ReadVisState { cigar: read.cigar_elements().to_vec(), quals: read.get_base_quality().to_vec() })
     }
 }

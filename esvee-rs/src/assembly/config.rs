@@ -5,6 +5,7 @@ use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 
+use crate::common::compat;
 use crate::assembly::constants::*;
 use crate::assembly::globals::*;
 use crate::assembly::ptr::P;
@@ -321,8 +322,9 @@ impl AssemblyConfig {
         set_perf_log_time(perf_log_time);
         set_perf_debug(args.has_flag("perf_debug") || perf_log_time > 0.0);
         set_assembly_build_debug(args.has_flag("asm_build_debug"));
-        // as in Java, set from the build debug flag
-        set_assembly_log_all_reads(args.has_flag("asm_build_debug"));
+        // Java: set from the build debug flag; its own flag is registered and never read. (Nothing reads the
+        // value in either version.)
+        set_assembly_log_all_reads(args.has_flag(if compat::java("A7") { "asm_build_debug" } else { "asm_log_all_reads" }));
         set_write_candidate_reads(args.has_flag("write_candidate_reads"));
         set_phase_processing_limit(args.integer("phase_process_limit", 0)?);
 

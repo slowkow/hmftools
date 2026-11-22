@@ -9,6 +9,7 @@
 //! its cap.
 
 use super::config::DepthConfig;
+use crate::common::compat;
 use super::fmt::vcf_double;
 use super::vcf::{parse_java_int, VariantContext};
 use anyhow::{anyhow, bail, Result};
@@ -74,12 +75,13 @@ impl ReadInfo {
     fn negative_strand(&self) -> bool {
         self.flags & FLAG_REVERSE != 0
     }
-    /// Java compares `read.getMateReferenceIndex()` and `read.getReferenceIndex()` with `==` / `!=`.
-    /// Both are `Integer` objects, so the comparison is by identity: equal values are the same object
-    /// only inside the Integer cache (-128 to 127). On a sequence with a higher index a mate on the same
-    /// sequence therefore counts as being elsewhere.
-    fn mate_on_same_reference(&self) -> bool {
-        self.ref_index == self.mate_ref_index && (-128..=127).contains(&self.ref_index)
+    /// Whether the mate is on the read's own sequence. D1: Java compares `read.getMateReferenceIndex()`
+    /// and `read.getReferenceIndex()` with `==` / `!=`. Both are `Integer` objects, so the comparison is
+    /// by identity: equal values are the same object only inside the Integer cache (-128 to 127). On a
+    /// sequence with a higher index a mate on the same sequence therefore counts as being elsewhere.
+    /// `java_identity` asks for that.
+    fn mate_on_same_reference(&self, java_identity: bool) -> bool {
+        self.ref_index == self.mate_ref_index && (!java_identity || (-128..=127).contains(&self.ref_index))
     }
     /// SamRecordUtils.inferredInsertSizeAbs
     fn inferred_insert_size_abs(&self) -> i32 {
@@ -306,6 +308,8 @@ impl SliceRegionState {
 pub struct ReadGroup {
     pub reads: Vec<ReadInfo>,
     pub wait_for_all: bool,
+    /// the number of the read that opened the group, counted within the sample's slice
+    pub order: i32,
 }
 
 /// PerformanceCounter, as far as the step uses it
@@ -371,6 +375,10 @@ pub struct DepthTask {
     total_read_count: i32,
     halt: bool,
     pub perf: PerfCounter,
+    /// D1: compare the reference indexes of a read and its mate as Java does (by object identity)
+    java_index_identity: bool,
+    /// D7: let the counts go past the cap as Java does
+    java_unbounded_cap: bool,
 }
 
 impl DepthTask {
@@ -393,6 +401,8 @@ impl DepthTask {
             total_read_count: 0,
             halt: false,
             perf: PerfCounter::default(),
+            java_index_identity: compat::java("D1"),
+            java_unbounded_cap: compat::java("D7"),
         }
     }
 
@@ -521,10 +531,21 @@ impl DepthTask {
             times.push(start_time.elapsed().as_secs_f64());
             read_counts.push(self.total_read_count.wrapping_sub(read_count));
 
-            // the fragments still waiting for a read; the order they are taken in does not change the counts
+            // the fragments still waiting for a read
             let groups = std::mem::take(&mut self.read_groups);
-            for (id, group) in &groups {
-                self.process_read_group(&group.reads, id);
+            if self.java_unbounded_cap || self.vaf_cap <= 0.0 {
+                // D7: Java takes them in hash-map order; without a bound the order does not change the counts
+                for (id, group) in &groups {
+                    self.process_read_group(&group.reads, id);
+                }
+            } else {
+                // with the cap as a bound, which fragments are counted last decides how a capped total is
+                // split between REF and REFPAIR, so they are taken in the order their first reads came
+                let mut waiting: Vec<(&Vec<u8>, &ReadGroup)> = groups.iter().collect();
+                waiting.sort_unstable_by_key(|(_, group)| group.order);
+                for (id, group) in waiting {
+                    self.process_read_group(&group.reads, id);
+                }
             }
             self.read_groups = groups;
         }
@@ -588,7 +609,7 @@ impl DepthTask {
 
         // Look for an uncapped variant this read is relevant to. Capped variants are dropped from the list
         // only as this scan meets them, so one which lies after the first relevant variant stays in the
-        // list and keeps being counted.
+        // list (D7: and in Java keeps being counted; see check_read_group_support).
         let mut is_relevant = false;
         let mut any_uncapped = false;
         let sample = self.current_sample_index;
@@ -599,13 +620,17 @@ impl DepthTask {
 
             if variant.sample_support_counts[sample].exceeds_max_depth() {
                 self.state.uncapped_variants.remove(index);
-                self.state.min_position_index = self.state.min_position_index.saturating_sub(1);
+                // D7: Java lowers the remembered index whatever the position of the variant dropped; it
+                // only has to move when that variant was before it
+                if self.java_unbounded_cap || index < self.state.min_position_index {
+                    self.state.min_position_index = self.state.min_position_index.saturating_sub(1);
+                }
                 continue;
             }
 
             any_uncapped = true;
 
-            if is_relevant_read(&info, variant) {
+            if is_relevant_read(&info, variant, self.java_index_identity) {
                 is_relevant = true;
                 break;
             }
@@ -632,7 +657,8 @@ impl DepthTask {
 
         // whether the mate or a supplementary is expected within this slice
         let mut expect_supplementaries = info.supplementary();
-        let expect_mate = info.paired() && !info.mate_unmapped() && info.mate_on_same_reference() && info.mate_start <= max_slice_position;
+        let expect_mate =
+            info.paired() && !info.mate_unmapped() && info.mate_on_same_reference(self.java_index_identity) && info.mate_start <= max_slice_position;
 
         if Self::supplementary_in_slice(read, &self.chromosome, self.state.position_min, max_slice_position)? {
             expect_supplementaries = true;
@@ -641,7 +667,7 @@ impl DepthTask {
         if !expect_mate && !expect_supplementaries {
             self.process_single_read(&info, read.name());
         } else {
-            self.read_groups.insert(read.name().to_vec(), ReadGroup { reads: vec![info], wait_for_all: expect_supplementaries });
+            self.read_groups.insert(read.name().to_vec(), ReadGroup { reads: vec![info], wait_for_all: expect_supplementaries, order: self.total_read_count });
         }
         Ok(())
     }
@@ -654,6 +680,7 @@ impl DepthTask {
             return;
         }
         let trace = if self.trace { Some((self.chromosome.as_str(), name)) } else { None };
+        let bounded = !self.java_unbounded_cap;
 
         let mut new_min_position_index = self.state.min_position_index;
         let sample = self.current_sample_index;
@@ -666,7 +693,7 @@ impl DepthTask {
             } else if read.end < variant.position_min.wrapping_sub(READ_POSITION_MARGIN) {
                 break;
             }
-            check_read_group_support(variant, sample, std::slice::from_ref(read), trace);
+            check_read_group_support(variant, sample, std::slice::from_ref(read), trace, bounded);
         }
 
         self.state.min_position_index = new_min_position_index;
@@ -678,6 +705,7 @@ impl DepthTask {
         let group_min_position = reads.iter().map(|x| x.start).min().unwrap_or(0);
         let group_max_position = reads.iter().map(|x| x.end).max().unwrap_or(0);
         let sample = self.current_sample_index;
+        let bounded = !self.java_unbounded_cap;
 
         for &variant_index in &self.state.uncapped_variants {
             let variant = &mut self.infos[variant_index];
@@ -686,7 +714,7 @@ impl DepthTask {
             } else if group_max_position < variant.position_min.wrapping_sub(READ_POSITION_MARGIN) {
                 break;
             }
-            check_read_group_support(variant, sample, reads, trace);
+            check_read_group_support(variant, sample, reads, trace, bounded);
         }
     }
 
@@ -730,9 +758,9 @@ impl DepthTask {
 }
 
 /// DepthTask.isRelevantRead: false for a read which cannot span the variant
-fn is_relevant_read(read: &ReadInfo, variant: &VariantInfo) -> bool {
+fn is_relevant_read(read: &ReadInfo, variant: &VariantInfo, java_index_identity: bool) -> bool {
     if read.end < variant.position_min {
-        if !read.paired() || read.mate_unmapped() || !read.mate_on_same_reference() {
+        if !read.paired() || read.mate_unmapped() || !read.mate_on_same_reference(java_index_identity) {
             return false;
         }
         // both reads before the variant
@@ -746,9 +774,13 @@ fn is_relevant_read(read: &ReadInfo, variant: &VariantInfo) -> bool {
 }
 
 /// DepthTask.checkReadGroupSupport: counts the fragment for the variant unless one of its reads is
-/// soft-clipped at the breakend. Counting does not stop at the cap. `trace` is the chromosome and the
-/// fragment's read name when trace logging is on.
-fn check_read_group_support(variant: &mut VariantInfo, sample: usize, reads: &[ReadInfo], trace: Option<(&str, &[u8])>) {
+/// soft-clipped at the breakend. `trace` is the chromosome and the fragment's read name when trace
+/// logging is on. D7: in Java the counting does not stop at the cap, so a variant which has reached it
+/// but is still in the list of uncapped variants goes on being counted; with `bounded` it is not.
+fn check_read_group_support(variant: &mut VariantInfo, sample: usize, reads: &[ReadInfo], trace: Option<(&str, &[u8])>, bounded: bool) {
+    if bounded && variant.sample_support_counts[sample].exceeds_max_depth() {
+        return;
+    }
     let mut read_supports_ref = false;
     let mut has_lower_pos_read = false;
     let mut has_upper_pos_read = false;
@@ -857,11 +889,13 @@ mod helper_tests {
     #[test]
     fn integer_identity() {
         let mut read = ReadInfo { ref_index: 20, mate_ref_index: 20, ..Default::default() };
-        assert!(read.mate_on_same_reference());
+        assert!(read.mate_on_same_reference(true) && read.mate_on_same_reference(false));
         read.mate_ref_index = 21;
-        assert!(!read.mate_on_same_reference());
+        assert!(!read.mate_on_same_reference(true) && !read.mate_on_same_reference(false));
         read.ref_index = 200;
         read.mate_ref_index = 200;
-        assert!(!read.mate_on_same_reference());
+        // D1: Java takes a mate on the same sequence as elsewhere once the index is outside the Integer cache
+        assert!(!read.mate_on_same_reference(true));
+        assert!(read.mate_on_same_reference(false));
     }
 }

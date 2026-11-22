@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::common::compat;
 use crate::assembly::assembly_utils::reverse_complement_bases;
 use crate::assembly::orientation::Orientation;
 use crate::assembly::sam::{collapse_cigar_ops, CigarElement, CigarOp};
@@ -135,11 +136,10 @@ fn correct_indels(is_built_forward: bool, mismatches: &[SequenceDiffInfo], cigar
 }
 
 /// Where the two segments of the pair share bases (homology), the read is given a deletion of that
-/// length after the first segment, placed where it mismatches the reference less. Java passes the read
-/// bases as the base qualities here; kept.
+/// length after the first segment, placed where it mismatches the reference less.
 fn handle_homology(
     ref_view_model: &PairedSegmentViewModel, read: &SupP, mut indel_offset: i32, cigar_els: &[CigarElement], read_bases: &[u8],
-    read_negative_strand_flag: bool,
+    read_base_quals: &[u8], read_negative_strand_flag: bool,
 ) -> VisResult<Option<(BaseSeqViewModel, i32)>> {
     let view_models = &ref_view_model.view_models;
     let homology_length = view_models[0].left_homology_length + view_models[view_models.len() - 1].left_homology_length;
@@ -179,13 +179,13 @@ fn handle_homology(
 
     let mismatch_count = |model: &BaseSeqViewModel| -> i32 { view_models.iter().filter_map(|x| x.ref_view_model.as_ref()).map(|r| model.mismatch_count(r)).sum() };
     let start = read.full_assembly_index_start() + indel_offset + ref_view_model.read_start_offset;
-    let mut unshifted = BaseSeqViewModel::create(start, &new_cigar_els, read_bases, read_bases, read_negative_strand_flag)?;
+    let mut unshifted = BaseSeqViewModel::create(start, &new_cigar_els, read_bases, read_base_quals, read_negative_strand_flag)?;
     unshifted.clear_soft_clips();
     let unshifted_mismatch_count = mismatch_count(&unshifted);
 
     indel_offset -= read_del_length;
     let start = read.full_assembly_index_start() + indel_offset + ref_view_model.read_start_offset;
-    let mut shifted = BaseSeqViewModel::create(start, &new_cigar_els, read_bases, read_bases, read_negative_strand_flag)?;
+    let mut shifted = BaseSeqViewModel::create(start, &new_cigar_els, read_bases, read_base_quals, read_negative_strand_flag)?;
     shifted.clear_soft_clips();
     let shifted_mismatch_count = mismatch_count(&shifted);
 
@@ -246,7 +246,9 @@ impl ReadViewModel {
         }
         let cigar_els: &[CigarElement] = corrected_cigar.as_deref().unwrap_or(&read_state.cigar);
 
-        let read_view_model = match handle_homology(ref_view_model, read, indel_offset, cigar_els, &read_bases, read_negative_strand_flag)? {
+        // Java: passes the read bases where the base qualities belong, so these reads get no quality shading
+        let homology_quals: &[u8] = if compat::java("A34") { &read_bases } else { &read_state.quals };
+        let read_view_model = match handle_homology(ref_view_model, read, indel_offset, cigar_els, &read_bases, homology_quals, read_negative_strand_flag)? {
             Some((model, _)) => model,
             None => {
                 let start = read.full_assembly_index_start() + indel_offset + ref_view_model.read_start_offset;

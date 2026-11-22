@@ -4,6 +4,7 @@
 use super::task::{ALLELE_FRACTION, REF_DEPTH, REF_DEPTH_PAIR, TOTAL_FRAGS};
 use super::fmt::vcf_double;
 use super::vcf::{parse_java_int, VariantContext};
+use crate::common::compat;
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::HashMap;
 
@@ -69,19 +70,43 @@ impl UnmappedRegionDepth {
         Ok(map.get(chromosome).is_some_and(|regions| regions.iter().any(|r| r.max_depth > 0 && position >= r.start && position <= r.end)))
     }
 
-    /// setUnmappedRegionsDepth over the variants of all tasks, in task order. `sample_count` is the
-    /// number of configured samples, while the genotypes gone over are all of those in the VCF; Java
-    /// fails with an index error where the two disagree, and so does this.
-    pub fn set_unmapped_regions_depth(&self, sample_count: usize, variants: &mut [&mut VariantContext]) -> Result<()> {
+    /// setUnmappedRegionsDepth over the variants of all tasks, in task order. `genotype_ids` are the VCF
+    /// genotype columns of the configured samples, in sample order; `ref_tag` and `ref_pair_tag` are the
+    /// tags the counts were written under (with the -vcf_tag_prefix, if any). Returns the number of
+    /// variants gone over for raising, as logged.
+    pub fn set_unmapped_regions_depth(&self, genotype_ids: &[usize], ref_tag: &str, ref_pair_tag: &str, variants: &mut [&mut VariantContext]) -> Result<usize> {
+        let sample_count = genotype_ids.len();
+        // D8: Java goes over every genotype of the record, taking its column as the sample index, while
+        // its lists have one entry per configured sample: an index error when the VCF has more samples
+        // than were configured. Corrected: the configured samples, each through its own column.
+        let all_genotypes = compat::java("D8");
+        // D9: Java writes into the attribute map of a genotype that has none, which is htsjdk's shared
+        // unmodifiable map, and fails. Corrected: such a genotype is left as it is, as when the counts
+        // are set.
+        let fail_on_empty_genotype = compat::java("D9");
+        // D16: Java reads and writes REF and REFPAIR without the -vcf_tag_prefix, and lists a variant
+        // once for each sample that qualifies.
+        let java_tags = compat::java("D16");
+        let (ref_tag, ref_pair_tag) = if java_tags { (REF_DEPTH, REF_DEPTH_PAIR) } else { (ref_tag, ref_pair_tag) };
+
+        // (sample index, genotype column) pairs to go over for a record with `genotype_count` genotypes
+        let columns = |genotype_count: usize| -> Vec<(usize, usize)> {
+            if all_genotypes {
+                (0..genotype_count).map(|i| (i, i)).collect()
+            } else {
+                genotype_ids.iter().copied().enumerate().filter(|(_, column)| *column < genotype_count).collect()
+            }
+        };
+
         let mut sample_variant_depths: Vec<Vec<i32>> = vec![Vec::new(); sample_count];
-        // a variant is listed once for each sample that qualifies
         let mut low_ref_depth_variants: Vec<usize> = Vec::new();
         let index_error = |index: usize| anyhow!("java.lang.IndexOutOfBoundsException: Index {index} out of bounds for length {sample_count}");
 
         for (variant_index, variant) in variants.iter().enumerate() {
-            for (sample_index, genotype) in variant.genotypes.iter().enumerate() {
-                let ref_depth = genotype.attribute_as_int(REF_DEPTH, 0)?;
-                let ref_pair_depth = genotype.attribute_as_int(REF_DEPTH_PAIR, 0)?;
+            for (sample_index, column) in columns(variant.genotypes.len()) {
+                let genotype = &variant.genotypes[column];
+                let ref_depth = genotype.attribute_as_int(ref_tag, 0)?;
+                let ref_pair_depth = genotype.attribute_as_int(ref_pair_tag, 0)?;
                 let tumor_frags = genotype.attribute_as_int(TOTAL_FRAGS, 0)?;
                 // 0 / 0 gives NaN, which is not below the threshold
                 let af = tumor_frags as f64 / ref_depth.wrapping_add(ref_pair_depth).wrapping_add(tumor_frags) as f64;
@@ -90,14 +115,14 @@ impl UnmappedRegionDepth {
                     sample_variant_depths.get_mut(sample_index).ok_or_else(|| index_error(sample_index))?.push(ref_depth);
                     continue;
                 }
-                if self.in_high_depth_unmapped_region(&variant.chromosome, variant.position)? {
+                if self.in_high_depth_unmapped_region(&variant.chromosome, variant.position)? && (java_tags || low_ref_depth_variants.last() != Some(&variant_index)) {
                     low_ref_depth_variants.push(variant_index);
                 }
             }
         }
 
         if low_ref_depth_variants.is_empty() {
-            return Ok(());
+            return Ok(0);
         }
 
         let mut sample_median_depths: Vec<i32> = Vec::new();
@@ -112,26 +137,30 @@ impl UnmappedRegionDepth {
             sample_median_depths.push(median_depth);
         }
 
-        info!("setting ref depth to median for {} variants", low_ref_depth_variants.len());
+        let listed = low_ref_depth_variants.len();
+        info!("setting ref depth to median for {} variants", listed);
 
         for variant_index in low_ref_depth_variants {
             let variant = &mut *variants[variant_index];
             let mut total_ref_depth = 0i32;
 
-            for (sample_index, genotype) in variant.genotypes.iter_mut().enumerate() {
-                let ref_depth = genotype.attribute_as_int(REF_DEPTH, 0)?;
+            for (sample_index, column) in columns(variant.genotypes.len()) {
+                let genotype = &mut variant.genotypes[column];
+                let ref_depth = genotype.attribute_as_int(ref_tag, 0)?;
                 let median_depth = *sample_median_depths.get(sample_index).ok_or_else(|| index_error(sample_index))?;
 
                 if ref_depth < median_depth {
-                    total_ref_depth = total_ref_depth.wrapping_add(median_depth);
                     if genotype.attributes.is_empty() {
-                        // htsjdk's shared empty attribute map cannot be written to
-                        bail!("java.lang.UnsupportedOperationException: genotype without attributes at {}:{}", variant.chromosome, variant.position);
+                        if fail_on_empty_genotype {
+                            bail!("java.lang.UnsupportedOperationException: genotype without attributes at {}:{}", variant.chromosome, variant.position);
+                        }
+                        continue;
                     }
-                    genotype.attributes.insert(REF_DEPTH.to_string(), median_depth.to_string());
+                    total_ref_depth = total_ref_depth.wrapping_add(median_depth);
+                    genotype.attributes.insert(ref_tag.to_string(), median_depth.to_string());
 
                     let variant_frags = genotype.attribute_as_int(TOTAL_FRAGS, 0)?;
-                    let ref_pair_depth = genotype.attribute_as_int(REF_DEPTH_PAIR, 0)?;
+                    let ref_pair_depth = genotype.attribute_as_int(ref_pair_tag, 0)?;
                     let total = variant_frags.wrapping_add(median_depth).wrapping_add(ref_pair_depth) as f64;
                     let af = if total > 0.0 { variant_frags as f64 / total } else { 0.0 };
                     genotype.attributes.insert(ALLELE_FRACTION.to_string(), vcf_double(af));
@@ -140,8 +169,8 @@ impl UnmappedRegionDepth {
                 }
             }
 
-            variant.info.insert(REF_DEPTH.to_string(), total_ref_depth.to_string());
+            variant.info.insert(ref_tag.to_string(), total_ref_depth.to_string());
         }
-        Ok(())
+        Ok(listed)
     }
 }

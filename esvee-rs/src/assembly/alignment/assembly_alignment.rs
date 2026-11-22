@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use crate::common::compat;
 use crate::assembly::alignment::breakend::BreakendP;
 use crate::assembly::assembly_utils::{extract_insert_sequence, has_unset_bases, reverse_complement_str};
 use crate::assembly::constants::ASSEMBLY_INFO_DELIM;
@@ -255,8 +256,12 @@ impl AssemblyAlignment {
             build_sequence_cigar(&mut sequence_cigar, CigarOp::M, next_len);
             if has_facing_at_end && i == assembly_count - 2 {
                 add_final_facing_extension_bases(next_assembly, &mut full_sequence, &mut sequence_cigar, current_seq_length, assembly_reversed, &assembly_links);
-                // as in Java, assigned rather than added
-                current_seq_length = next_assembly.extension_length();
+                // Java: assigned rather than added. The value is not read again: this is the last pass of the loop
+                if compat::java("A27") {
+                    current_seq_length = next_assembly.extension_length();
+                } else {
+                    current_seq_length += next_assembly.extension_length();
+                }
             }
             last_added_reversed = next_reversed;
         }

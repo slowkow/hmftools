@@ -354,10 +354,15 @@ The reference is Java with `-threads 1` in every step and `-XX:+UnlockExperiment
 ## 4. Java findings
 
 Numbered per step: P (prep), A (assembly), D (depth), C (caller). "Reproduced" means the port behaves
-the same way so that its output equals Java's; where Java stops with an exception, "reproduced as a
+the same way under `-java_compat`, so that its output equals Java's; where Java stops with an exception, "reproduced as a
 failure" means the port stops with status 1 at the same point. Where no observed effect is given, the
 finding comes from reading the code while porting and its effect on output was not measured; findings
 the notes mark explicitly as not observed say so.
+
+Since 2026-11-22 the port corrects most of these by default. A finding marked **Corrected by default**
+takes the corrected path unless `-java_compat` is given; what the corrected behaviour is and what it
+changes is in section 4.5. Every statement of sections 2, 3 and 5 about equality with Java is about
+the port run with `-java_compat`.
 
 ### 4.1 Prep
 
@@ -365,10 +370,10 @@ the notes mark explicitly as not observed say so.
 
 - **P3. `prep/DepthTracker.java:27`** `(int)ceil(regionLength / mWindowSize)` divides two integers, so
   `ceil` has nothing to round. The last partial window of a region (end of a chromosome, specific
-  regions) has no depth, and junctions there get depth 0. Reproduced.
+  regions) has no depth, and junctions there get depth 0. Reproduced. **Corrected by default** (4.5).
 - **P4. `prep/SpanningReadCache.java:69`** names a partition `position / partitionSize`, while
   partitions start at `1 + i * size` (`prep/ChromosomeTask.java:131`). The last base of a partition is
-  named as the next partition. Reproduced.
+  named as the next partition. Reproduced. **Corrected by default** (4.5).
 - **P5. `prep/CandidateBamWriter.java:195`** makes a new `PrepRead` for a read claimed from the cache
   BAM. Its filter flags are lost, so a read with a poly-G soft clip that
   `prep/ResultsWriter.java:256` (`filterBamRecord`) would hold back is written. Observed: Java's
@@ -378,20 +383,20 @@ the notes mark explicitly as not observed say so.
   (`prep/CandidateBamWriter.java:54`) and claims a cached read only when it lies on one of them; the
   in-memory mode finds candidates through the partitions the candidate itself points to. Observed on
   the smaller cut: `-no_cache_bam` writes one supplementary read more (85,731 against 85,730 tumor
-  records). Reproduced.
+  records). Reproduced. **Corrected by default** (4.5).
 - **P6. `prep/CandidateBamWriter.java:77`** files an unmapped candidate read under chromosome "-1";
   line 192 and the loop over `mChrJunctionReadIds` never open that file, so such reads are never
-  claimed. Reproduced.
+  claimed. Reproduced. **Corrected by default** (4.5).
 - **P8. `prep/DiscordantGroups.java:263`** adds a remote discordant junction to the list of the
   partition that found it, and it is written with that partition's chromosome
   (`prep/PartitionSlicer.java:255`). Observed on the small pair: 8 such junctions lie outside their
   partition, on the same chromosome, so they are only out of order. A remote region on another
   chromosome, which hotspot pairs allow, would be written under the wrong chromosome: from reading the
-  code, not observed. Reproduced.
+  code, not observed. Reproduced. **Corrected by default** (4.5).
 - **P10. `prep/ReadFilters.java:107-113`** A supplementary read with fewer than 40 aligned bases is
   always dropped: the score function returns -1 for it, and the last line tests
   `-1 < MIN_SUPP_CALC_ALIGNMENT_SCORE`. The test at line 104 (`alignedLength < 40 && hasLowMapQual`)
-  suggests that the map quality was meant to matter. Reproduced.
+  suggests that the map quality was meant to matter. Reproduced. **Corrected by default** (4.5).
 
 **Nondeterminism**
 
@@ -425,7 +430,7 @@ the notes mark explicitly as not observed say so.
 
 - **P2. `PrepReads` in `disc_stats.tsv`** (`prep/PrepApplication.java:76`) is the count taken before
   the cached candidate reads are written (line 81), so it is lower than the "records written to BAM"
-  log line. Reproduced.
+  log line. Reproduced. **Corrected by default** (4.5).
 - **P11. Output depends on read names.** `prep/JunctionTracker.java:259` iterates a
   `HashMap<String,..>` keyed by read id. Renaming the reads can change which read is a junction's
   `InitialReadId` and the order of tied BAM records. Not a fault as such. Reproduced, by emulating
@@ -437,44 +442,44 @@ the notes mark explicitly as not observed say so.
 
 - **A4. `assembly/phase/RemoteGroupBuilder.java:112`** A `Set<JunctionGroup>` uses
   `BaseRegion.equals/hashCode`, which look at start and end only. Junction groups with equal bounds on
-  different chromosomes collapse into one, and the iteration order follows that hash. Reproduced.
+  different chromosomes collapse into one, and the iteration order follows that hash. Reproduced. **Corrected by default** (4.5).
 - **A6. `assembly/types/Junction.java:223`** tests `otherSupportFragsIndex != null` but reads
-  `values[otherJuncFragsIndex]`: the null test is on the wrong column index. Reproduced.
+  `values[otherJuncFragsIndex]`: the null test is on the wrong column index. Reproduced. **Corrected by default** (4.5).
 - **A9. `assembly/types/RemoteRegion.java:129`** `addSoftClipMapQual(1, nextRegion.softClipMapQualTotal())`
   is inside the loop over the three read types, so the merged region gets the other region's soft-clip
-  map-quality total three times. Reproduced.
+  map-quality total three times. Reproduced. **Corrected by default** (4.5).
 - **A10. `assembly/SeqTechUtils.java:103`** In the second branch of `trimSbxUncertainBases`,
-  `trimCountStart` is computed with `fromStart` false. Reproduced.
+  `trimCountStart` is computed with `fromStart` false. Reproduced. **Corrected by default** (4.5).
 - **A11. `assembly/SeqTechUtils.java:39`** `PROXIMATE_JUNCTION_DISTANCE` is set to the value for
   unpaired reads (100) for every sequencing type; the assignment stands outside the branches for the
-  types. Reproduced.
+  types. Reproduced. **Corrected by default** (4.5).
 - **A12. `assembly/JunctionGroupAssembler.java:286`** `trimIlluminaAdapterBases` is called before mate
   links exist (`mateRead()` is null), so the adapter trim never happens in the application, only in
-  the unit test. Reproduced.
+  the unit test. Reproduced. **Corrected by default** (4.5).
 - **A13. `assembly/IndelBuilder.java:56`** The second soft-clip test repeats `junction.isForward()`
-  where reverse was meant, so left clips at reverse junctions are never counted. Reproduced.
+  where reverse was meant, so left clips at reverse junctions are never counted. Reproduced. **Corrected by default** (4.5).
 - **A14. `assembly/LineUtils.java:348,350`** `maxPostPolyAtLength` is assigned for each read, and the
   `max` at line 352 is taken against a variable that is always 0. The last read wins instead of the
-  maximum. Reproduced.
+  maximum. Reproduced. **Corrected by default** (4.5).
 - **A17. `common/CommonUtils.java:154`** (through `prep/ReadFilters.java:116`, `filterLowQualRead`):
   bases that are not ACGT are rewritten to N only up to the point where the low-quality count exits
-  early. Reproduced, in prep and in assembly.
+  early. Reproduced, in prep and in assembly. **Corrected by default** (4.5).
 - **A18. `assembly/alignment/Breakend.java:328`** `compareTo` passes `otherBreakend().Chromosome`
-  twice, so it never compares with the other breakend's mate chromosome. Reproduced.
+  twice, so it never compares with the other breakend's mate chromosome. Reproduced. **Corrected by default** (4.5).
 - **A19. `assembly/phase/ExtensionCandidate.java:94`** `secondJuncOffset` is computed from `first`, so
-  the two offsets always tie and the rule "favour a more precise link" never applies. Reproduced.
+  the two offsets always tie and the rule "favour a more precise link" never applies. Reproduced. **Corrected by default** (4.5).
 - **A20. `assembly/phase/PhaseSetBuilder.java:617-618`** `if(unmappedReads.isEmpty()) break;` ends
   `findUnmappedExtensions` at the first assembly without unmapped reads; `continue` may have been
-  meant. Reproduced.
+  meant. Reproduced. **Corrected by default** (4.5).
 - **A22. `assembly/output/AssemblyWriterUtils.java:199`** compares `repeat.totalLength()` with
-  `longest` (the repeat with the highest count) instead of `longestSequence`. Reproduced.
+  `longest` (the repeat with the highest count) instead of `longestSequence`. Reproduced. **Corrected by default** (4.5).
 - **A23. `assembly/phase/UnmappedBaseExtender.java:353`** `baseCounts[consensusNucIndex] = i` stores
-  the index of the read, not a count. Reproduced.
+  the index of the read, not a count. Reproduced. **Corrected by default** (4.5).
 - **A26. `assembly/alignment/AssemblyAligner.java:499-520`** `hasSuspectExtension` loops over the
-  assemblies but returns in the first iteration, so only the first assembly is examined. Reproduced.
+  assemblies but returns in the first iteration, so only the first assembly is examined. Reproduced. **Corrected by default** (4.5).
 - **A27. `assembly/alignment/AssemblyAlignment.java:371`**
   `currentSeqLength = nextAssembly.extensionLength()` is an assignment where the same variable is
-  accumulated with `+=` elsewhere in the method. Reproduced.
+  accumulated with `+=` elsewhere in the method. Reproduced. **Corrected by default** (4.5).
 
 **Nondeterminism**
 
@@ -492,7 +497,7 @@ the notes mark explicitly as not observed say so.
 - **A3. `assembly/phase/RemoteReadExtractor.java:59-62` with `assembly/phase/PhaseSetBuilder.java:119`**
   `resetCounts()` zeroes the "total" counters for every phase group, so the log line "remote reads
   extracted(N)" is the count of each task's last group. Observed: 0 at one thread, 629 and 635 at 8
-  threads. Reproduced (the one-thread value).
+  threads. Reproduced (the one-thread value). **Corrected by default** (4.5).
 - **A5. `hmf-common` `ReadIdTrimmer`** (the static `READ_ID_TRIMMER`, `assembly/AssemblyConfig.java:157`)
   is shared between threads without synchronisation. The first read name that does not fit the first
   read's prefix switches trimming off from then on, so read ids depend on processing order and on the
@@ -511,7 +516,7 @@ the notes mark explicitly as not observed say so.
 - **A32. Visualiser writes nothing without a reference sample.** `AssemblyVisualiser.java:215` calls
   `mConfig.ReferenceIds.get(0)`, which throws `IndexOutOfBoundsException` in a tumor-only run, for
   every assembly; likewise `TumorIds.get(0)` in a germline-only run. The exception is caught as in
-  A31, so `-run_assembly_vis` gives no files in those modes. Reproduced.
+  A31, so `-run_assembly_vis` gives no files in those modes. Reproduced. **Corrected by default** (4.5).
 - **A33. `assembly/vis/AssemblyVisualiser.java:553-562,606`** (visualiser) Only the soft clip on the
   breakend's side is taken off the alignment's cigar, but the assembly bases passed with it are the
   aligned part alone. For an alignment clipped at both ends (the middle of a chain) the remaining clip
@@ -519,10 +524,10 @@ the notes mark explicitly as not observed say so.
   `BaseSeqViewModel.java:183`, and no file for that assembly alignment. Seen for 4 of 8 chains of the
   small pair and 3 of the SBX case (one more SBX chain fails two lines earlier, at `:179`, on a matched
   base); this is the cause as read from the code and the stack trace.
-  Reproduced (no file).
+  Reproduced (no file). **Corrected by default** (4.5).
 - **A34. `assembly/vis/ReadViewModel.java:401-402`** (visualiser) `handleHomology` is passed `readBases`
   for both the bases and the base qualities, so reads drawn across a homology are shaded by the
-  character codes of their bases, which are all above the cut-off: no quality shading. Reproduced.
+  character codes of their bases, which are all above the cut-off: no quality shading. Reproduced. **Corrected by default** (4.5).
 - **A35. Visualiser: objects changed while drawing.** `AssemblyVisualiser.java:568,575` reverses
   `AlignData.cigarElements()` (the alignment's own list, or a `subList` view of it) and
   `ReadViewModel.java:387,389-398` reverses `Read.cigarElements()` (when the read has no recorded
@@ -530,7 +535,7 @@ the notes mark explicitly as not observed say so.
   written, but an alignment that is the first segment of two breakends, or a read drawn twice, is
   seen changed the second time. The port keeps these lists per object for the length of the
   visualiser run, as Java does. In the 96 files compared it made no difference: a build that started
-  from the unchanged lists every time wrote the same files.
+  from the unchanged lists every time wrote the same files. **Corrected by default** (4.5).
 - **A36. Visualiser, small things.** The rows REF and REFPAIR hold the text `TODO` and DP is always 0
   (`AssemblyVisualiser.java:337-341`). Breakends are paired in the poll order of a `PriorityQueue`
   (`:732-735`), which for breakends on the same alignment is the order of the heap; reproduced.
@@ -543,13 +548,13 @@ the notes mark explicitly as not observed say so.
 
 - **A24. `assembly/alignment/BreakendBuilder.java:600-607`** A null `homology` is logged and then
   dereferenced (`homology.invert`) when both alignments are reverse: a NullPointerException, caught by
-  the caller, which leaves the breakends formed so far. Reproduced.
+  the caller, which leaves the breakends formed so far. Reproduced. **Corrected by default** (4.5).
 
 **Oddity**
 
 - **A7. `assembly/AssemblyConfig.java:341`** `AssemblyLogAllReads` is set from the flag
   `asm_build_debug`. The flag `asm_log_all_reads` (lines 148 and 423) is registered and never read.
-  Reproduced.
+  Reproduced. **Corrected by default** (4.5).
 - **A8. `assembly/types/ReadAssemblyIndices.java:32`** `isValid()` returns
   `ReadIndexStart == INVALID_INDEX`, which is inverted. No caller of it was found in the ESVEE source.
 - **A15. `assembly/SequenceBuilder.java:758-790`** `findConsensusNextBases` keys a `HashMap` by `byte[]`
@@ -557,12 +562,12 @@ the notes mark explicitly as not observed say so.
   result was analysed as independent of order, but the code is fragile. Reproduced.
 - **A16. `assembly/SequenceCompare.java:211`**
   `firstIndex += checkForwards ? expectedRepeatBaseDiff : expectedRepeatBaseDiff`: both arms are the
-  same. Reproduced.
+  same. Reproduced. **Corrected by default** (4.5).
 - **A21. `assembly/phase/PhaseSetBuilder.java:843,846`** `candidateSupport().subList(...)` is a live
-  view of the list, not a copy as the surrounding code assumes. Reproduced.
+  view of the list, not a copy as the surrounding code assumes. Reproduced. **Corrected by default** (4.5).
 - **A25. `assembly/alignment/AlignmentFilters.java:232`** `AlignmentOrderComparator` returns -1 for
   equal keys, so it is not a consistent comparator; the resulting order then depends on the sort
-  algorithm. Reproduced with a port of TimSort.
+  algorithm. Reproduced with a port of TimSort. **Corrected by default** (4.5).
 - **A28. Test utilities** pass the mapping quality as `SAMRecordSetBuilder`'s default base quality, so
   test records have MAPQ 255. The ported tests keep this.
 - **A29. `assembly/ReadParseState.java:510`** `mismatchPenalty()` sums with `DoubleStream.sum()`, which
@@ -581,21 +586,21 @@ the notes mark explicitly as not observed say so.
   above, a mate on the same sequence counts as elsewhere: no mate is awaited and ref-pair support is
   lost. Chromosomes 1-22, X and Y of the usual references are not affected (index below 25). Observed
   on synthetic data: the same reads with one contig at index 132 give `REFPAIR` summing to 89 instead
-  of 7,150 over 86 variants; 79 of 86 records differ. Reproduced.
+  of 7,150 over 86 variants; 79 of 86 records differ. Reproduced. **Corrected by default** (4.5).
 - **D2. `depth/DepthAnnotator.java:116-119`** copies each record with
   `.filters(variantContext.getFilters())`. For a record whose FILTER is "." `getFilters()` is an empty
   set, not null, so every unfiltered record is written as PASS. Observed: all 2,425 records of the
-  small input. Reproduced.
+  small input. Reproduced. **Corrected by default** (4.5).
 - **D3. `depth/DepthAnnotator.java:362`** `x.containsPosition(variant.getStart())` tests only the
   position against the poly-G regions, not the chromosome, so a variant on any chromosome at those
   positions is dropped. Observed on a synthetic set: 42 of 577 records dropped across five chromosomes.
-  Reproduced.
+  Reproduced. **Corrected by default** (4.5).
 - **D4. `depth/DepthAnnotator.java:145-157` and `233-242`** go over `HumanChromosome` names only.
   Records on any other contig are dropped from the output without a message, while "loaded N variants"
-  counts them. Observed on a synthetic set. Reproduced.
+  counts them. Observed on a synthetic set. Reproduced. **Corrected by default** (4.5).
 - **D5. `depth/DepthAnnotator.java:107-112`** starts a new list whenever the chromosome changes,
   replacing an earlier one: a chromosome that appears in two blocks loses the first block. Observed on
-  a synthetic set. Reproduced.
+  a synthetic set. Reproduced. **Corrected by default** (4.5).
 - **D6. The counts depend on `-proximity_distance`.** Whether a mate is awaited depends on the slice
   end (`depth/DepthTask.java:356-357`), and the single-read path on the size of the group
   (`depth/DepthTask.java:404`). Observed on the small input: against the default, 185 of 2,425 records
@@ -604,42 +609,42 @@ the notes mark explicitly as not observed say so.
   capped variant is only dropped from the list when the scan at `depth/DepthTask.java:316-338` meets
   it before finding a relevant variant; `depth/DepthTask.java:325` then lowers `MinPositionIndex` by
   one whatever the dropped variant's index. Observed at `-vaf_cap 0.05`: 223 of 4,850 sample genotypes
-  end over their cap, 17 by more than half. Reproduced.
+  end over their cap, 17 by more than half. Reproduced. **Corrected by default** (4.5).
 
 **Crash**
 
 - **D8. `depth/UnmappedRegionDepth.java:52/62/104/108`** go over all genotypes of the record
   (`getNSamples`) but size their lists by the number of configured samples. With fewer samples
   configured than the VCF has, and `-unmap_regions`: IndexOutOfBoundsException. Observed with a
-  tumor-only run on a two-sample VCF. Reproduced as a failure.
+  tumor-only run on a two-sample VCF. Reproduced as a failure. **Corrected by default** (4.5).
 - **D9. `depth/UnmappedRegionDepth.java:113`** writes into the attribute map of a genotype that has no
   attributes; that map is htsjdk's shared unmodifiable one: UnsupportedOperationException. Observed on
-  a synthetic set. Reproduced as a failure.
+  a synthetic set. Reproduced as a failure. **Corrected by default** (4.5).
 - **D10. `depth/DepthConfig.java:73-74` with `common/FileCommon.java:86`** Without `-sample` (or
   `-bam_file`) the tumor and reference options of the other steps are looked up, which this step does
   not register: NullPointerException. Both options are in effect required although registered as
-  optional (`depth/DepthConfig.java:119`). Reproduced as a failure.
+  optional (`depth/DepthConfig.java:119`). Reproduced as a failure. **Corrected by default** (4.5).
 - **D11. `depth/DepthAnnotator.java:209` and `222`** With `-vcf_tag_prefix` the header lines for the
   prefixed tags are only added when the input already has REF/REFPAIR lines. On a raw assembly VCF the
   writer stops at the first record ("Key PFX_REFPAIR ... isn't defined in the VCFHeader") and leaves a
   truncated `.vcf.gz`. Reproduced as a failure; the port leaves a complete header-only file and names
-  the other tag in its message.
+  the other tag in its message. **Corrected by default** (4.5).
 - **D12. CRAM 3.1.** htsjdk 2.23.0 cannot read it ("CRAM version 3.1 is not supported"); it is the
   default of current samtools. Not reproduced: the port reads it.
 
 **Oddity**
 
 - **D13. `common/FileCommon.java:177`** Without `-output_dir` the file name starts with the text
-  "null" (`null<sample>.esvee.ref_depth.vcf.gz` in the working directory). Reproduced.
+  "null" (`null<sample>.esvee.ref_depth.vcf.gz` in the working directory). Reproduced. **Corrected by default** (4.5).
 - **D14. `depth/DepthConfig.java:99-103`** `-specific_chr` is registered and never read. An invalid
   `-specific_regions` logs "failed to load specific regions" and the run goes on unrestricted.
-  Reproduced.
+  Reproduced. **Corrected by default** (4.5).
 - **D15. `depth/DepthAnnotator.java:134`** The warning has one placeholder and two arguments, so it
-  prints the record count where the file name was meant. Reproduced.
+  prints the record count where the file name was meant. Reproduced. **Corrected by default** (4.5).
 - **D16. `depth/UnmappedRegionDepth.java`** uses the tag REF throughout (lines 55, 107, 113, 130), not
   the tag with the `-vcf_tag_prefix`: with a prefix it reads and rewrites the input's REF values. A
   variant is added once per qualifying sample (line 68), so "setting ref depth to median for N
-  variants" counts some twice. Reproduced.
+  variants" counts some twice. Reproduced. **Corrected by default** (4.5).
 - **D17. `hmf-common` `BamUtils.java:21`** describes `-bam_validation` as "STRICT (default)"; the
   default is SILENT (line 24).
 - **D18. Dead code.** `depth/DepthTask.java:391-394`: the inner `if` has no effect, since both paths
@@ -656,21 +661,21 @@ the notes mark explicitly as not observed say so.
 - **C2. `caller/VariantFilters.java:219`** For a single breakend paired with a LINE breakend,
   `breakend.lineSiteBreakend().fragmentCount(genotype)` is given the first breakend's genotype, and
   the method only reads its argument. The breakend's own fragment count is added twice instead of the
-  pair's being added. Reproduced.
+  pair's being added. Reproduced. **Corrected by default** (4.5).
 - **C5. `caller/CallerApplication.java:360-372`** `-manual_ref_depth` is only applied when there is a
   reference sample: a tumor-only run gets the two FORMAT header lines and no values. A reference-only
   run dies with a NullPointerException at line 368, because the tumor id is empty. Both observed.
-  Reproduced, the second as a failure.
+  Reproduced, the second as a failure. **Corrected by default** (4.5).
 - **C6. `caller/VcfWriter.java:148` and `caller/BreakendWriter.java:108`** Output is driven by
   `HumanChromosome.values()` renamed for `-ref_genome_version`. With version 37 and a VCF whose contigs
   are named with `chr`, nothing matches and the three VCFs are written header-only, with exit code 0
-  and no warning. Observed. Reproduced.
+  and no warning. Observed. Reproduced. **Corrected by default** (4.5).
 - **C11. `hmf-common` `.../sv/RepeatMaskAnnotations.java:162-166` and
   `.../region/BedFileReader.java:132-137`** A chromosome that appears again after another one starts a
   new list that replaces the first, so earlier entries are lost without a message (repeat mask, target
-  regions BED). Reproduced.
+  regions BED). Reproduced. **Corrected by default** (4.5).
 - **C14. `caller/SvDataCache.java:61`** A breakend on a contig outside chr1-22/X/Y is skipped, so its
-  mate stays unmatched and is dropped with only the summary warning. Reproduced.
+  mate stays unmatched and is dropped with only the summary warning. Reproduced. **Corrected by default** (4.5).
 
 **Nondeterminism**
 
@@ -684,33 +689,33 @@ the notes mark explicitly as not observed say so.
 - **C4. `caller/VcfWriter.java:223-225` with `hmf-common` `.../variant/GenotypeIds.java:89`** A sample
   id that is only a substring of the VCF's sample name is accepted by `fromVcfHeader`, but the writer
   looks the genotype up by the configured id and dies with a NullPointerException after all the work,
-  leaving empty output files. Observed. Reproduced as a failure: exit 1, files left empty.
+  leaving empty output files. Observed. Reproduced as a failure: exit 1, files left empty. **Corrected by default** (4.5).
 - **C12. `prep/types/DiscordantStats.java:245-255`** returns null when the file cannot be parsed, and
-  `caller/VariantFilters.java:111` dereferences it. Reproduced as a failure.
+  `caller/VariantFilters.java:111` dereferences it. Reproduced as a failure. **Corrected by default** (4.5).
 - **C13. `caller/HotspotCache.java:146`** A hotspot file that cannot be read is logged and the run
   goes on without hotspots, while a line with too few fields is an uncaught
-  ArrayIndexOutOfBoundsException. Reproduced, the second as a failure.
+  ArrayIndexOutOfBoundsException. Reproduced, the second as a failure. **Corrected by default** (4.5).
 - **C16. `hmf-common` `.../genome/chromosome/HumanChromosome.java:105`** `contains("")` (or `"chr"`)
-  throws NumberFormatException, because an empty string counts as numeric. Reproduced as a failure.
+  throws NumberFormatException, because an empty string counts as numeric. Reproduced as a failure. **Corrected by default** (4.5).
 
 **Oddity**
 
 - **C3. `caller/Variant.java:220`** `x.vcfTag().equals(x)` compares a String with the enum value and is
   never true, so `addExistingFilters` adds nothing. The filters are picked up later by
   `VariantFilters.applyExistingFilters`, except `dedup`, which that method skips on purpose.
-  Reproduced.
+  Reproduced. **Corrected by default** (4.5).
 - **C7. `caller/CallerConfig.java:141`** registers `-specific_regions`; line 82 only reads
   `-specific_chr`. The option is accepted and ignored. Observed: the run equals the standard run.
-  Reproduced.
+  Reproduced. **Corrected by default** (4.5).
 - **C8. `common/FileCommon.java:177`** Without `-output_dir` the directory is null and string
   concatenation makes file names like `null<sample>.esvee.somatic.vcf.gz` in the working directory;
-  the default prep directory and input VCF get the same prefix. The same as D13. Reproduced.
+  the default prep directory and input VCF get the same prefix. The same as D13. Reproduced. **Corrected by default** (4.5).
 - **C9. `caller/CallerApplication.java:186-187`** The germline-mode log line prints the tumor ordinal
-  and id under `ref(...)` and the reference's under `tumor(...)`. Reproduced.
+  and id under `ref(...)` and the reference's under `tumor(...)`. Reproduced. **Corrected by default** (4.5).
 - **C10. `caller/CallerApplication.java:114`** "missing input files: disc-stats and frag-lengths"
   passes the two file names without placeholders, so they are not shown. The files are looked up under
   the tumor id, or under the reference id in a reference-only run, which the message does not say
-  either. Reproduced.
+  either. Reproduced. **Corrected by default** (4.5).
 - **C15. Unused and dead code.** `common/FilterType.java` `SGL_STRAND_BIAS` and
   `caller/FilterConstants.java` `PolyGcRegions` are never used by the caller.
   `assembly/SequenceCompare.java:476-501`: `lastRepeatSkipBases` is never set, so its branch is dead.
@@ -719,6 +724,182 @@ the notes mark explicitly as not observed say so.
 - **C17. Test code, `esvee/src/test/.../caller/CallerTestUtils.java:40`** `new GenotypeIds(0, 10, ...)`
   with two genotypes: `VariantContext.getGenotype(10)` is null, so every test variant has no tumor
   genotype and the tests run the reference-only paths. The ported tests keep this.
+
+### 4.5 Corrections
+
+61 of the findings above are corrected by default. Each corrected place in the code asks
+`compat::java("<id>")` (`src/common/compat.rs`) and keeps the Java path beside the corrected one.
+
+- `-java_compat`, or `ESVEE_JAVA_COMPAT=1` in the environment: Java behaviour for every finding.
+- `-java_compat_except A12,P10` (or `ESVEE_JAVA_COMPAT_EXCEPT`): Java behaviour for every finding but
+  those listed. The effects below were measured this way, one finding at a time against `-java_compat`.
+
+"Small pair" effects are counts of VCF records or BAM records gone / new / changed in value. "Intent
+uncertain" marks a correction where the Java code allows more than one reading; the reading taken and
+the alternatives are given. These in particular should be confirmed with the ESVEE authors.
+
+**Prep**
+
+| Id | Corrected behaviour | Effect, small pair |
+|---|---|---|
+| P2 | `disc_stats.tsv` is written after the cached candidate reads, so `PrepReads` is the number of records written | one value |
+| P3 | the window count is rounded up; the last partial window is averaged over its own length | none; on a cut with a region ending in a partial window one junction's depth goes from 0 to 195 |
+| P4 | a partition is named `(position - 1) / size` | none on any input, also at partition sizes 10,000 and 1,000 |
+| P5 | reads claimed from the cache BAM keep their filters, and the cache-BAM mode claims by the rule of the in-memory mode (`-no_cache_bam`), taken as the intended one | tumor BAM 19 records gone (8 poly-G), 69 supplementary new; normal 10 gone, 31 new; one INFO value in one VCF record |
+| P6 | unmapped candidate reads are claimed | 4 tumor and 1 normal record new |
+| P8 | a remote discordant junction outside the finding partition is written under its own chromosome, in position order | 8 junction rows move; the file is in order |
+| P10 | **intent uncertain.** The repeat-trimmed score is calculated for a supplementary of any aligned length, then Java's three rules apply as written. Alternatives: keep every supplementary under 40 aligned bases with mapping quality 10 or more (the README's wording; about 110 more records, the same new sites), or Java's behaviour is meant and the first rule is dead code | junction rows 17,951 to 18,064 (7 sites gone, 120 new); about 5,100 records new in each BAM; final VCFs: unfiltered 2,425 to 2,441 (33 gone, 49 new), somatic 31 to 33, germline 1,516 to 1,524 |
+| A17 (prep site) | every base that is not A, C, G, T or N becomes N, also past the early exit | none (no such base in a kept read) |
+
+With P5 corrected the cache-BAM mode and `-no_cache_bam` write the same reads on the small pair; they
+still differ in the order of records that tie on position and strand.
+
+**Assembly**
+
+| Id | Corrected behaviour | Effect, small pair (raw VCF gone / new / changed) |
+|---|---|---|
+| A3 | the log line shows the total over all phase groups | log only |
+| A4 | junction groups with equal bounds on different chromosomes stay distinct | none on four inputs |
+| A6 | the null test is on the column that is read | none (prep writes both columns) |
+| A9 | the merged region gets the other region's soft-clip total once (intent uncertain on the weight, kept at 1) | none on four inputs |
+| A10 | the SBX start trim is found from the start | none; SBX input: 3 records changed |
+| A11 | the proximate junction distance is 100 only for unpaired reads | 2 / 3 / 5 |
+| A12 | **intent uncertain.** The Illumina adapter trim runs once mate links exist, for mapped pairs that face each other and overlap. Java's rule as written would also take pairs facing away from each other, where the computed trim is longer than the read and the read is dropped (5,463 reads dropped instead of 324; raw VCF 2,425 to 2,401) | 12,255 reads trimmed, 324 dropped; 54 / 65 / 326 |
+| A13 | left clips are counted at reverse junctions | 14 / 21 / 44 |
+| A14 | the maximum over the reads is taken | 0 / 1 / 0 |
+| A16 | the backwards arm steps the other way | none possible (every caller checks forwards) |
+| A17 | as in prep, at the assembly site | none on three inputs |
+| A18 | the comparison uses the other breakend's mate chromosome | none on four inputs |
+| A19 | the second offset comes from the second junction | none on four inputs |
+| A20 | **intent uncertain.** `continue` instead of `break`: an assembly without unmapped reads is skipped and the rest are still tried | 16 / 15 / 6 |
+| A21 | the reads are removed once | none |
+| A22 | the repeat is compared with the longest so far | only with `-assembly_detailed_tsv`: 1,872 rows, one column |
+| A23 | the base count is a count of reads | 7 / 9 / 8 |
+| A24 | intent uncertain. A null homology is not inverted; the pair is formed without homology | none; the null is never reached on four inputs |
+| A25 | intent uncertain (Java defines no tie-break). Equal keys compare equal and keep the aligner's order | 3 / 0 / 0 |
+| A26 | every assembly of the alignment is examined | none on four inputs |
+| A27 | `+=` | none possible (the value is not read again) |
+| A7 | `AssemblyLogAllReads` is set from `-asm_log_all_reads` | none (nothing reads it) |
+| A32 | the visualiser runs without a reference sample or without a tumor sample (heading text chosen by the port) | files written where Java writes none: 9, 6 and 10 in three cases |
+| A33 | clips at both ends are taken off the alignment's cigar | all chain files Java failed on are written (4 and 3 more files) |
+| A34 | base qualities are passed where they belong | shading changes in 3 to 24 files per case |
+| A35 | each drawing starts from unchanged lists | none |
+
+All assembly corrections together on the small pair, later steps in Java mode: raw VCF 2,425 to 2,441
+(95 gone, 111 new, 380 changed in value); somatic the same 31 records; germline 1,516 to 1,519.
+
+**Depth**
+
+| Id | Corrected behaviour | Effect |
+|---|---|---|
+| D1 | reference indexes are compared by value | small pair none; synthetic sets with contigs at index 128 and above: 181 to 215 records per set, equal to Java's result for the same reads on low indexes |
+| D2 | a record with FILTER `.` keeps `.` | all 2,425 records, FILTER only; the caller reads both alike |
+| D3 | a poly-G region applies on its own chromosome only | small pair none; synthetic: 10 records kept |
+| D4 | records on other contigs are annotated and written, after the human chromosomes, in order of first appearance | small pair none; synthetic: 6 records kept |
+| D5 | all blocks of a chromosome are kept, merged by position | small pair none; synthetic: 132 records kept |
+| D7 | **intent uncertain.** The cap bounds the counting | none at the default cap; at `-vaf_cap 0.05` 230 records change and genotypes over their cap go from 223 to 2 |
+| D8, D9 | the unmapped-region step goes over the configured samples and leaves a genotype without values alone | runs that failed complete |
+| D10 | `-sample` and `-bam_file` are required options with a plain message | message |
+| D11 | header lines of the prefixed tags are added when missing | a run that failed completes |
+| D13 | without `-output_dir` files go to the current directory, without `null` in the name | file name |
+| D14 | `-specific_chr` is honoured; an invalid `-specific_regions` stops the run | as described |
+| D15 | the warning names the file | log text |
+| D16 | the unmapped-region step uses the prefixed tags and lists a variant once | log count 20 to 10; with a prefix on a VCF that has REF, 10 records change |
+
+D6 is not corrected. The dependence on `-proximity_distance` has two causes: a supplementary read is
+only awaited from the first variant's position although the slice starts 1,100 bases earlier, and a
+read whose mate lies beyond the slice end is counted alone at once. Correcting the first changes 108
+records at the default distance and still leaves 6, 2 and 9 records depending on the distance; the
+second cannot be corrected within the streaming scheme. A result independent of the slicing needs a
+redesign of the step.
+
+**Caller**
+
+| Id | Corrected behaviour | Effect |
+|---|---|---|
+| C2 | the paired LINE breakend's fragment count is added | no line on the small pair or the whole genome: the path is taken for 70 and 293 genotypes, the decision never changes |
+| C3 | intent uncertain. `addExistingFilters` works, `dedup` left out as `applyExistingFilters` does | none by construction; keeping `dedup` from the input would change 2 records of a synthetic input |
+| C4 | a sample id is the VCF sample of exactly that name, else one error before any work | error at once instead of after the run |
+| C5 | `-manual_ref_depth` applies to each sample of the run that has no depth | tumor-only: values set, 16 already filtered records gain filters; reference-only: completes |
+| C6 | when no contig of the input is named as `-ref_genome_version` names them, the run stops with an error | exit 1 instead of three header-only VCFs |
+| C7 | `-specific_regions` is honoured | as described |
+| C8 | without `-output_dir` files go to the current directory | file name |
+| C9, C10 | log text | log text |
+| C11 | a chromosome that appears again keeps its earlier entries (target regions, repeat mask) | shuffled target BED: 161 regions kept instead of 57; germline 76 to 192 records, equal to the run with the ordered file |
+| C12, C13 | an unusable discordant-stats or hotspot file is one error line; an unreadable hotspot file stops the run | message, and exit 1 where Java ran without hotspots |
+| C14 | intent uncertain. Same variants as Java; breakends left out because their mate is on another contig are counted and warned about on their own | log only |
+| C16 | an empty contig name is not a chromosome | no exception |
+
+On the standard runs (small pair, whole genome) no caller correction changes a line.
+
+**Not corrected**
+
+- Emulations of Java's iteration and sort order, kept in both modes because they are not faults of the
+  result and the port is already deterministic: A1, A5, A15, A29, P11.
+- Already different from Java in both modes: P1, P7, P9, A2, A30, C1, D12, D19.
+- D6 (above). A31 and A36 (single breakends and the `TODO` rows of the visualiser: features that do
+  not exist, not faults). A8, C15, D17, D18 (dead code or text in Java). A28, C17 (Java test
+  utilities; the ported tests keep them, new tests use valid values).
+
+**Found while correcting, not numbered, behaviour unchanged**
+
+- Prep: discordant junctions never get a depth (all 267 such rows of the small pair have depth 0,
+  because depth is set before they are made); partition names do not fit the partitions under
+  `-specific_regions`.
+- Depth: the unmapped-region step treats an allele fraction of 0/0 as high.
+- Caller: the filters go over every genotype of the record, so a tumor-only run on a two-sample VCF
+  also uses the normal's counts (from reading the code, not measured). Whether the PON readers lose
+  entries as the BED reader did (C11) was not checked.
+- Assembly visualiser: two assembly alignments with the same description write the same file name and
+  the later one replaces the earlier.
+
+**Tests of the corrections**
+
+Unit tests cover 46 of the 61 corrections. Without one: P2, A3, A7, A14, A16,
+A20, A21, A23, A24, A25, A26, A27, A34 (each needs a built assembly, a drawing or a run), C9, C10
+(log text). Those are covered by the runs only.
+
+**Whole genome**
+
+The Illumina tumor/normal pair of section 2.6, 8 threads. With `-java_compat` the merged binary gives
+the stored Java-identical result again in every file compared (the three prep TSVs, raw, unfiltered,
+somatic and germline VCFs).
+
+| Output | `-java_compat` | Corrected (default) |
+|---|---|---|
+| prep BAM records, tumor / normal | 16,658,562 / 20,377,496 | 16,908,142 / 20,585,444 |
+| junction rows | 503,832 | 506,913 |
+| unfiltered VCF records | 52,061 | 52,228 |
+| somatic VCF records | 3,072 | 3,140 |
+| germline VCF records | 35,338 | 35,343 |
+
+Sites are compared by chromosome, position and ALT; ids and assembly numbers shift with any change,
+so "changed in value" is not counted here. Unfiltered VCF: 2,795 sites gone and 2,887 new. Somatic,
+by position of passing breakends: 2,952 to 2,987; 186 positions gone and 221 new, of which 35 and 60
+have no passing breakend within 10 bases in the other run (the rest moved by a few bases).
+
+One correction at a time against `-java_compat` (assembly corrections on the same prep output; P10
+through the whole chain):
+
+| Correction | Unfiltered sites gone / new | Somatic records | Germline records |
+|---|---|---|---|
+| P10 | 1,171 / 1,356 | 3,072 to 3,149 | 35,338 to 35,474 |
+| A12 | 693 / 570 | 3,080 | 35,291 |
+| A23 | 503 / 540 | 3,072 | 35,348 |
+| A13 | 309 / 296 | 3,082 | 35,229 |
+| A25 | 81 / 14 | 3,072 | 35,318 |
+| A20 | 69 / 86 | 3,076 | 35,362 |
+| A11 | 52 / 133 | 3,072 | 35,374 |
+| A14 | 18 / 7 | 3,072 | 35,328 |
+| all assembly, depth and caller corrections, prep as Java | 1,741 / 1,638 | 3,063 | 35,212 |
+
+P10 alone accounts for most of the change in somatic calls (174 passing positions gone, 215 new; 37
+and 55 without a neighbour within 10 bases). Which of the two sets of calls is better was not
+assessed: there is no truth set for this sample.
+
+Time and memory, corrected against `-java_compat`: prep 761 s / 8.3 GB against 705 s / 5.2 GB;
+assembly 119 s / 7.2 GB against 118 s / 7.2 GB; depth and caller unchanged. The prep increase comes
+from the corrected claiming of cached reads (P5, P6): with P10 alone prep takes 674 s and 5.1 GB.
 
 ## 5. Performance
 

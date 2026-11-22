@@ -340,6 +340,9 @@ pub struct JunctionTracker {
     remote_candidate_groups: Vec<GroupId>,
     candidate_discordant_groups: Vec<GroupId>,
     pub junctions: Vec<JuncId>,
+    /// discordant junctions at a remote region outside the partition, kept apart from `junctions` when
+    /// finding P8 is corrected
+    pub outside_junctions: Vec<JuncId>,
     recent_junction_index: i32,
     trimmer: ReadIdTrimmer,
     pub initial_supporting_frags: i32,
@@ -367,6 +370,7 @@ impl JunctionTracker {
             remote_candidate_groups: Vec::new(),
             candidate_discordant_groups: Vec::new(),
             junctions: Vec::new(),
+            outside_junctions: Vec::new(),
             recent_junction_index: INVALID_JUNC_INDEX,
             trimmer,
             initial_supporting_frags: 0,
@@ -1149,8 +1153,23 @@ impl JunctionTracker {
                 other_chr
             );
         }
+        let java_p8 = crate::common::compat::java("P8");
         for jid in first..self.jstore.len() {
-            self.add_discordant_junction(jid as JuncId);
+            let j = &self.jstore[jid];
+            if let (false, Some(chr)) = (java_p8, j.outside_chr) {
+                // Java: the junction joins this partition's list, is matched against the junctions here by
+                // position alone and is written under this partition's chromosome
+                let (position, orient) = (j.position, j.orient);
+                let known = self.outside_junctions.iter().any(|&o| {
+                    let x = &self.jstore[o as usize];
+                    x.outside_chr == Some(chr) && x.position == position && x.orient == orient
+                });
+                if !known {
+                    self.outside_junctions.push(jid as JuncId);
+                }
+            } else {
+                self.add_discordant_junction(jid as JuncId);
+            }
         }
     }
 
@@ -1182,6 +1201,13 @@ impl JunctionTracker {
             let j = &mut self.jstore[jid as usize];
             j.saga_match = saga.match_junction(&chr, j.position, j.orient);
         }
+        // the matcher covers this chromosome around the partition only
+        for &jid in &self.outside_junctions {
+            let j = &mut self.jstore[jid as usize];
+            if j.outside_chr == Some(self.region.chr) {
+                j.saga_match = saga.match_junction(&chr, j.position, j.orient);
+            }
+        }
     }
 
     /// formUniqueAssignedGroups: the groups of the junctions, each once, then the expected groups
@@ -1189,7 +1215,7 @@ impl JunctionTracker {
         let mut junction_groups: Vec<GroupId> = Vec::new();
         // Java keeps a set of read ids; the groups of the map have distinct ids
         let mut seen = vec![false; self.groups.len()];
-        for &jid in &self.junctions {
+        for &jid in self.junctions.iter().chain(&self.outside_junctions) {
             let j = &self.jstore[jid as usize];
             for &gid in j.junction_groups.iter().chain(&j.supporting_groups).chain(&j.exact_support_groups) {
                 if !std::mem::replace(&mut seen[gid as usize], true) {

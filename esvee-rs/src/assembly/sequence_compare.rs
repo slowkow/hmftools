@@ -1,6 +1,7 @@
 //! SequenceCompare: compares two base sequences allowing for low quality bases, short indels and repeat
 //! count differences.
 
+use crate::common::compat;
 use crate::assembly::assembly_utils::bases_match_qual;
 use crate::assembly::common_utils::{below_min_qual, is_medium_base_qual};
 use crate::assembly::constants::*;
@@ -151,8 +152,9 @@ fn compare_sequences_mismatch_spec(
         if expected_repeat_base_diff != 0 {
             last_repeat_skip_bases = 0;
             if expected_repeat_base_diff > 0 {
-                // as in Java, the same step in both directions
-                first_index += expected_repeat_base_diff;
+                // Java: the same step whether checking forwards or backwards (both arms of the conditional are
+                // equal). Every caller checks forwards, so the backwards arm is never taken
+                first_index += if check_forwards || compat::java("A16") { expected_repeat_base_diff } else { -expected_repeat_base_diff };
             } else {
                 second_index += if check_forwards { -expected_repeat_base_diff } else { expected_repeat_base_diff };
             }

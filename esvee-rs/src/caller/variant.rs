@@ -298,7 +298,7 @@ impl Variant {
         let position = context.pos;
         let start = Breakend::new(true, context, position, orient, reference_ordinal, tumor_ordinal);
         let original_junctions = parse_original_junctions(&start.context);
-        Variant {
+        let mut variant = Variant {
             sv_type,
             breakends: [Some(start), None],
             qual,
@@ -311,6 +311,30 @@ impl Variant {
             filters: FilterSet::default(),
             is_saga_matched,
             original_junctions,
+        };
+        variant.add_existing_filters();
+        variant
+    }
+
+    /// Variant.addExistingFilters: the filters the records already carry, from the construction of
+    /// the variant on. `dedup` is left out, as VariantFilters.applyExistingFilters leaves it out on
+    /// purpose: the caller works duplicates out itself.
+    fn add_existing_filters(&mut self) {
+        // Java (C3): compares the tag with the enum value instead of the filter string, so nothing is added
+        if crate::common::compat::java("C3") {
+            return;
+        }
+        let mut existing = FilterSet::default();
+        for breakend in self.breakends.iter().flatten() {
+            for filter in &breakend.context.filters {
+                match FilterType::from_vcf_tag(filter) {
+                    Some(filter_type) if filter_type != FilterType::Duplicate => existing.add(filter_type),
+                    _ => {}
+                }
+            }
+        }
+        for filter in existing.iter() {
+            self.filters.add(filter);
         }
     }
 
@@ -354,7 +378,7 @@ impl Variant {
         let end = Breakend::new(false, leg_end, pos_end, end_orient, reference_ordinal, tumor_ordinal);
         let original_junctions = parse_original_junctions(&start.context);
 
-        Variant {
+        let mut variant = Variant {
             sv_type,
             breakends: [Some(start), Some(end)],
             qual,
@@ -367,7 +391,9 @@ impl Variant {
             filters: FilterSet::default(),
             is_saga_matched,
             original_junctions,
-        }
+        };
+        variant.add_existing_filters();
+        variant
     }
 
     pub fn is_sgl(&self) -> bool {
@@ -554,6 +580,22 @@ pub struct GenotypeIds {
 impl GenotypeIds {
     pub fn from_vcf_header(samples: &[String], reference_id: Option<&str>, tumor_id: Option<&str>) -> GenotypeIds {
         let mut ids = GenotypeIds { reference_ordinal: -1, tumor_ordinal: -1, reference_id: String::new(), tumor_id: String::new() };
+        if !crate::common::compat::java("C4") {
+            // one rule: the VCF sample whose name is the id
+            for (i, name) in samples.iter().enumerate() {
+                if ids.tumor_ordinal < 0 && tumor_id == Some(name.as_str()) {
+                    ids.tumor_id = name.clone();
+                    ids.tumor_ordinal = i as i32;
+                }
+                if ids.reference_ordinal < 0 && reference_id == Some(name.as_str()) {
+                    ids.reference_id = name.clone();
+                    ids.reference_ordinal = i as i32;
+                }
+            }
+            return ids;
+        }
+        // Java (C4): a second pass accepts a VCF sample name that only contains the id, but the genotypes
+        // are later looked up by the id itself, which fails once everything else is done
         for check_exact in [true, false] {
             for (i, name) in samples.iter().enumerate() {
                 let matches = |id: Option<&str>| id.is_some_and(|id| name == id || (!check_exact && name.contains(id)));

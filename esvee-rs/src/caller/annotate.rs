@@ -48,25 +48,43 @@ impl HotspotCache {
     /// HotspotCache.loadFile: a BEDPE file without a header. Returns the number of records.
     pub fn load(&mut self, filename: &str) -> Result<usize> {
         let text = std::fs::read_to_string(filename)?;
+        // Java (C13): a line with too few fields is an uncaught ArrayIndexOutOfBoundsException. Corrected:
+        // any line that cannot be read is reported with its number and what is wrong with it.
+        let java_c13 = crate::common::compat::java("C13");
         let mut count = 0;
         // BufferedReader.readLine: a final line without a terminator is still a line
-        for line in text.lines() {
+        for (index, line) in text.lines().enumerate() {
             let items: Vec<&str> = line.split('\t').collect();
-            if items.len() < 10 {
-                bail!("ArrayIndexOutOfBoundsException: hotspot line with {} fields", items.len());
+            let parsed = (|| -> Result<KnownHotspot> {
+                if items.len() < 10 {
+                    if java_c13 {
+                        bail!("ArrayIndexOutOfBoundsException: hotspot line with {} fields", items.len());
+                    }
+                    bail!("{} tab-separated fields where 10 are expected", items.len());
+                }
+                let int = |s: &str| {
+                    super::vcf::java_parse_int(s).with_context(|| {
+                        if java_c13 { format!("NumberFormatException: For input string: \"{s}\"") } else { format!("'{s}' is not a whole number") }
+                    })
+                };
+                let orient = |s: &str| match s.chars().next() {
+                    Some('+') => Ok(Orient::Forward),
+                    Some('-') => Ok(Orient::Reverse),
+                    other if java_c13 => bail!("Invalid orientation: {other:?}"),
+                    _ => bail!("orientation '{s}' is neither + nor -"),
+                };
+                Ok(KnownHotspot {
+                    region_start: ChrBaseRegion::new(items[0], int(items[1])? + 1, int(items[2])?),
+                    orient_start: orient(items[8])?,
+                    region_end: ChrBaseRegion::new(items[3], int(items[4])? + 1, int(items[5])?),
+                    orient_end: orient(items[9])?,
+                })
+            })();
+            match parsed {
+                Ok(hotspot) => self.add_hotspot(hotspot),
+                Err(e) if java_c13 => return Err(e),
+                Err(e) => return Err(e.context(format!("line {}", index + 1))),
             }
-            let int = |s: &str| super::vcf::java_parse_int(s).with_context(|| format!("NumberFormatException: For input string: \"{s}\""));
-            let orient = |s: &str| match s.chars().next() {
-                Some('+') => Ok(Orient::Forward),
-                Some('-') => Ok(Orient::Reverse),
-                other => bail!("Invalid orientation: {other:?}"),
-            };
-            self.add_hotspot(KnownHotspot {
-                region_start: ChrBaseRegion::new(items[0], int(items[1])? + 1, int(items[2])?),
-                orient_start: orient(items[8])?,
-                region_end: ChrBaseRegion::new(items[3], int(items[4])? + 1, int(items[5])?),
-                orient_end: orient(items[9])?,
-            });
             count += 1;
         }
         Ok(count)
@@ -144,6 +162,7 @@ impl TargetRegions {
         let text = read_text(filename).with_context(|| format!("failed to load BED file({filename})"))?;
         let mut by_chromosome: HashMap<String, Vec<(i32, i32)>> = HashMap::new();
         let mut current: Option<String> = None;
+        let java_c11 = crate::common::compat::java("C11");
         for line in text.lines() {
             if line.contains("Chromosome") {
                 continue;
@@ -158,12 +177,15 @@ impl TargetRegions {
             let chromosome = human_chromosome_name(data[0]);
             let int = |s: &str| super::vcf::java_parse_int(s).with_context(|| format!("NumberFormatException: For input string: \"{s}\""));
             let region = (int(data[1])? + 1, int(data[2])?);
-            // a chromosome that comes back after another one starts a new list, replacing its first
             if current.as_deref() != Some(chromosome.as_str()) {
-                by_chromosome.insert(chromosome.clone(), Vec::new());
+                if java_c11 {
+                    // Java (C11): a chromosome that comes back after another one starts a new list, which
+                    // replaces its first
+                    by_chromosome.insert(chromosome.clone(), Vec::new());
+                }
                 current = Some(chromosome.clone());
             }
-            by_chromosome.get_mut(&chromosome).unwrap().push(region);
+            by_chromosome.entry(chromosome).or_default().push(region);
         }
         for (chromosome, regions) in by_chromosome {
             self.regions.insert(version.versioned_chromosome(&chromosome), regions);
@@ -331,7 +353,11 @@ impl RepeatMask {
     ///
     /// The file is the largest input of the step, so it is decompressed on one thread and its lines
     /// are parsed in blocks on `PARSE_THREADS` others; the blocks are then joined in file order.
-    pub fn load(&mut self, filename: &str, version: RefGenomeVersion) -> Result<()> {
+    ///
+    /// `java_c11` is `compat::java("C11")`, read by the caller because this may run on another thread:
+    /// Java lets a chromosome that comes back after another one replace its earlier entries. Otherwise
+    /// all are kept, and the list of such a chromosome is put back in position order for the lookup.
+    pub fn load(&mut self, filename: &str, version: RefGenomeVersion, java_c11: bool) -> Result<()> {
         // checked here so that a missing file is reported as such; the reader itself is opened on its thread
         drop(std::fs::File::open(filename)?);
 
@@ -413,6 +439,7 @@ impl RepeatMask {
             let mut pending: HashMap<usize, ParsedBlock> = HashMap::new();
             let mut next_seq = 0;
             let mut current_chr = String::new();
+            let mut returned: Vec<String> = Vec::new();
             let mut index = 0usize;
             let mut failure: Option<anyhow::Error> = None;
             for (seq, block) in parsed_rx.iter() {
@@ -425,9 +452,17 @@ impl RepeatMask {
                     let remap: Vec<u32> = block.names.iter().map(|n| names.id(n)).collect();
                     for (chromosome, mut entries) in block.segments {
                         if chromosome != current_chr {
-                            // a chromosome that comes back later starts again from nothing
                             current_chr = chromosome;
-                            self.by_chromosome.insert(current_chr.clone(), Vec::new());
+                            if java_c11 {
+                                // Java (C11): a chromosome that comes back later starts again from nothing
+                                self.by_chromosome.insert(current_chr.clone(), Vec::new());
+                            } else if self.by_chromosome.contains_key(&current_chr) {
+                                if !returned.contains(&current_chr) {
+                                    returned.push(current_chr.clone());
+                                }
+                            } else {
+                                self.by_chromosome.insert(current_chr.clone(), Vec::new());
+                            }
                         }
                         for entry in entries.iter_mut() {
                             entry.repeat = remap[entry.repeat as usize];
@@ -445,6 +480,12 @@ impl RepeatMask {
             }
             let read_error = reader_thread.join().expect("repeat mask reader thread");
             self.names = names.names;
+            // the lookup bisects, so the runs of a chromosome that came back are merged by position
+            for chromosome in &returned {
+                if let Some(list) = self.by_chromosome.get_mut(chromosome) {
+                    list.sort_by_key(|e| e.start);
+                }
+            }
             match failure {
                 Some(e) => Err(e),
                 None => Ok(read_error),

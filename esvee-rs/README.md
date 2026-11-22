@@ -4,6 +4,10 @@ A Rust port of [ESVEE](../esvee/README.md) 2.1, the structural variant caller. O
 steps of the Java tool (prep, assembly, depth annotation, calling); each step takes the command line of
 the Java application of that name and writes the same files.
 
+By default the port corrects 61 faults found in the Java code while porting, so its output differs
+from Java's where those faults matter. With `-java_compat` it behaves as Java does and its output is
+identical to Java's; that is how the port was verified. See "Corrections and `-java_compat`" below.
+
 Status and measurements are in [PLAN.md](PLAN.md). What has been compared with Java, and what Java does
 that is worth knowing, is in [REPORT.md](REPORT.md).
 
@@ -83,13 +87,30 @@ and `.germline.vcf.gz`, each VCF with a tabix index.
 | depth | everything, BAM and CRAM (3.0 and 3.1) | htsjdk's record validation behind `-bam_validation STRICT` and `LENIENT`: the option is accepted, records are not validated |
 | caller | everything: tumor/normal, tumor only, germline only, PON and artefact PON, hotspots, repeat mask, target regions, `-write_breakend_tsv`, `-manual_ref_depth` | nothing known |
 
-What has and has not been tested for each is in REPORT.md, sections 2 and 6. In short: all four steps
+What has and has not been tested for each is in REPORT.md, sections 2 and 6. In short: with `-java_compat` all four steps
 give Java's output on a small Illumina tumor/normal input and across the option cases, and on an
 Illumina whole-genome tumor/normal pair every output from assembly on is identical to Java's (prep:
 the same records, with one pair of tied records per BAM in the other order, as Java itself does from
 run to run); reference genome 37 has not been run on real data in any step.
 
+## Corrections and `-java_compat`
+
+The faults found in Java ESVEE are numbered in REPORT.md, section 4. For 61 of them the port takes a
+corrected path by default; section 4.5 says what each correction does and what it changes.
+
+- `-java_compat` on any step (or `ESVEE_JAVA_COMPAT=1` in the environment) gives Java's behaviour for
+  every finding. Use it to compare with Java, or to continue an analysis made with Java ESVEE.
+- `-java_compat_except A12,P10` gives Java's behaviour for every finding but those listed.
+- The corrections that change the most on real data are P10 (short supplementary reads in prep) and
+  A12 (adapter trimming in assembly). For both the intent of the Java code is not certain; the readings
+  taken are described in REPORT.md and are open to correction by the ESVEE authors.
+- The corrected output cannot be checked against Java. It is checked by unit tests of the corrected
+  paths, by being the same at any thread count, and by measuring what each correction changes.
+
 ## What "the same" means
+
+All of this section is about the port run with `-java_compat`.
+
 
 - **BAM:** the same records in the same order with the same fields and attributes, and the same header
   apart from `@PG` lines, compared after decompression.
@@ -105,8 +126,8 @@ run to run); reference genome 37 has not been run on real data in any step.
     one thread with every identity hash made equal (`-XX:+UnlockExperimentalVMOptions -XX:hashCode=2`).
   - Java's depth and caller VCFs do not depend on the thread count, and the port matches them.
 
-  To compare the port with Java, run Java with `-threads 1` and, for the assembly step, with that JVM
-  option. REPORT.md, section 3, has the detail.
+  To compare the port with Java, run the port with `-java_compat` and Java with `-threads 1` and, for
+  the assembly step, with that JVM option. REPORT.md, section 3, has the detail.
 
 ## Differences from the Java tool
 
@@ -124,8 +145,8 @@ run to run); reference genome 37 has not been run on real data in any step.
 - **Failures.** Where Java stops with an uncaught exception the port logs one error line and exits
   with status 1. The wording differs, and in some cases so does what is left on disk (for example a
   complete header-only VCF where Java leaves a truncated file).
-- **Faults in Java are reproduced** where they change the output, so that the output can be compared.
-  They are listed in REPORT.md, section 4, and marked in the code.
+- **Faults in Java are corrected by default** and reproduced with `-java_compat` (above). Each place
+  is marked in the code with the finding's number (`compat::java("A12")`).
 - **A missing SAGA index image** stops the assembly step at start-up; Java only fails when the first
   matcher is created.
 - **Log lines** have the Java text. Timings in them differ, and with `-perf_log_time` fewer items

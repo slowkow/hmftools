@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::io::Write;
 
+use crate::common::compat;
 use crate::assembly::assembly_utils::has_unset_bases;
 use crate::assembly::config::{AssemblyConfig, WriteType};
 use crate::assembly::globals::READ_ID_TRIMMER;
@@ -244,12 +245,14 @@ pub fn repeats_info_str(repeats: &[RepeatInfo]) -> String {
     }
     let mut longest: Option<&RepeatInfo> = None;
     let mut longest_sequence: Option<&RepeatInfo> = None;
+    let java_a22 = compat::java("A22");
     for repeat in repeats {
         if longest.is_none() || repeat.count > longest.unwrap().count {
             longest = Some(repeat);
         }
-        // as in Java, compared with the repeat of the highest count
-        if longest_sequence.is_none() || repeat.total_length() > longest.unwrap().total_length() {
+        // Java: compared with the repeat of the highest count, not with the longest so far
+        let longest_so_far = if java_a22 { longest } else { longest_sequence };
+        if longest_sequence.is_none() || repeat.total_length() > longest_so_far.unwrap().total_length() {
             longest_sequence = Some(repeat);
         }
     }

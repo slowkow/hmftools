@@ -133,6 +133,8 @@ pub struct CallerConfig {
     pub output_dir: String,
     pub output_id: Option<String>,
     pub specific_chromosomes: Vec<String>,
+    /// the regions of -specific_regions; when there are any they are used instead of the chromosomes
+    pub specific_regions: Vec<ChrBaseRegion>,
     pub manual_ref_depth: i32,
     pub write_breakend_tsv: bool,
     pub sequencing_type: SequencingType,
@@ -160,13 +162,37 @@ pub fn form_prep_input_filename(dir: &str, sample_id: &str, file_id: &str, outpu
     form_output_file(dir, sample_id, "esvee.prep", file_id, None)
 }
 
+/// SpecificRegions.loadSpecificRegions: `chr:start-end` or `chr:start:end` items separated by ';'
+pub fn parse_specific_regions(text: &str) -> Result<Vec<ChrBaseRegion>> {
+    let mut regions = Vec::new();
+    for item in text.split(';') {
+        let int = |s: &str| super::vcf::java_parse_int(s);
+        let parts: Vec<&str> = item.split(':').collect();
+        let region = match parts.as_slice() {
+            [chromosome, start, end] => int(start).zip(int(end)).map(|(s, e)| ChrBaseRegion::new(chromosome, s, e)),
+            [chromosome, positions] => {
+                positions.split_once('-').and_then(|(s, e)| int(s).zip(int(e))).map(|(s, e)| ChrBaseRegion::new(chromosome, s, e))
+            }
+            _ => None,
+        };
+        match region {
+            Some(r) if !r.chromosome.is_empty() && r.start > 0 && r.end >= r.start => regions.push(r),
+            _ => bail!("invalid specific region: {item} (expected chr:start-end, with 1 <= start <= end)"),
+        }
+    }
+    Ok(regions)
+}
+
 impl CallerConfig {
     pub fn new(values: &ConfigValues) -> Result<CallerConfig> {
         let tumor_id = values.value("tumor").map(str::to_string);
         let reference_id = values.value("reference").map(str::to_string);
         let output_dir = match values.value("output_dir") {
             Some(dir) => check_add_dir_separator(dir),
-            None => "null".to_string(),
+            // Java (C8): the missing directory is null, which string concatenation turns into file names
+            // that start with "null". Corrected: the current directory.
+            None if crate::common::compat::java("C8") => "null".to_string(),
+            None => "./".to_string(),
         };
         let output_id = values.value("output_id").map(str::to_string);
         let file_sample_id = tumor_id.clone().or(reference_id.clone()).unwrap_or_else(|| "null".to_string());
@@ -202,6 +228,16 @@ impl CallerConfig {
             }
             _ => Vec::new(),
         };
+        // Java (C7): -specific_regions is registered but never read. Corrected: as in hmf-common's
+        // SpecificRegions, regions take the place of -specific_chr.
+        let mut specific_chromosomes = specific_chromosomes;
+        let mut specific_regions = Vec::new();
+        if !crate::common::compat::java("C7") {
+            if let Some(s) = values.value("specific_regions").filter(|s| !s.is_empty()) {
+                specific_regions = parse_specific_regions(s)?;
+                specific_chromosomes.clear();
+            }
+        }
         Ok(CallerConfig {
             tumor_id,
             reference_id,
@@ -211,6 +247,7 @@ impl CallerConfig {
             output_dir,
             output_id,
             specific_chromosomes,
+            specific_regions,
             manual_ref_depth: values.integer("manual_ref_depth"),
             write_breakend_tsv: values.has_flag("write_breakend_tsv"),
             sequencing_type,

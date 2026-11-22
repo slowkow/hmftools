@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::common::compat;
 use crate::assembly::assembly_utils::reverse_complement_str;
 use crate::assembly::common_utils::{above_min_qual, is_uncertain_base_qual};
 use crate::assembly::constants::*;
@@ -213,6 +214,7 @@ pub fn is_line_with_local_aligned_insert(assembly: &JunctionAssembly) -> bool {
     }
     let poly_at_length = calc_line_sequence_length(&assembly.form_junction_sequence(), assembly.is_forward_junction());
     let mut max_post_poly_at_length = 0;
+    let java_a14 = compat::java("A14");
     for read in assembly.support() {
         if read.type_() != SupportType::Indel {
             continue;
@@ -222,14 +224,14 @@ pub fn is_line_with_local_aligned_insert(assembly: &JunctionAssembly) -> bool {
             continue;
         }
         if (indel_coords.length - poly_at_length).abs() <= 2 {
-            // as in Java, the value is assigned for each read rather than the maximum kept
-            let post_insert_aligned_length = 0;
-            if assembly.is_forward_junction() {
-                max_post_poly_at_length = read.alignment_end() - indel_coords.pos_end;
+            let post_insert_aligned_length =
+                if assembly.is_forward_junction() { read.alignment_end() - indel_coords.pos_end } else { indel_coords.pos_start - read.alignment_start() };
+            if java_a14 {
+                // Java: assigned for each read (then floored at 0), so the last read decides
+                max_post_poly_at_length = post_insert_aligned_length.max(0);
             } else {
-                max_post_poly_at_length = indel_coords.pos_start - read.alignment_start();
+                max_post_poly_at_length = max_post_poly_at_length.max(post_insert_aligned_length);
             }
-            max_post_poly_at_length = max_post_poly_at_length.max(post_insert_aligned_length);
         }
     }
     max_post_poly_at_length >= MIN_VARIANT_LENGTH

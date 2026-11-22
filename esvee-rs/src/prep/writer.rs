@@ -321,7 +321,90 @@ impl BamWriter {
     }
 }
 
+/// A junction row that belongs elsewhere in the junction file than where its partition writes.
+pub struct DeferredJunction {
+    /// HumanChromosome.chromosomeRank of the chromosome, the order of the file
+    pub rank: i32,
+    pub chromosome: String,
+    pub position: i32,
+    pub orient: i32,
+    pub text: Vec<u8>,
+}
+
+/// The lines of a junction file with the deferred rows put in: each after the rows of its chromosome up to
+/// its position. A deferred row for a site (chromosome, position, orientation) that the file or an earlier
+/// deferred row already has is left out.
+pub fn merge_junction_lines(lines: impl Iterator<Item = Vec<u8>>, mut deferred: Vec<DeferredJunction>, out: &mut impl Write) -> std::io::Result<()> {
+    deferred.sort_by(|a, b| (a.rank, &a.chromosome, a.position).cmp(&(b.rank, &b.chromosome, b.position)));
+    let mut deferred = deferred.into_iter().peekable();
+    // the site last written and the orientations written for it
+    let mut site: Option<(i32, String, i32)> = None;
+    let mut orients: Vec<i32> = Vec::new();
+    let mut emit = |key: (i32, String, i32), orient: i32, text: &[u8], is_deferred: bool, out: &mut dyn Write| -> std::io::Result<()> {
+        if site.as_ref() == Some(&key) {
+            if is_deferred && orients.contains(&orient) {
+                return Ok(());
+            }
+        } else {
+            site = Some(key);
+            orients.clear();
+        }
+        orients.push(orient);
+        out.write_all(text)
+    };
+    for (n, mut line) in lines.enumerate() {
+        if !line.ends_with(b"\n") {
+            line.push(b'\n');
+        }
+        if n == 0 {
+            out.write_all(&line)?;
+            continue;
+        }
+        let mut fields = line.split(|&c| c == b'\t');
+        let chromosome = String::from_utf8_lossy(fields.next().unwrap_or(b"")).into_owned();
+        let number = |f: Option<&[u8]>| f.and_then(|x| std::str::from_utf8(x).ok()).and_then(|x| x.trim().parse::<i32>().ok()).unwrap_or(0);
+        let position = number(fields.next());
+        let orient = number(fields.next());
+        let key = (chromosome_rank(&chromosome), chromosome, position);
+        while deferred.peek().is_some_and(|d| (d.rank, &d.chromosome, d.position) < (key.0, &key.1, key.2)) {
+            let d = deferred.next().unwrap();
+            emit((d.rank, d.chromosome, d.position), d.orient, &d.text, true, out)?;
+        }
+        emit(key, orient, &line, false, out)?;
+    }
+    for d in deferred {
+        emit((d.rank, d.chromosome, d.position), d.orient, &d.text, true, out)?;
+    }
+    Ok(())
+}
+
+fn merge_deferred_junctions(path: &str, deferred: Vec<DeferredJunction>) -> Result<()> {
+    use std::io::BufRead;
+    let tmp = format!("{path}.tmp");
+    {
+        let reader = std::io::BufReader::new(std::fs::File::open(path)?);
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
+        let mut failed: Option<std::io::Error> = None;
+        let lines = reader.split(b'\n').map_while(|l| match l {
+            Ok(l) => Some(l),
+            Err(e) => {
+                failed = Some(e);
+                None
+            }
+        });
+        merge_junction_lines(lines, deferred, &mut out)?;
+        if let Some(e) = failed {
+            return Err(e.into());
+        }
+        out.flush()?;
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 pub struct ResultsWriter {
+    junction_file: String,
+    deferred_junctions: Vec<DeferredJunction>,
     junction_writer: Option<std::io::BufWriter<std::fs::File>>,
     read_writer: Option<std::io::BufWriter<std::fs::File>>,
     pub bam_writer: BamWriter,
@@ -333,8 +416,9 @@ pub struct ResultsWriter {
 impl ResultsWriter {
     pub fn new(config: &PrepConfig, contigs: Arc<Contigs>, headers: &[String]) -> Result<Self> {
         let mut junction_writer = None;
+        let junction_file = config.form_filename(WriteType::PrepJunction, config.sample_id());
         if config.has_write_type(WriteType::PrepJunction) {
-            let mut w = std::io::BufWriter::new(std::fs::File::create(config.form_filename(WriteType::PrepJunction, config.sample_id()))?);
+            let mut w = std::io::BufWriter::new(std::fs::File::create(&junction_file)?);
             let mut fields = vec![
                 "Chromosome", "Position", "Orientation", "JunctionFrags", "ExactSupportFrags", "OtherSupportFrags", "RemoteFrags", "Indel", "Hotspot",
                 "LowMapQualFrags", "InitialReadId", "Depth", "MaxValidSoftClip",
@@ -355,6 +439,8 @@ impl ResultsWriter {
             read_writer = Some(w);
         }
         Ok(ResultsWriter {
+            junction_file,
+            deferred_junctions: Vec::new(),
             junction_writer,
             read_writer,
             bam_writer: BamWriter::new(config, headers)?,
@@ -455,6 +541,30 @@ impl ResultsWriter {
             return w;
         }
         for &jid in &tracker.junctions {
+            self.junction_row(&mut w, chromosome, tracker, jid);
+        }
+        w
+    }
+
+    /// The rows of the junctions that lie outside the partition that found them (finding P8, corrected): each
+    /// under its own chromosome, to be put in its place when the file is closed.
+    pub fn outside_junction_rows(&self, tracker: &JunctionTracker) -> Vec<DeferredJunction> {
+        let mut rows = Vec::new();
+        if self.junction_writer.is_none() {
+            return rows;
+        }
+        for &jid in &tracker.outside_junctions {
+            let j = &tracker.jstore[jid as usize];
+            let chromosome = self.contigs.name(j.outside_chr.unwrap_or(tracker.region.chr)).to_string();
+            let mut text = Vec::new();
+            self.junction_row(&mut text, &chromosome, tracker, jid);
+            rows.push(DeferredJunction { rank: chromosome_rank(&chromosome), chromosome, position: j.position, orient: j.orient.as_byte(), text });
+        }
+        rows
+    }
+
+    fn junction_row(&self, w: &mut Vec<u8>, chromosome: &str, tracker: &JunctionTracker, jid: JuncId) {
+        {
             let j = &tracker.jstore[jid as usize];
             let mut low_map_qual_frags = 0;
             let mut disc_remote_frags = 0;
@@ -497,7 +607,10 @@ impl ResultsWriter {
             }
             w.push(b'\n');
         }
-        w
+    }
+
+    pub fn defer_junctions(&mut self, rows: Vec<DeferredJunction>) {
+        self.deferred_junctions.extend(rows);
     }
 
     pub fn write_junction_text(&mut self, text: &[u8]) -> Result<()> {
@@ -513,6 +626,10 @@ impl ResultsWriter {
         }
         if let Some(mut w) = self.junction_writer.take() {
             w.flush()?;
+            drop(w);
+            if !self.deferred_junctions.is_empty() {
+                merge_deferred_junctions(&self.junction_file, std::mem::take(&mut self.deferred_junctions))?;
+            }
         }
         self.bam_writer.close()
     }

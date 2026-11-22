@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
 
+use crate::common::compat;
 use crate::assembly::alignment::alignment_checker::{self, AlignmentChecker};
 use crate::assembly::alignment::bwa::{BwaMemAlignParams, BwaMemAligner, IBwaMemAligner};
 use crate::assembly::alignment::assembly_aligner::run_alignment;
@@ -399,10 +400,15 @@ impl AssemblyApplication {
             }
             Ok(())
         })?;
-        // Java sums a counter per task that is reset for every phase group, which on one thread is the count
-        // of the last phase group processed
         self.perf_counters.push(perf.into_inner().unwrap());
-        let total_remote_read_matched = matched.into_inner().unwrap().into_iter().max_by_key(|x| x.0).map(|x| x.1).unwrap_or(0);
+        let matched = matched.into_inner().unwrap();
+        let total_remote_read_matched = if compat::java("A3") {
+            // Java: sums a counter per task that is reset for every phase group, which on one thread is the
+            // count of the last phase group processed
+            matched.into_iter().max_by_key(|x| x.0).map(|x| x.1).unwrap_or(0)
+        } else {
+            matched.into_iter().map(|x| x.1).sum()
+        };
         crate::info!("created {} phase sets, remote reads extracted({})", phase_groups.iter().map(|x| x.phase_sets().len()).sum::<usize>(), total_remote_read_matched);
         Ok(())
     }

@@ -1,6 +1,7 @@
 //! The step's options: Java DepthConfig, with the command line read the way ConfigBuilder reads it.
 
 use super::vcf::parse_java_int;
+use crate::common::compat;
 use anyhow::{bail, Result};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -38,10 +39,14 @@ struct Item {
 /// The options in the order Java registers them (DepthConfig.registerConfig).
 fn registered_items() -> Vec<Item> {
     let item = |ty, name, required, description, default| Item { ty, name, required, description, default, value: None };
+    // D10: Java registers -sample and -bam_file as optional and then fails with a NullPointerException
+    // when one is absent, in looking up the tumor and reference options of the other steps. Corrected:
+    // both are required, and reported like any other missing required option.
+    let samples_required = !compat::java("D10");
     vec![
         item(ItemType::Path, "input_vcf", false, "Input VCF", None),
-        item(ItemType::Str, "sample", false, "List of samples separated by ','", None),
-        item(ItemType::Paths, "bam_file", false, "BAM file paths separated by ','", None),
+        item(ItemType::Str, "sample", samples_required, "List of samples separated by ','", None),
+        item(ItemType::Paths, "bam_file", samples_required, "BAM file paths separated by ','", None),
         item(ItemType::Str, "vcf_tag_prefix", false, "VCF tag prefix for testing & comparison", None),
         item(ItemType::Str, "ref_genome_version", true, "Ref genome version, 37 or 38", None),
         item(ItemType::Path, "ref_genome", true, "Path to reference genome fasta files", None),
@@ -235,6 +240,23 @@ pub struct DepthConfig {
     pub threads: i32,
     pub perf_log_time: f64,
     pub specific_regions: Vec<(String, i32, i32)>,
+    /// -specific_chr, used when no -specific_regions are given (always empty with Java behaviour, D14)
+    pub specific_chromosomes: Vec<String>,
+}
+
+/// The restriction given by -specific_regions and -specific_chr: (regions, chromosomes), or the text of
+/// the region that cannot be read. As SpecificRegions.loadSpecificChromsomesOrRegions of hmf-common,
+/// which the other steps use: regions when given, otherwise the chromosomes.
+pub fn parse_specific(regions: Option<&str>, chromosomes: Option<&str>) -> std::result::Result<(Vec<(String, i32, i32)>, Vec<String>), String> {
+    if let Some(value) = regions.filter(|v| !v.is_empty()) {
+        let mut parsed = Vec::new();
+        for region in value.split(';') {
+            parsed.push(parse_region(region).ok_or_else(|| region.to_string())?);
+        }
+        return Ok((parsed, Vec::new()));
+    }
+    let chromosomes = chromosomes.map(|value| java_split(value, ';').into_iter().filter(|x| !x.is_empty()).map(|x| x.to_string()).collect()).unwrap_or_default();
+    Ok((Vec::new(), chromosomes))
 }
 
 /// SpecificRegions.parseStandardFormat: chr:start-end or chr:start:end
@@ -253,10 +275,10 @@ fn parse_region(region: &str) -> Option<(String, i32, i32)> {
     if start > 0 && end >= start { Some((items[0].to_string(), start, end)) } else { None }
 }
 
-/// FileCommon.formOutputFile; a missing output directory becomes the text "null", as Java's string
-/// concatenation makes it
+/// FileCommon.formOutputFile. D13: without -output_dir Java's string concatenation puts the text "null"
+/// in front of the file name; corrected, the file is in the current directory under its own name.
 pub fn form_output_file(output_dir: Option<&str>, sample_id: &str, file_type: &str, output_id: Option<&str>) -> String {
-    let mut filename = output_dir.unwrap_or("null").to_string();
+    let mut filename = output_dir.unwrap_or(if compat::java("D13") { "null" } else { "" }).to_string();
     filename.push_str(sample_id);
     filename.push_str(".esvee");
     if let Some(id) = output_id {
@@ -334,16 +356,22 @@ impl DepthConfig {
         let perf_log_time = parse_java_double(&items.value("perf_log_time").unwrap()).unwrap();
         let threads = parse_java_int(&items.value("threads").unwrap()).unwrap();
 
-        // SpecificRegions.loadSpecificRegions; -specific_chr is registered but never read
-        let mut specific_regions = Vec::new();
-        if let Some(value) = items.get("specific_regions").value.as_deref().filter(|v| !v.is_empty()) {
-            let parsed: Option<Vec<(String, i32, i32)>> = value.split(';').map(parse_region).collect();
-            match parsed {
-                Some(regions) => specific_regions = regions,
-                // Java reports the failure and carries on without any restriction
-                None => error!("failed to load specific regions"),
+        // SpecificRegions.loadSpecificRegions. D14: Java registers -specific_chr and never reads it, and
+        // after an invalid -specific_regions reports the failure and carries on without any restriction.
+        // Corrected: -specific_chr restricts the run, and an invalid region stops it.
+        let java_specific = compat::java("D14");
+        let specific_chr = if java_specific { None } else { items.get("specific_chr").value.as_deref() };
+        let (specific_regions, specific_chromosomes) = match parse_specific(items.get("specific_regions").value.as_deref(), specific_chr) {
+            Ok(parsed) => parsed,
+            Err(_) if java_specific => {
+                error!("failed to load specific regions");
+                (Vec::new(), Vec::new())
             }
-        }
+            Err(region) => {
+                error!("invalid region in -specific_regions: {}", region);
+                std::process::exit(1);
+            }
+        };
 
         Ok(DepthConfig {
             input_vcf,
@@ -361,6 +389,7 @@ impl DepthConfig {
             threads,
             perf_log_time,
             specific_regions,
+            specific_chromosomes,
         })
     }
 
@@ -383,6 +412,7 @@ impl DepthConfig {
             threads: 0,
             perf_log_time: 0.0,
             specific_regions: Vec::new(),
+            specific_chromosomes: Vec::new(),
         }
     }
 
@@ -418,7 +448,35 @@ mod tests {
     fn output_names() {
         assert_eq!(form_output_file(Some("out/"), "S", "ref_depth.vcf.gz", None), "out/S.esvee.ref_depth.vcf.gz");
         assert_eq!(form_output_file(Some("out/"), "S", "raw.vcf.gz", Some("x")), "out/S.esvee.x.raw.vcf.gz");
-        assert_eq!(form_output_file(None, "S", "raw.vcf.gz", None), "nullS.esvee.raw.vcf.gz");
+        // D13: Java's name without an output directory
+        assert_eq!(compat::with_java(true, || form_output_file(None, "S", "raw.vcf.gz", None)), "nullS.esvee.raw.vcf.gz");
+        assert_eq!(compat::with_java(false, || form_output_file(None, "S", "raw.vcf.gz", Some("x"))), "S.esvee.x.raw.vcf.gz");
+    }
+
+    #[test]
+    fn specific_chromosomes_and_regions() {
+        // D14
+        assert_eq!(parse_specific(None, Some("chr1;chr7")), Ok((Vec::new(), vec!["chr1".to_string(), "chr7".to_string()])));
+        assert_eq!(parse_specific(None, None), Ok((Vec::new(), Vec::new())));
+        // regions come first, as in the other steps
+        assert_eq!(parse_specific(Some("chr2:5-9"), Some("chr1")), Ok((vec![("chr2".to_string(), 5, 9)], Vec::new())));
+        assert_eq!(parse_specific(Some("chr2:5-9;chr3"), None), Err("chr3".to_string()));
+        assert_eq!(parse_specific(Some("chr2:5-9;"), None), Err(String::new()));
+    }
+
+    #[test]
+    fn samples_and_bams_are_required() {
+        // D10; -ref_genome only has to be a path that exists
+        let dir = std::env::temp_dir().to_string_lossy().to_string();
+        let args = |extra: &[&str]| -> Vec<String> {
+            ["-ref_genome", dir.as_str(), "-ref_genome_version", "38"].iter().chain(extra).map(|x| x.to_string()).collect()
+        };
+        let parse = |java: bool, extra: &[&str]| compat::with_java(java, || Items(registered_items()).parse(&args(extra)));
+        assert!(parse(false, &["-sample", "A", "-bam_file", dir.as_str()]));
+        assert!(!parse(false, &["-sample", "A"]));
+        assert!(!parse(false, &["-bam_file", dir.as_str()]));
+        // Java accepts the command line and fails later
+        assert!(parse(true, &["-sample", "A"]));
     }
 
     #[test]

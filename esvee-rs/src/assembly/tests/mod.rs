@@ -29,6 +29,7 @@ mod assembly_stats_test;
 mod breakend_builder_saga_test;
 mod homology_test;
 mod indels_test;
+mod java_findings_test;
 mod junction_assembly_test;
 mod junction_groups_test;
 mod line_site_test;

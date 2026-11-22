@@ -1,0 +1,150 @@
+//! Switch between the corrected behaviour (the default) and that of Java ESVEE 2.1.
+//!
+//! REPORT.md, section 4, numbers the faults found in the Java code (P prep, A assembly, D depth,
+//! C caller). Each place where the port corrects one asks `compat::java("A26")`: false, the default,
+//! takes the corrected path; true takes the Java path, so that the output can be compared with Java's.
+//!
+//! - `-java_compat` (or the environment variable `ESVEE_JAVA_COMPAT=1`): Java behaviour for every finding.
+//! - `-java_compat_except A26,P3` (or `ESVEE_JAVA_COMPAT_EXCEPT`): Java behaviour for every finding but
+//!   those listed, to see what one correction changes.
+//!
+//! Both options are taken off the command line in `main` before the step parses it.
+
+use anyhow::{bail, Result};
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::OnceLock;
+
+const FIXED: u8 = 0;
+const JAVA: u8 = 1;
+const JAVA_EXCEPT: u8 = 2;
+
+static MODE: AtomicU8 = AtomicU8::new(FIXED);
+static EXCEPT: OnceLock<HashSet<String>> = OnceLock::new();
+
+#[cfg(test)]
+thread_local! {
+    static TEST_MODE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// Whether to behave as Java does for the finding `id` of REPORT.md section 4 (for example "A26").
+#[inline]
+pub fn java(id: &'static str) -> bool {
+    debug_assert!(valid_id(id), "unknown finding id {id}");
+    #[cfg(test)]
+    if let Some(v) = TEST_MODE.with(|m| m.get()) {
+        return v;
+    }
+    match MODE.load(Ordering::Relaxed) {
+        FIXED => false,
+        JAVA => true,
+        _ => !EXCEPT.get().is_some_and(|s| s.contains(id)),
+    }
+}
+
+/// True when every finding is reproduced.
+#[allow(dead_code)]
+pub fn java_all() -> bool {
+    #[cfg(test)]
+    if let Some(v) = TEST_MODE.with(|m| m.get()) {
+        return v;
+    }
+    MODE.load(Ordering::Relaxed) == JAVA
+}
+
+/// The findings per step: P1-P11, A1-A36, D1-D19, C1-C17.
+fn valid_id(id: &str) -> bool {
+    let Some(step) = id.chars().next() else { return false };
+    let Ok(n) = id[1..].parse::<u32>() else { return false };
+    let max = match step {
+        'P' => 11,
+        'A' => 36,
+        'D' => 19,
+        'C' => 17,
+        _ => return false,
+    };
+    (1..=max).contains(&n)
+}
+
+/// Takes `-java_compat` and `-java_compat_except <ids>` out of the arguments and sets the mode; the
+/// environment variables apply when neither option is given.
+pub fn take_options(argv: &[String]) -> Result<Vec<String>> {
+    let mut rest = Vec::with_capacity(argv.len());
+    let mut all = false;
+    let mut except: Option<String> = None;
+    let mut i = 0;
+    while i < argv.len() {
+        match argv[i].as_str() {
+            "-java_compat" => all = true,
+            "-java_compat_except" => {
+                i += 1;
+                let Some(v) = argv.get(i) else { bail!("missing value for -java_compat_except") };
+                except = Some(v.clone());
+            }
+            _ => rest.push(argv[i].clone()),
+        }
+        i += 1;
+    }
+    if !all && except.is_none() {
+        if let Ok(v) = std::env::var("ESVEE_JAVA_COMPAT_EXCEPT") {
+            except = Some(v);
+        } else if std::env::var("ESVEE_JAVA_COMPAT").is_ok_and(|v| !v.is_empty() && v != "0") {
+            all = true;
+        }
+    }
+    if let Some(list) = except {
+        let mut ids = HashSet::new();
+        for id in list.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            if !valid_id(id) {
+                bail!("-java_compat_except: unknown finding id {id}");
+            }
+            ids.insert(id.to_string());
+        }
+        let _ = EXCEPT.set(ids);
+        MODE.store(JAVA_EXCEPT, Ordering::Relaxed);
+    } else if all {
+        MODE.store(JAVA, Ordering::Relaxed);
+    }
+    Ok(rest)
+}
+
+/// For tests: runs `f` with Java behaviour on (`true`) or off for every finding, on this thread only.
+#[cfg(test)]
+#[allow(dead_code)]
+pub fn with_java<T>(on: bool, f: impl FnOnce() -> T) -> T {
+    struct Reset(Option<bool>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_MODE.with(|m| m.set(self.0));
+        }
+    }
+    let _reset = Reset(TEST_MODE.with(|m| m.replace(Some(on))));
+    f()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ids() {
+        assert!(valid_id("P1") && valid_id("A36") && valid_id("D19") && valid_id("C17"));
+        assert!(!valid_id("A37") && !valid_id("P0") && !valid_id("X1") && !valid_id("A") && !valid_id(""));
+    }
+
+    #[test]
+    fn default_is_fixed_and_scope_overrides() {
+        assert!(!java("A26"));
+        assert!(with_java(true, || java("A26")));
+        assert!(!with_java(true, || with_java(false, || java("A26"))));
+        assert!(!java("A26"));
+    }
+
+    #[test]
+    fn options_are_removed() {
+        let argv: Vec<String> = ["-threads", "2", "-output_dir", "x"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(take_options(&argv).unwrap(), argv);
+        let bad: Vec<String> = ["-java_compat_except", "Z9"].iter().map(|s| s.to_string()).collect();
+        assert!(take_options(&bad).is_err());
+    }
+}

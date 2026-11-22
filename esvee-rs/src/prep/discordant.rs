@@ -309,7 +309,7 @@ pub struct DiscordantGroups {
     known_hotspots: Vec<Arc<KnownHotspot>>,
     contigs: Arc<Contigs>,
     /// junctions made at a remote region that lies outside the partition, and those of them on another
-    /// chromosome; both are written with the partition's chromosome, as in Java
+    /// chromosome; Java writes both with the partition's chromosome (finding P8)
     pub remote_outside_partition: std::cell::Cell<u32>,
     pub remote_other_chromosome: std::cell::Cell<u32>,
 }
@@ -533,6 +533,9 @@ impl DiscordantGroups {
             let first_read = groups[remote.read_groups[0] as usize].reads[0];
             let mut remote_junction = JunctionData::new(remote_position, remote.orient, Some(first_read));
             remote_junction.discordant_group = true;
+            if !self.region.contains(remote.chr, remote_position) {
+                remote_junction.outside_chr = Some(remote.chr);
+            }
             for &gid in &remote.read_groups {
                 remote_junction.supporting_groups.push(gid);
                 groups[gid as usize].add_junction_position(remote_junction.position, remote_junction.orient);

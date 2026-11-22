@@ -11,21 +11,23 @@ use crate::assembly::sam::CigarOp;
 use crate::assembly::types::junction::{JuncP, Junction};
 use crate::assembly::types::junction_assembly::JunctionAssembly;
 use crate::assembly::types::{AssemblyOutcome, SupportType};
+use crate::common::compat;
 use crate::common::java_hash::JavaHashMap;
 use crate::common::java_sort::java_sort;
 
 pub fn set_indel_status(junction: JuncP, reads: &[ReadP]) {
     let mut soft_clipped_count = 0;
     let mut matched_indel_count = 0;
+    // Java: the test for a left clip is also on a forward junction, so clips at reverse junctions are not counted
+    let left_clip_junction_forward = compat::java("A13");
     for read in reads {
         let ic = read.indel_coords();
         if ic.as_ref().is_some_and(|c| c.length >= MIN_INDEL_LENGTH && c.matches_junction(junction.position, junction.orient)) {
             matched_indel_count += 1;
         } else if record_soft_clips_at_junction(read, &junction) {
-            // as in Java, both tests are on a forward junction
             if junction.is_forward() && read.right_clip_length() >= MIN_VARIANT_LENGTH {
                 soft_clipped_count += 1;
-            } else if junction.is_forward() && read.left_clip_length() >= MIN_VARIANT_LENGTH {
+            } else if junction.is_forward() == left_clip_junction_forward && read.left_clip_length() >= MIN_VARIANT_LENGTH {
                 soft_clipped_count += 1;
             }
         }

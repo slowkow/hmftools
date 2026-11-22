@@ -541,7 +541,8 @@ impl PrepRead {
     }
 }
 
-/// A chromosome partition as the spanning cache names it: Java's "<chromosome>_<position / partition size>".
+/// A chromosome partition as the spanning cache names it: "<chromosome>_<index>". Partitions start at
+/// 1 + index * size; Java takes the index as position / size (finding P4).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PartKey {
     pub chr: i32,
@@ -551,7 +552,12 @@ pub struct PartKey {
 impl PartKey {
     /// SpanningReadCache.formChromosomePartition
     pub fn form(chr: i32, position: i32, partition_size: i32) -> PartKey {
-        PartKey { chr, part: position / partition_size }
+        if crate::common::compat::java("P4") {
+            // Java: the last base of a partition is named as the next partition
+            PartKey { chr, part: position / partition_size }
+        } else {
+            PartKey { chr, part: (position - 1).max(0) / partition_size }
+        }
     }
     pub fn name(&self, contigs: &Contigs) -> String {
         format!("{}_{}", contigs.name(self.chr), self.part)
@@ -761,6 +767,9 @@ pub struct JunctionData {
     pub linked_indel: Option<JuncId>,
     pub max_valid_soft_clip_length: i32,
     pub saga_match: Option<String>,
+    /// for a junction at the remote region of a discordant group that lies outside the partition: its
+    /// chromosome
+    pub outside_chr: Option<i32>,
 }
 
 impl JunctionData {
@@ -783,6 +792,7 @@ impl JunctionData {
             linked_indel: None,
             max_valid_soft_clip_length: 0,
             saga_match: None,
+            outside_chr: None,
         }
     }
     pub fn is_forward(&self) -> bool {

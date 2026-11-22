@@ -13,6 +13,7 @@ mod types;
 mod variant;
 mod vcf;
 
+use crate::common::compat;
 use crate::{debug, error, info, warn};
 use annotate::{HotspotCache, RepeatMask, TargetRegions};
 use anyhow::{bail, Context, Result};
@@ -96,7 +97,11 @@ fn load_discordant_stats(filename: &str) -> Result<DiscordantStats> {
     let values: Vec<&str> = line.split('\t').collect();
     let parse = |i: usize| -> Result<i64> {
         let v = values.get(i).with_context(|| format!("discordant stats line with {} fields", values.len()))?;
-        v.parse::<i64>().with_context(|| format!("NumberFormatException: For input string: \"{v}\""))
+        match v.parse::<i64>() {
+            Ok(value) => Ok(value),
+            Err(e) if compat::java("C12") => Err(e).with_context(|| format!("NumberFormatException: For input string: \"{v}\"")),
+            Err(_) => bail!("line 2, field {}: '{v}' is not a whole number", i + 1),
+        }
     };
     let mut stats = DiscordantStats { total_reads: parse(0)?, ..Default::default() };
     parse(1)?; // the reads written by prep, which the caller does not use
@@ -135,6 +140,41 @@ pub(crate) fn is_germline(var: &Variant, reference_id: Option<&str>) -> bool {
     false
 }
 
+/// CallerApplication.processVariant, the part for -manual_ref_depth: a sample without a depth gets
+/// the given one, for the reads and for the read pairs.
+pub(crate) fn apply_manual_ref_depth(record: &mut VcfRecord, depth: i32, genotype_ids: &GenotypeIds, java_c5: bool) -> Result<()> {
+    let set = |genotype: &mut Genotype| {
+        if !genotype.has_attr(REF_DEPTH) {
+            genotype.set_attr(REF_DEPTH, depth.to_string());
+            genotype.set_attr(REF_DEPTH_PAIR, depth.to_string());
+        }
+    };
+    if java_c5 {
+        // Java (C5): only done when there is a reference sample, and then for the tumor as well, which
+        // leaves a tumor-only run without values and fails in a reference-only run
+        if genotype_ids.has_reference() {
+            for sample in [&genotype_ids.reference_id, &genotype_ids.tumor_id] {
+                let Some(genotype) = record.genotype_mut(sample) else {
+                    bail!("NullPointerException: manual ref depth without a genotype for sample '{sample}'");
+                };
+                set(genotype);
+            }
+        }
+        return Ok(());
+    }
+    // each sample of the run
+    for (in_run, sample) in [(genotype_ids.has_reference(), &genotype_ids.reference_id), (genotype_ids.has_tumor(), &genotype_ids.tumor_id)] {
+        if !in_run {
+            continue;
+        }
+        let Some(genotype) = record.genotype_mut(sample) else {
+            bail!("manual ref depth: record {} at {}:{} has no genotype for sample '{sample}'", record.id, record.chrom, record.pos);
+        };
+        set(genotype);
+    }
+    Ok(())
+}
+
 /// SvDataCache: pairs breakend records into variants as they are read
 struct SvDataCache<'a> {
     config: &'a CallerConfig,
@@ -143,12 +183,52 @@ struct SvDataCache<'a> {
     tumor_ordinal: i32,
     variants: Vec<Variant>,
     unmatched: hashbrown::HashMap<String, VcfRecord>,
+    java_c14: bool,
+    /// breakends on a contig other than 1-22, X and Y, and breakends left out because their mate is
+    /// on such a contig (the latter only counted when C14 is corrected)
+    other_contig: usize,
+    mate_on_other_contig: usize,
+    /// breakends on chromosomes 1-22, X and Y, and how many of them are named as the genome version
+    /// names them; the first name that is not
+    human_contig: usize,
+    version_named: usize,
+    first_misnamed: Option<String>,
+}
+
+/// The contig of the mate of a paired breakend, from its ALT (`A[chr2:100[`)
+pub(crate) fn mate_contig(alt: &str) -> Option<&str> {
+    let (_, _, mate, _) = match_breakend(alt)?;
+    mate.rsplit_once(':').map(|(contig, _)| contig)
 }
 
 impl SvDataCache<'_> {
+    fn new<'a>(config: &'a CallerConfig, target_regions: &'a TargetRegions, genotype_ids: &GenotypeIds) -> SvDataCache<'a> {
+        SvDataCache {
+            config,
+            target_regions,
+            reference_ordinal: genotype_ids.reference_ordinal,
+            tumor_ordinal: genotype_ids.tumor_ordinal,
+            variants: Vec::new(),
+            unmatched: hashbrown::HashMap::new(),
+            java_c14: compat::java("C14"),
+            other_contig: 0,
+            mate_on_other_contig: 0,
+            human_contig: 0,
+            version_named: 0,
+            first_misnamed: None,
+        }
+    }
+
     fn process_variant(&mut self, record: VcfRecord) {
         if !is_human_chromosome(&record.chrom) {
+            self.other_contig += 1;
             return;
+        }
+        self.human_contig += 1;
+        if record.chrom.starts_with(CHR_PREFIX) != self.config.ref_gen_version.is37() {
+            self.version_named += 1;
+        } else if self.first_misnamed.is_none() {
+            self.first_misnamed = Some(record.chrom.clone());
         }
         if is_single_breakend(&record) {
             let mut variant = Variant::new_sgl(record, self.reference_ordinal, self.tumor_ordinal);
@@ -161,6 +241,15 @@ impl SvDataCache<'_> {
             return;
         }
         let Some(mate_id) = record.attr_string_opt(MATE_ID) else { return };
+
+        // Java (C14): the mate on another contig was skipped above, so this breakend waits for it for
+        // ever and is only seen in the count of unmatched breakends. Corrected: the variant is left
+        // out as a whole, knowingly, and reported as such (see the notes: output for chromosomes
+        // 1-22, X and Y only, and no breakend without its mate).
+        if !self.java_c14 && mate_contig(record.alt()).is_some_and(|contig| !contig.is_empty() && !is_human_chromosome(contig)) {
+            self.mate_on_other_contig += 1;
+            return;
+        }
 
         // the variant is complete once both breakends have been read
         let Some(first) = self.unmatched.remove(&mate_id) else {
@@ -180,6 +269,14 @@ impl SvDataCache<'_> {
     }
 
     fn add_sv_data(&mut self, var: Variant) {
+        // optionally keep only the variants with a breakend in one of the specified regions
+        let regions = &self.config.specific_regions;
+        if !regions.is_empty() {
+            let within = |chromosome: &str, position: i32| regions.iter().any(|r| r.contains_position(chromosome, position));
+            if !within(var.chromosome_start(), var.pos_start()) && (var.is_sgl() || !within(var.chromosome_end(), var.pos_end())) {
+                return;
+            }
+        }
         // optionally keep only the specified chromosomes
         let chromosomes = &self.config.specific_chromosomes;
         if !chromosomes.is_empty()
@@ -605,10 +702,11 @@ pub fn run(argv: &[String]) -> Result<()> {
     let pon_thread = std::thread::spawn(move || PonCache::new(pon_margin, pon_sgl_margin, pon_sv_file.as_deref(), pon_sgl_file.as_deref()));
     let artefact_thread = has_artefact_pon
         .then(|| std::thread::spawn(move || PonCache::new(pon_margin, pon_sgl_margin, artefact_sv_file.as_deref(), artefact_sgl_file.as_deref())));
+    let java_c11 = compat::java("C11");
     let repeat_mask_thread = repeat_mask_file.clone().map(|file| {
         std::thread::spawn(move || {
             let mut repeat_mask = RepeatMask::default();
-            let result = repeat_mask.load(&file, version);
+            let result = repeat_mask.load(&file, version, java_c11);
             (repeat_mask, result)
         })
     });
@@ -636,6 +734,9 @@ pub fn run(argv: &[String]) -> Result<()> {
     if let Some(file) = values.value("known_hotspot_file") {
         match hotspot_cache.load(file) {
             Ok(count) => info!("loaded {count} known hotspot records from file({file})"),
+            // Java (C13): a file that cannot be read is logged and the run goes on without hotspots, and
+            // a bad line is an uncaught exception. Corrected: both stop the run with one message.
+            Err(e) if !compat::java("C13") => bail!("failed to load hotspot data file({file}): {e:#}"),
             Err(e) => match e.downcast_ref::<std::io::Error>() {
                 Some(io) => error!("failed to load hotspot data file({file}): {io}"),
                 None => return Err(e),
@@ -647,15 +748,26 @@ pub fn run(argv: &[String]) -> Result<()> {
     let frag_length_filename = form_prep_input_filename(&config.prep_dir, &sample_id, "fragment_length.tsv", config.output_id.as_deref());
     let disc_stats_filename = form_prep_input_filename(&config.prep_dir, &sample_id, "disc_stats.tsv", config.output_id.as_deref());
     if !std::path::Path::new(&frag_length_filename).exists() || !std::path::Path::new(&disc_stats_filename).exists() {
-        exit_with("missing input files: disc-stats and frag-lengths");
+        if compat::java("C10") {
+            // Java (C10): the two file names are passed without placeholders, so they are not shown
+            exit_with("missing input files: disc-stats and frag-lengths");
+        }
+        let state = |file: &str| if std::path::Path::new(file).exists() { "found" } else { "missing" };
+        exit_with(&format!(
+            "missing input files of sample({sample_id}), which names the prep files: disc-stats({disc_stats_filename}: {}) frag-lengths({frag_length_filename}: {})",
+            state(&disc_stats_filename),
+            state(&frag_length_filename)
+        ));
     }
     let fragment_length_bounds = load_fragment_length_bounds(&frag_length_filename)?;
     let discordant_stats = match load_discordant_stats(&disc_stats_filename) {
         Ok(stats) => stats,
-        Err(e) => {
+        Err(e) if compat::java("C12") => {
+            // Java (C12): the reader logs this and returns null, which the filters then dereference
             error!("failed to load Esvee discordant stat file({disc_stats_filename}): {e:#}");
             bail!("NullPointerException: no discordant stats");
         }
+        Err(e) => bail!("failed to load Esvee discordant stat file({disc_stats_filename}): {e:#}"),
     };
     info!(
         "fragment length dist: bounds({} - {}) median({} stdDev={})",
@@ -716,14 +828,35 @@ pub fn run(argv: &[String]) -> Result<()> {
     info!("sample({}) processing VCF({})", sample_id, config.vcf_file);
 
     let genotype_ids = GenotypeIds::from_vcf_header(&input.header.samples, config.reference_id.as_deref(), config.tumor_id.as_deref());
-    if (config.has_tumor() && genotype_ids.tumor_ordinal < 0) || (config.has_reference() && genotype_ids.reference_ordinal < 0) {
-        exit_with(&format!("missing sample names in VCF: [{}]", input.header.samples.join(", ")));
+    if !compat::java("C4") && config.has_tumor() && config.tumor_id == config.reference_id {
+        // Java gets as far as the output header, which htsjdk rejects for its duplicate sample names
+        exit_with(&format!("tumor and reference are the same sample({}): give two samples of the VCF, or only one of the two options", genotype_ids.tumor_id));
     }
-    if config.germline_only() {
+    if (config.has_tumor() && genotype_ids.tumor_ordinal < 0) || (config.has_reference() && genotype_ids.reference_ordinal < 0) {
+        if compat::java("C4") {
+            exit_with(&format!("missing sample names in VCF: [{}]", input.header.samples.join(", ")));
+        }
+        let mut missing: Vec<String> = Vec::new();
+        if config.has_tumor() && genotype_ids.tumor_ordinal < 0 {
+            missing.push(format!("tumor({})", config.tumor_id.as_deref().unwrap_or("")));
+        }
+        if config.has_reference() && genotype_ids.reference_ordinal < 0 {
+            missing.push(format!("reference({})", config.reference_id.as_deref().unwrap_or("")));
+        }
+        exit_with(&format!(
+            "sample {} not in the VCF, whose samples are [{}]: a sample id must be the same as the VCF sample name",
+            missing.join(" and "),
+            input.header.samples.join(", ")
+        ));
+    }
+    if config.germline_only() && compat::java("C9") {
+        // Java (C9): the tumor's ordinal and id under ref, and the reference's under tumor
         info!(
             "germline mode ref({}: {}) tumor({}: {})",
             genotype_ids.tumor_ordinal, genotype_ids.tumor_id, genotype_ids.reference_ordinal, genotype_ids.reference_id
         );
+    } else if config.germline_only() {
+        info!("germline mode ref({}: {})", genotype_ids.reference_ordinal, genotype_ids.reference_id);
     } else if !config.has_reference() {
         info!("tumor genotype info({}: {})", genotype_ids.tumor_ordinal, genotype_ids.tumor_id);
     } else {
@@ -733,35 +866,45 @@ pub fn run(argv: &[String]) -> Result<()> {
         );
     }
 
-    let mut cache = SvDataCache {
-        config: &config,
-        target_regions: &target_regions,
-        reference_ordinal: genotype_ids.reference_ordinal,
-        tumor_ordinal: genotype_ids.tumor_ordinal,
-        variants: Vec::new(),
-        unmatched: hashbrown::HashMap::new(),
-    };
+    let mut cache = SvDataCache::new(&config, &target_regions, &genotype_ids);
+    let java_c5 = compat::java("C5");
     let mut processed_variants = 0usize;
     while let Some(mut record) = input.next_record()? {
         processed_variants += 1;
         if processed_variants % 100000 == 0 {
             debug!("sample({}) processed {} variants", config.tumor_id.as_deref().unwrap_or("null"), processed_variants);
         }
-        if config.manual_ref_depth > 0 && genotype_ids.has_reference() {
-            // only done when there is a reference sample, and then for the tumor as well
-            for sample in [&genotype_ids.reference_id, &genotype_ids.tumor_id] {
-                let Some(genotype) = record.genotype_mut(sample) else {
-                    bail!("NullPointerException: manual ref depth without a genotype for sample '{sample}'");
-                };
-                if !genotype.has_attr(REF_DEPTH) {
-                    genotype.set_attr(REF_DEPTH, config.manual_ref_depth.to_string());
-                    genotype.set_attr(REF_DEPTH_PAIR, config.manual_ref_depth.to_string());
-                }
-            }
+        if config.manual_ref_depth > 0 {
+            apply_manual_ref_depth(&mut record, config.manual_ref_depth, &genotype_ids, java_c5)?;
         }
         cache.process_variant(record);
     }
-    let SvDataCache { mut variants, unmatched, .. } = cache;
+    let SvDataCache { mut variants, unmatched, other_contig, mate_on_other_contig, human_contig, version_named, first_misnamed, .. } = cache;
+
+    // Java (C6): output goes by the chromosome names of the genome version, so breakends named the
+    // other way are read, filtered and then never written; when that is all of them the three VCFs
+    // come out with a header only and the run ends well. Corrected: that case stops the run.
+    if !compat::java("C6") && human_contig > version_named {
+        let (version_str, naming) = if version.is37() { ("37", "without") } else { ("38", "with") };
+        let example = first_misnamed.as_deref().unwrap_or("");
+        if version_named == 0 {
+            bail!(
+                "no contig of the input VCF({}) is named as ref_genome_version {version_str} names it ({naming} the chr prefix): \
+                 all {human_contig} breakends are on contigs named like '{example}'; check the genome version",
+                config.vcf_file
+            );
+        }
+        warn!(
+            "{} of {human_contig} breakends are on contigs not named as ref_genome_version {version_str} names them ({naming} the chr prefix), \
+             such as '{example}', and are not written",
+            human_contig - version_named
+        );
+    }
+    if !compat::java("C14") && (other_contig > 0 || mate_on_other_contig > 0) {
+        warn!(
+            "left out {other_contig} breakends on contigs other than chromosomes 1-22, X and Y, and {mate_on_other_contig} breakends whose mate is on such a contig"
+        );
+    }
 
     if unmatched.is_empty() {
         info!(

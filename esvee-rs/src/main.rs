@@ -20,13 +20,20 @@ pub const VERSION: &str = "2.1";
 
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    let argv = match common::compat::take_options(&argv) {
+        Ok(a) => a,
+        Err(e) => {
+            error!("{e:#}");
+            std::process::exit(1);
+        }
+    };
     let result = match argv.first().map(String::as_str) {
         Some("prep") => prep::run(&argv[1..]),
         Some("assembly") => assembly::run(&argv[1..]),
         Some("depth") => depth::run(&argv[1..]),
         Some("caller") => caller::run(&argv[1..]),
         _ => {
-            eprintln!("usage: esvee-rs <prep|assembly|depth|caller> <options of the Java step>");
+            eprintln!("usage: esvee-rs <prep|assembly|depth|caller> <options of the Java step> [-java_compat]");
             std::process::exit(2);
         }
     };

@@ -2,6 +2,7 @@
 
 use std::cmp::Ordering;
 
+use crate::common::compat;
 use crate::assembly::alignment::align_data::AlignP;
 use crate::assembly::alignment::alternative_alignment::AlternativeAlignment;
 use crate::assembly::alignment::assembly_alignment::AsmAlignP;
@@ -36,10 +37,12 @@ pub fn filter_alignments(assembly_alignment: AsmAlignP, alignments: &[AlignP], v
             low_qual_alignments.push(*alignment);
         }
     }
-    // AlignmentOrderComparator: never reports equality, so the order of equal starts follows the sort's steps
+    // AlignmentOrderComparator. Java: never reports equality, so the order of equal starts follows the sort's
+    // steps. Corrected: equal starts compare equal and keep their order (the sort is stable)
+    let equal_starts = if compat::java("A25") { Ordering::Less } else { Ordering::Equal };
     java_sort(&mut candidate_alignments, |first, second| {
         if first.sequence_start() == second.sequence_start() {
-            return Ordering::Less;
+            return equal_starts;
         }
         if first.sequence_start() < second.sequence_start() { Ordering::Less } else { Ordering::Greater }
     });

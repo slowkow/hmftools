@@ -18,7 +18,8 @@ use crate::assembly::ref_base_extender::find_assembly_candidate_extensions;
 use crate::assembly::remote_region_finder::filter_low_qual_read;
 use crate::assembly::saga::SagaSequenceMatcher;
 use crate::assembly::sam::*;
-use crate::assembly::seq_tech_utils::{trim_illumina_adapter_bases, trim_sbx_uncertain_bases};
+use crate::assembly::seq_tech_utils::{find_illumina_adapter_trims, trim_illumina_adapter_bases, trim_sbx_uncertain_bases};
+use crate::common::compat;
 use crate::assembly::mem_stats;
 use crate::assembly::types::junction_assembly::{start_tracking_created, take_created, AsmP};
 use crate::assembly::types::junction_group::JuncGroupP;
@@ -84,6 +85,9 @@ impl<'a> JunctionGroupAssembler<'a> {
             }
             drop(read_group_map);
             drop(supplementary_repeats);
+            if is_illumina() && !compat::java("A12") {
+                finish_reads_after_linking(junction_group, read_stats);
+            }
         }
 
         start_tracking_created();
@@ -146,6 +150,7 @@ fn process_record(
     mut record: SamRecord, is_reference: bool, junction_group: JuncGroupP, read_stats: &mut ReadStats, read_group_map: &mut HashMap<String, ReadGroup>,
     supplementary_repeats: &mut HashMap<String, SamRecord>,
 ) {
+    let java_a12 = compat::java("A12");
     if ignore_identical_supplementary(&record, read_stats, supplementary_repeats) {
         return;
     }
@@ -169,8 +174,11 @@ fn process_record(
         if trim_low_qual_soft_clip_bases(read.m()) {
             read_stats.low_base_qual_trimmed += 1;
         }
-        // as in Java this runs before mates are linked, so it has no effect
-        trim_illumina_adapter_bases(&read);
+        if java_a12 {
+            // Java: runs before mates are linked, so it has no effect. Corrected: done for the whole junction
+            // group once the links exist (finish_reads_after_linking), with the steps that follow it here
+            trim_illumina_adapter_bases(&read);
+        }
     } else if is_sbx() && trim_sbx_uncertain_bases(read.m()) {
         read_stats.low_base_qual_trimmed += 1;
     }
@@ -178,7 +186,7 @@ fn process_record(
         read_stats.low_base_qual_filtered += 1;
         return;
     }
-    if calc_indel_inferred_unclipped_positions(read.m()) {
+    if (java_a12 || !is_illumina()) && calc_indel_inferred_unclipped_positions(read.m()) {
         read_stats.indel_soft_clip_converted += 1;
     }
     junction_group.m().add_candidate_read(read.clone());
@@ -206,6 +214,41 @@ fn process_record(
         }
     }
     read_group_map.insert(read.id().to_string(), read_group);
+}
+
+/// The corrected form of finding A12, for Illumina reads: the adapter trim needs the mate, so it is done here,
+/// after the reads of the junction group are linked, followed by the two steps that Java has after it in
+/// processRecord: a read left without a valid cigar is dropped, and the indel-inferred unclipped positions
+/// are worked out on the final cigar.
+fn finish_reads_after_linking(junction_group: JuncGroupP, read_stats: &mut ReadStats) {
+    let trims = find_illumina_adapter_trims(junction_group.candidate_reads());
+    let mut dropped: Vec<ReadP> = Vec::new();
+    for (index, count, from_start) in trims {
+        let read = &junction_group.candidate_reads()[index];
+        read.m().trim_bases(count, from_start);
+        read_stats.adapter_trimmed += 1;
+        if !has_valid_cigar(read.cigar_elements()) {
+            read_stats.low_base_qual_filtered += 1;
+            dropped.push(read.clone());
+        }
+    }
+    if !dropped.is_empty() {
+        for read in &dropped {
+            // as if the read had not been loaded: its mate has no link to it
+            if let Some(mate_read) = read.mate_read().cloned() {
+                if mate_read.mate_read() == Some(read) {
+                    mate_read.m().clear_mate_read();
+                }
+            }
+            read.m().clear_mate_read();
+        }
+        junction_group.m().remove_candidate_reads(&dropped);
+    }
+    for read in junction_group.candidate_reads() {
+        if calc_indel_inferred_unclipped_positions(read.m()) {
+            read_stats.indel_soft_clip_converted += 1;
+        }
+    }
 }
 
 fn ignore_identical_supplementary(read: &SamRecord, read_stats: &mut ReadStats, supplementary_repeats: &mut HashMap<String, SamRecord>) -> bool {

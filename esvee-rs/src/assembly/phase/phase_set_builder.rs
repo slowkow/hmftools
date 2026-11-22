@@ -4,6 +4,7 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
+use crate::common::compat;
 use crate::assembly::assembly_utils::{self, find_matching_assembly};
 use crate::assembly::common_utils::{is_discordant_fragment as record_is_discordant_fragment, is_line_insert_pair};
 use crate::assembly::constants::*;
@@ -98,7 +99,15 @@ pub fn standard_comparator(first: &ExtCandP, second: &ExtCandP) -> Ordering {
     if first.support_count != second.support_count {
         return if first.support_count > second.support_count { Ordering::Less } else { Ordering::Greater };
     }
-    // as in Java, the junction offset of the first candidate is compared with itself, so this falls through to the type
+    // Java: the junction offset of the first candidate is compared with itself, so this falls through to the type
+    if !compat::java("A19") && first.type_ == ExtensionType::SplitLink && second.type_ == ExtensionType::SplitLink {
+        let junc_offset = |c: &ExtCandP| c.link.map(|l| l.inserted_bases().len().max(l.overlap_bases().len())).unwrap_or(0);
+        let (first_junc_offset, second_junc_offset) = (junc_offset(first), junc_offset(second));
+        if first_junc_offset != second_junc_offset {
+            // favour a more precise link
+            return first_junc_offset.cmp(&second_junc_offset);
+        }
+    }
     (-first.type_.ordinal()).cmp(&(-second.type_.ordinal()))
 }
 
@@ -481,6 +490,7 @@ impl<'a, 'b> PhaseSetBuilder<'a, 'b> {
             return;
         }
         self.routine_iteration = 0;
+        let java_a20 = compat::java("A20");
         for assembly in self.assemblies().clone() {
             if self.locally_linked_assemblies.contains(&assembly) || self.line_related_assemblies.contains(&assembly) {
                 continue;
@@ -490,9 +500,12 @@ impl<'a, 'b> PhaseSetBuilder<'a, 'b> {
             let mut remote_reads = self.remote_read_extractor.extract_remote_region_reads(self.phase_group.id(), &mut remote_regions, self.has_high_assembly_count);
             purge_supplementary_reads(&assembly, &mut remote_reads);
             unmapped_reads.extend(remote_reads);
-            // as in Java, the first assembly without any reads ends the search
             if unmapped_reads.is_empty() {
-                break;
+                // Java: the first assembly without any reads ends the search for all the assemblies after it
+                if java_a20 {
+                    break;
+                }
+                continue;
             }
             let mut unmapped_base_extender = UnmappedBaseExtender::new(assembly);
             unmapped_base_extender.process_reads(&mut unmapped_reads);
@@ -634,14 +647,19 @@ impl<'a, 'b> PhaseSetBuilder<'a, 'b> {
         let mut window2 = if candidate_support_limited2 { MAX_HIGH_ASSEMBLY_MATCHED_READS } else { assembly2.candidate_support().len() };
         check_matching_candidate_support(assembly2, allow_discordant_reads, assembly1, &mut window1, Some((assembly2, &mut window2)), &mut matched_candidates1, &mut matched_candidates2);
         check_matching_candidate_support(assembly1, allow_discordant_reads, assembly2, &mut window2, None, &mut matched_candidates2, &mut matched_candidates1);
-        if candidate_support_limited1 {
-            for x in &matched_candidates1 {
-                remove_first(assembly1.m().candidate_support_mut(), x);
+        // Java: takes the matched reads out of the assemblies' lists a second time, on the assumption that the
+        // sub-lists were copies; they are views, so the reads are gone already and this removes a second
+        // occurrence of the same read, if the list holds one
+        if compat::java("A21") {
+            if candidate_support_limited1 {
+                for x in &matched_candidates1 {
+                    remove_first(assembly1.m().candidate_support_mut(), x);
+                }
             }
-        }
-        if candidate_support_limited2 {
-            for x in &matched_candidates2 {
-                remove_first(assembly2.m().candidate_support_mut(), x);
+            if candidate_support_limited2 {
+                for x in &matched_candidates2 {
+                    remove_first(assembly2.m().candidate_support_mut(), x);
+                }
             }
         }
         add_matching_extension_candidates(assembly1, &mut matched_candidates1);

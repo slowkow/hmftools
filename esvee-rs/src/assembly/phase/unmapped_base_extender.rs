@@ -4,6 +4,7 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
+use crate::common::compat;
 use crate::assembly::assembly_utils::{self, mismatches_per_comparison_length, reverse_complement_bases, swap_dna_base, DNA_BASE_BYTES, DNA_BASE_COUNT};
 use crate::assembly::common_utils::below_min_qual;
 use crate::assembly::constants::*;
@@ -236,21 +237,27 @@ impl UnmappedBaseExtender {
                 Some(read.get_bases()[read_base_index as usize])
             }
         };
+        let java_a23 = compat::java("A23");
         for base_index in 0..max_extension_length {
             let mut consensus_base: u8 = 0;
             let mut base_counts: Option<[i32; DNA_BASE_COUNT]> = None;
+            // the reads so far that have a base here, all of them the first base seen
+            let mut agreeing_reads = 0;
             for i in 0..read_count {
                 let Some(read_base) = read_base_at(&read_sequence_matches[i], i, base_index) else { continue };
                 if base_counts.is_none() {
                     if consensus_base == 0 {
                         consensus_base = read_base;
+                        agreeing_reads += 1;
                         continue;
                     } else if consensus_base == read_base {
+                        agreeing_reads += 1;
                         continue;
                     }
                     let mut counts = [0i32; DNA_BASE_COUNT];
-                    // as in Java: the count for the consensus base is the index of this read
-                    counts[assembly_utils::base_index(consensus_base)] = i as i32;
+                    // Java: the count for the first base is the index of this read, which also counts the reads
+                    // that do not reach this base
+                    counts[assembly_utils::base_index(consensus_base)] = if java_a23 { i as i32 } else { agreeing_reads };
                     base_counts = Some(counts);
                 }
                 base_counts.as_mut().unwrap()[assembly_utils::base_index(read_base)] += 1;

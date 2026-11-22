@@ -101,3 +101,71 @@ fn cigar_operators_for_view_models() {
         ops
     );
 }
+
+// corrected behaviour of the visualiser findings (REPORT.md 4.2), each beside the Java behaviour
+
+#[test]
+fn clips_at_both_ends_are_taken_off_the_alignment_cigar() {
+    use crate::assembly::vis::assembly_visualiser::aligned_cigar_range;
+    use crate::common::compat;
+    // finding A33: the middle alignment of a chain is clipped at both ends
+    let both = cigar("30S50M20S");
+    assert_eq!((1, 2), aligned_cigar_range(&both, true));
+    assert_eq!((1, 2), aligned_cigar_range(&both, false));
+    assert_eq!((0, 1), aligned_cigar_range(&cigar("50M20S"), true));
+    assert_eq!((1, 4), aligned_cigar_range(&cigar("30S20M2I28M"), false));
+    assert_eq!((0, 1), aligned_cigar_range(&cigar("50M"), true));
+    compat::with_java(true, || {
+        assert_eq!((0, 2), aligned_cigar_range(&both, true));
+        assert_eq!((1, 3), aligned_cigar_range(&both, false));
+    });
+}
+
+#[test]
+fn title_and_file_name_without_a_reference_or_a_tumor_sample() {
+    use crate::assembly::vis::assembly_visualiser::{file_sample_id, variant_title};
+    use crate::common::compat;
+    // finding A32
+    let tumor = vec!["SAMPLE_T".to_string()];
+    let reference = vec!["SAMPLE_R".to_string()];
+    let none: Vec<String> = Vec::new();
+    assert_eq!("SAMPLE_T[normal: SAMPLE_R]", variant_title(&tumor, &reference).unwrap());
+    assert_eq!("SAMPLE_T", variant_title(&tumor, &none).unwrap());
+    assert_eq!("[normal: SAMPLE_R]", variant_title(&none, &reference).unwrap());
+    assert_eq!("SAMPLE_T", file_sample_id(&tumor, &none).unwrap());
+    assert_eq!("SAMPLE_R", file_sample_id(&none, &reference).unwrap());
+    compat::with_java(true, || {
+        assert_eq!("SAMPLE_T[normal: SAMPLE_R]", variant_title(&tumor, &reference).unwrap());
+        assert!(variant_title(&tumor, &none).is_err());
+        assert!(variant_title(&none, &reference).is_err());
+        assert!(file_sample_id(&none, &reference).is_err());
+    });
+}
+
+#[test]
+fn drawing_does_not_change_the_lists_for_the_next_drawing() {
+    use crate::assembly::tests::{create_alignment, create_read, test_env, TEST_READ_ID};
+    use crate::assembly::vis::VisState;
+    use crate::common::compat;
+    // finding A35: what one drawing reverses is seen by the next in Java
+    let _env = test_env();
+    let alignment = create_alignment("1", 100, 149, 30, 79, "30S50M20S");
+    let read = create_read(TEST_READ_ID, 100, &"ACGT".repeat(10), "10S30M");
+    read.m().bam_record_mut().base_qualities = (1..=40).collect();
+    let mut state = VisState::default();
+    state.align_cigar(alignment).reverse();
+    assert_eq!("30S50M20S", cigar_elements_to_str(state.align_cigar(alignment)));
+    state.read(&read).quals.reverse();
+    state.read(&read).cigar.reverse();
+    assert_eq!(1, state.read(&read).quals[0]);
+    assert_eq!("10S30M", cigar_elements_to_str(&state.read(&read).cigar));
+    compat::with_java(true, || {
+        let mut state = VisState::default();
+        state.align_cigar(alignment).reverse();
+        assert_eq!("20S50M30S", cigar_elements_to_str(state.align_cigar(alignment)));
+        state.read(&read).quals.reverse();
+        state.read(&read).cigar.reverse();
+        assert_eq!(40, state.read(&read).quals[0]);
+        assert_eq!("30M10S", cigar_elements_to_str(&state.read(&read).cigar));
+    });
+}

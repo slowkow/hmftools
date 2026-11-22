@@ -46,7 +46,7 @@ impl Fixture {
         groups[gid as usize].remote_partitions.len() + 1
     }
     fn process(&mut self, region: usize, groups: &[GroupId]) {
-        let spanning: Vec<(GroupId, bool)> = groups.iter().map(|&g| (g, false)).collect();
+        let spanning: Vec<(GroupId, bool, bool)> = groups.iter().map(|&g| (g, false, true)).collect();
         self.cache.process_spanning_read_groups(&self.regions[region], &spanning, &mut self.store).unwrap();
     }
     fn cached_reads_count(&self) -> usize {
@@ -65,8 +65,14 @@ impl Fixture {
     }
 }
 
+// The regions of this test are 1-9999, 10000-19999, ...: they fit the partition names of Java, which
+// names a partition position / size although partitions start at 1 + index * size (finding P4).
 #[test]
 fn test_basic_reads() {
+    crate::common::compat::with_java(true, test_basic_reads_body);
+}
+
+fn test_basic_reads_body() {
     let mut f = Fixture::new();
     let mut read_id = 0;
 
@@ -137,8 +143,14 @@ fn test_basic_reads() {
     assert_eq!(0, f.cached_reads_count());
 }
 
+// The regions of this test are 1-9999, 10000-19999, ...: they fit the partition names of Java, which
+// names a partition position / size although partitions start at 1 + index * size (finding P4).
 #[test]
 fn test_combined_groups_supplementary() {
+    crate::common::compat::with_java(true, test_combined_groups_supplementary_body);
+}
+
+fn test_combined_groups_supplementary_body() {
     let mut f = Fixture::new();
     let mut read_id = 0;
 
@@ -208,8 +220,14 @@ fn test_combined_groups_supplementary() {
     }
 }
 
+// The regions of this test are 1-9999, 10000-19999, ...: they fit the partition names of Java, which
+// names a partition position / size although partitions start at 1 + index * size (finding P4).
 #[test]
 fn test_candidate_only_groups() {
+    crate::common::compat::with_java(true, test_candidate_only_groups_body);
+}
+
+fn test_candidate_only_groups_body() {
     let mut f = Fixture::new();
     let read_id = 1;
 

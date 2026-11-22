@@ -4,6 +4,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+use crate::common::compat;
 use crate::assembly::alignment::align_data::{AlignData, AlignP};
 use crate::assembly::alignment::alignment_fragments::AlignmentFragments;
 use crate::assembly::alignment::assembly_alignment::AsmAlignP;
@@ -287,8 +288,9 @@ pub fn has_suspect_extension(assembly_alignment: AsmAlignP) -> bool {
     if breakend.inserted_bases.len() as i32 >= WEAK_ASSEMBLY_MIN_INS_LENGTH {
         return true;
     }
-    // as in Java, the loop returns on its first assembly
-    if let Some(assembly) = assembly_alignment.assemblies().first() {
+    // Java: the loop over the assemblies returns on its first one, so only that one is examined
+    let examined = if compat::java("A26") { 1 } else { usize::MAX };
+    for assembly in assembly_alignment.assemblies().iter().take(examined) {
         let ref_bases = assembly.form_ref_base_sequence();
         let min_ref_length = (WEAK_ASSEMBLY_MIN_REF_REPEAT * WEAK_ASSEMBLY_MAX_REF_REPEAT_LENGTH) as usize;
         let adjacent_ref_bases: &str = if ref_bases.len() <= min_ref_length {
@@ -299,11 +301,14 @@ pub fn has_suspect_extension(assembly_alignment: AsmAlignP) -> bool {
             &ref_bases[..min_ref_length]
         };
         let ref_repeats = find_repeats_min(adjacent_ref_bases.as_bytes(), WEAK_ASSEMBLY_MIN_REF_REPEAT);
-        return if assembly.is_forward_junction() {
+        let adjacent_repeat = if assembly.is_forward_junction() {
             ref_repeats.iter().any(|x| x.last_index() >= adjacent_ref_bases.len() as i32 - x.repeat_length())
         } else {
             ref_repeats.iter().any(|x| x.index == 0)
         };
+        if adjacent_repeat {
+            return true;
+        }
     }
     false
 }

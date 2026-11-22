@@ -171,8 +171,8 @@ pub fn is_chimeric_read(rec: &bam::Record, config: &ReadFilterConfig) -> bool {
     is_discordant_fragment(rec, max_concordant_fragment_length(config.observed_frag_length_max))
 }
 
-/// ReadFilters.filterLowQualRead: more than half of the bases are low quality. As in Java, a base that is not
-/// A, C, G, T or N becomes N in the record for as far as the check reads.
+/// ReadFilters.filterLowQualRead: more than half of the bases are low quality. A base that is not A, C, G, T
+/// or N becomes N in the record; in Java only for as far as the check reads (finding A17).
 pub fn filter_low_qual_read(rec: &mut bam::Record, config: &ReadFilterConfig) -> bool {
     filter_low_qual_read_perc(rec, config, 0.5)
 }
@@ -183,7 +183,12 @@ pub fn filter_low_qual_read_perc(rec: &mut bam::Record, config: &ReadFilterConfi
     }
     let base_length = rec.seq_len();
     let threshold = (base_length as f64 * max_permitted_low_percent).floor() as usize + 1;
-    let non_standard = has_non_standard_bases(rec);
+    let mut non_standard = has_non_standard_bases(rec);
+    if non_standard && !crate::common::compat::java("A17") {
+        // Java: rewrites inside the counting loop, so the bases after its early exit keep their letters
+        replace_non_standard_bases(rec, base_length);
+        non_standard = false;
+    }
     if !non_standard && max_permitted_low_percent == 0.5 {
         // With the threshold above half the read only one of the two counts can reach it, so the answer is
         // whether the low-quality bases do, and without bases to rewrite the order of the bases is of no
@@ -283,8 +288,15 @@ pub fn filter_poor_mapped_supplementary(rec: &bam::Record) -> bool {
     if aligned_length < MIN_CALC_ALIGNMENT_SCORE && has_low_map_qual {
         return true;
     }
+    // Java: asks for the score with a minimum length of 40; under that the answer is -1 ("not calculated"),
+    // which the tests below take for a score, so every supplementary with under 40 aligned bases is dropped
+    // whatever its mapping quality. Corrected: the score is calculated for any length.
+    let min_length = if crate::common::compat::java("P10") { MIN_CALC_ALIGNMENT_SCORE } else { 1 };
+    if aligned_length < min_length {
+        return true;
+    }
     let bases = seq_bytes(rec);
-    let adjusted = calc_repeat_trimmed_alignment_score(rec, &bases, aligned_length, MIN_CALC_ALIGNMENT_SCORE, true);
+    let adjusted = calc_repeat_trimmed_alignment_score(rec, &bases, aligned_length, min_length, true);
     if adjusted < MIN_CALC_ALIGNMENT_SCORE as f64 && has_low_map_qual {
         return true;
     }

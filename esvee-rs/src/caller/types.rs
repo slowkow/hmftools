@@ -300,9 +300,12 @@ pub fn human_chromosomes() -> Vec<String> {
 pub fn is_human_chromosome(chromosome: &str) -> bool {
     let trimmed = strip_chr_prefix(chromosome);
     if trimmed.chars().all(|c| c.is_ascii_digit()) {
-        // Java parses the digits, which fails on an empty name or an overflowing number
-        let value: i32 = trimmed.parse().unwrap_or_else(|_| panic!("NumberFormatException: For input string: \"{trimmed}\""));
-        return (1..=22).contains(&value);
+        return match trimmed.parse::<i32>() {
+            Ok(value) => (1..=22).contains(&value),
+            // Java (C16): an empty name counts as numeric and the parse throws, as does a number that overflows
+            Err(_) if crate::common::compat::java("C16") => panic!("NumberFormatException: For input string: \"{trimmed}\""),
+            Err(_) => false,
+        };
     }
     trimmed == "X" || trimmed == "Y"
 }

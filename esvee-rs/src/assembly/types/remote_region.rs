@@ -7,6 +7,7 @@ use crate::assembly::constants::*;
 use crate::assembly::ptr::P;
 use crate::assembly::types::junction_assembly::JunctionAssembly;
 use crate::assembly::types::RemoteReadType;
+use crate::common::compat;
 use crate::common::java_hash::JavaHashSet;
 use crate::common::java_sort::java_sort;
 use crate::common::regions::compare_chromosomes;
@@ -118,6 +119,7 @@ impl RemoteRegion {
 
     pub fn merge_regions_buffer(regions: &mut Vec<RemoteRegionP>, distance_buffer: i32) {
         java_sort(regions, |a, b| compare_chr_regions(a.chromosome, a.start, b.chromosome, b.start));
+        let java_a9 = compat::java("A9");
         let mut index = 0usize;
         while index + 1 < regions.len() {
             let region = regions[index];
@@ -135,7 +137,12 @@ impl RemoteRegion {
                     }
                     for i in 0..r.read_type_count.len() {
                         r.read_type_count[i] += next_region.read_type_count[i];
-                        // as in Java, the other region's total is added once per read type
+                        if java_a9 {
+                            // Java: inside the loop, so the other region's total is added once per read type
+                            r.add_soft_clip_map_qual(1, next_region.soft_clip_map_qual_total);
+                        }
+                    }
+                    if !java_a9 {
                         r.add_soft_clip_map_qual(1, next_region.soft_clip_map_qual_total);
                     }
                 } else {

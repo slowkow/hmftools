@@ -1,5 +1,6 @@
 //! BreakendBuilder: forms breakends from the filtered alignments of an assembly sequence.
 
+use crate::common::compat;
 use crate::assembly::alignment::align_data::AlignP;
 use crate::assembly::alignment::alignment_filters::filter_alignments;
 use crate::assembly::alignment::alternative_alignment::AlternativeAlignment;
@@ -376,7 +377,13 @@ impl<'a> BreakendBuilder<'a> {
                 if alignment.is_reverse() && next_alignment.is_reverse() {
                     match &homology {
                         Some(h) => homology = Some(h.invert(true, false)),
-                        None => return Err("java.lang.NullPointerException: Cannot invoke \"com.hartwig.hmftools.esvee.assembly.alignment.HomologyData.invert(boolean, boolean)\" because \"homology\" is null".to_string()),
+                        // Java: dereferences the null homology it has just logged; the exception ends the
+                        // breakends of this assembly alignment. Corrected: goes on without homology, as it
+                        // does when the two alignments are not both reverse
+                        None if compat::java("A24") => {
+                            return Err("java.lang.NullPointerException: Cannot invoke \"com.hartwig.hmftools.esvee.assembly.alignment.HomologyData.invert(boolean, boolean)\" because \"homology\" is null".to_string());
+                        }
+                        None => {}
                     }
                 }
             } else if alignment.sequence_end() < next_alignment.sequence_start() - 1 {

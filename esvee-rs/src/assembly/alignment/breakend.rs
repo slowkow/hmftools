@@ -3,6 +3,7 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
+use crate::common::compat;
 use crate::assembly::alignment::align_data::AlignP;
 use crate::assembly::alignment::alternative_alignment::AlternativeAlignment;
 use crate::assembly::alignment::assembly_alignment::AsmAlignP;
@@ -319,7 +320,9 @@ impl Breakend {
             return if t1 == StructuralVariantType::Sgl { Ordering::Less } else { Ordering::Greater };
         }
         let (o1, o2) = (self.other_breakend.unwrap(), other.other_breakend.unwrap());
-        compare_junctions(&o1.chromosome, &o1.chromosome, o1.position, o2.position, o1.orient, o2.orient)
+        // Java: passes this breakend's mate chromosome twice, so the mates' chromosomes are never compared
+        let o2_chromosome = if compat::java("A18") { &o1.chromosome } else { &o2.chromosome };
+        compare_junctions(&o1.chromosome, o2_chromosome, o1.position, o2.position, o1.orient, o2.orient)
     }
 }
 

@@ -1,5 +1,6 @@
 //! RemoteRegionFinder: collects the remote regions of an assembly's mates, discordant reads and supplementaries.
 
+use crate::common::compat;
 use crate::assembly::common_utils::{below_min_qual, positions_overlap};
 use crate::assembly::constants::*;
 use crate::assembly::globals::{has_paired_reads, is_illumina};
@@ -37,6 +38,14 @@ pub fn filter_low_qual_read_perc(read: &mut SamRecord, max_permitted_low_percent
         } else {
             let high_qual_count = i as i32 + 1 - low_qual_count;
             if high_qual_count >= qual_count_threshold {
+                // Java: leaves here, so non-standard bases after this point are not rewritten to N
+                if !compat::java("A17") {
+                    for base in &mut read.read_bases[i + 1..] {
+                        if !matches!(*base, b'A' | b'C' | b'G' | b'T' | b'N') {
+                            *base = b'N';
+                        }
+                    }
+                }
                 return false;
             }
         }

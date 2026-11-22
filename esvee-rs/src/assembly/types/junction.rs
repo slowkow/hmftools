@@ -10,6 +10,7 @@ use crate::assembly::constants::MIN_VARIANT_LENGTH;
 use crate::assembly::orientation::Orientation;
 use crate::assembly::ptr::{A, P};
 use crate::assembly::sam::intern;
+use crate::common::compat;
 use crate::common::java_sort::java_sort;
 use crate::common::regions::SpecificRegions;
 
@@ -170,6 +171,7 @@ impl Junction {
         let int = |s: &str| -> Result<i32> { s.parse::<i32>().with_context(|| format!("junction file: invalid number '{s}'")) };
         let parse_bool = |s: &str| s.eq_ignore_ascii_case("true");
 
+        let java_a6 = compat::java("A6");
         for line in lines {
             let values: Vec<&str> = line.split('\t').collect();
             let chromosome = values[chr_index];
@@ -188,10 +190,17 @@ impl Junction {
                 Some(i) => int(values[i])?,
                 None => 0,
             };
-            // as in Java, the presence of the other-support column decides whether the exact-support column is read
-            let other_junction_frags = match other_support_frags_index {
-                Some(_) => int(values[other_junc_frags_index.context("junction file: no ExactSupportFrags column")?])?,
-                None => 0,
+            let other_junction_frags = if java_a6 {
+                // Java: the presence of the other-support column decides whether the exact-support column is read
+                match other_support_frags_index {
+                    Some(_) => int(values[other_junc_frags_index.context("junction file: no ExactSupportFrags column")?])?,
+                    None => 0,
+                }
+            } else {
+                match other_junc_frags_index {
+                    Some(i) => int(values[i])?,
+                    None => 0,
+                }
             };
             let other_support_frags = match other_support_frags_index {
                 Some(i) => int(values[i])?,

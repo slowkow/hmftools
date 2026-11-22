@@ -21,18 +21,26 @@ use crate::assembly::perf::PerfCounter;
 use crate::assembly::types::phase_group::{PhaseGroup, PhaseGroupP};
 use crate::assembly::types::remote_region::RemoteRegion;
 use crate::assembly::types::support_read::SupP;
+use crate::common::compat;
 use crate::common::java_hash::{JavaHash, JavaHashSet};
 use crate::common::java_id_hash::IdHashSet;
 use crate::common::java_sort::java_sort;
 
 /// A junction group as a hash set key. JunctionGroup inherits equals and hashCode from BaseRegion, which use
-/// only the start and end positions, so two groups with the same bounds count as one (also across chromosomes).
+/// only the start and end positions. The hash is kept (it gives the iteration order); the second field says
+/// whether equality is Java's too (finding A4), in which case two groups with the same bounds count as one,
+/// also across chromosomes. Corrected: each junction group is its own key.
 #[derive(Clone)]
-struct JunctionGroupKey(JuncGroupP);
+struct JunctionGroupKey(JuncGroupP, bool);
 
 impl PartialEq for JunctionGroupKey {
     fn eq(&self, other: &Self) -> bool {
-        self.0.start() == other.0.start() && self.0.end() == other.0.end()
+        if self.1 {
+            // Java: BaseRegion.equals ignores the chromosome
+            self.0.start() == other.0.start() && self.0.end() == other.0.end()
+        } else {
+            self.0 == other.0
+        }
     }
 }
 impl Eq for JunctionGroupKey {}
@@ -188,13 +196,14 @@ impl<'a> PhaseGroupBuilder<'a> {
         if assembly.remote_regions().is_empty() {
             return;
         }
+        let java_equals = compat::java("A4");
         let mut linked_junction_groups: JavaHashSet<JunctionGroupKey> = JavaHashSet::new();
         for region in assembly.remote_regions() {
             if self.is_filtered(region) {
                 continue;
             }
             for g in self.find_overlapping_junction_groups(junction_group, region) {
-                linked_junction_groups.insert(JunctionGroupKey(g));
+                linked_junction_groups.insert(JunctionGroupKey(g, java_equals));
             }
         }
         for other_junction_group in linked_junction_groups.to_vec() {
@@ -484,4 +493,28 @@ fn is_local_facing_link_candidate(first: AsmP, second: AsmP) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod finding_tests {
+    use super::*;
+    use crate::assembly::orientation::Orientation;
+    use crate::assembly::ptr::P;
+    use crate::assembly::types::junction::Junction;
+
+    /// Finding A4: junction groups with the same bounds on two chromosomes are two keys; Java takes them for one.
+    #[test]
+    fn junction_groups_with_equal_bounds_are_distinct() {
+        let group = |chromosome: &str| -> JuncGroupP { P::new(JunctionGroup::new(P::new(Junction::new_basic(chromosome, 1000, Orientation::Forward)))) };
+        let (first, second) = (group("1"), group("2"));
+        let count = |java_equals: bool| {
+            let mut set: JavaHashSet<JunctionGroupKey> = JavaHashSet::new();
+            set.insert(JunctionGroupKey(first, java_equals));
+            set.insert(JunctionGroupKey(second, java_equals));
+            set.insert(JunctionGroupKey(first, java_equals));
+            set.len()
+        };
+        assert_eq!(2, count(false));
+        assert_eq!(1, count(true));
+    }
 }

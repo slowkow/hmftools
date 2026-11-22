@@ -2,6 +2,8 @@
 
 pub mod args;
 #[allow(dead_code)]
+pub mod compat;
+#[allow(dead_code)]
 pub mod fmt;
 pub mod log;
 #[allow(dead_code)]

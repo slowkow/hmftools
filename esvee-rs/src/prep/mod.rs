@@ -236,10 +236,11 @@ fn complete_partition(ctx: &Context, seq: &mut Sequencer, result: PartitionResul
 
     let junction_groups = tracker.form_unique_assigned_groups();
     let junction_text = seq.writer.junction_data_text(ctx.contigs.name(region.chr), &tracker);
+    let outside_junction_rows = seq.writer.outside_junction_rows(&tracker);
     let mut write_junctions = true;
     if config.write_reads() {
         // groups with reads in other partitions go to the cache, which completes them across partitions
-        let mut spanning: JavaHashMap<Box<[u8]>, (GroupId, bool)> = JavaHashMap::new();
+        let mut spanning: JavaHashMap<Box<[u8]>, (GroupId, bool, bool)> = JavaHashMap::new();
         let mut assign = |tracker: &mut JunctionTracker, gid: GroupId, from_junctions: bool, stats: &mut PartitionStats| {
             let g = &mut tracker.groups[gid as usize];
             group_set_partition_count(g, &tracker.reads, &region, config.partition_size, &ctx.contigs);
@@ -247,7 +248,7 @@ fn complete_partition(ctx: &Context, seq: &mut Sequencer, result: PartitionResul
                 stats.spanning_groups += 1;
                 group_set_state(g, &tracker.reads);
                 let will_write = from_junctions && g.has_remote_junction_reads && g.status != ReadGroupStatus::Duplicate;
-                spanning.insert(g.id.clone(), (gid, will_write));
+                spanning.insert(g.id.clone(), (gid, will_write, from_junctions));
             } else {
                 group_set_state(g, &tracker.reads);
                 if g.is_complete() {
@@ -265,7 +266,7 @@ fn complete_partition(ctx: &Context, seq: &mut Sequencer, result: PartitionResul
             assign(&mut tracker, gid, false, &mut stats);
         }
         let total_group_count = junction_groups.len() + remote_candidate_groups.len();
-        let spanning_order: Vec<(GroupId, bool)> = spanning.values().copied().collect();
+        let spanning_order: Vec<(GroupId, bool, bool)> = spanning.values().copied().collect();
         seq.cache.process_spanning_read_groups(&region, &spanning_order, &mut tracker)?;
         if total_group_count == 0 {
             write_junctions = false;
@@ -286,7 +287,8 @@ fn complete_partition(ctx: &Context, seq: &mut Sequencer, result: PartitionResul
     }
     if write_junctions {
         seq.writer.write_junction_text(&junction_text)?;
-        stats.junction_count += tracker.junctions.len() as i32;
+        seq.writer.defer_junctions(outside_junction_rows);
+        stats.junction_count += (tracker.junctions.len() + tracker.outside_junctions.len()) as i32;
         let junction_fragments = junction_groups.iter().filter(|&&g| group_has_read_type(&tracker.groups[g as usize], &tracker.reads, ReadType::Junction)).count() as i32;
         stats.junction_fragment_count += junction_fragments;
         stats.supporting_fragment_count += junction_groups.len() as i32 - junction_fragments;
@@ -515,12 +517,23 @@ pub fn run(argv: &[String]) -> Result<()> {
     if config.sample_ids.is_empty() {
         bail!("no samples");
     }
-    std::fs::write(config.form_filename(WriteType::DiscordantStats, config.sample_id()), discordants.file_text(total_stats.total_reads, writer.written_count() as i64))?;
+    // Java: writes the discordant statistics here, so PrepReads lacks the candidate reads claimed below
+    let java_p2 = crate::common::compat::java("P2");
+    let write_disc_stats = |writer: &ResultsWriter| -> Result<()> {
+        std::fs::write(config.form_filename(WriteType::DiscordantStats, config.sample_id()), discordants.file_text(total_stats.total_reads, writer.written_count() as i64))?;
+        Ok(())
+    };
+    if java_p2 {
+        write_disc_stats(&writer)?;
+    }
 
     if config.use_cache_bam {
         crate::debug!("records written before the cached candidate reads, by sample: {:?}", writer.bam_writer.sink_counts);
         cache.reset();
         cache.candidate_bam_writer.assign_candidate_reads(&mut writer, &ctx.tid_maps[0])?;
+    }
+    if !java_p2 {
+        write_disc_stats(&writer)?;
     }
     writer.close()?;
 
