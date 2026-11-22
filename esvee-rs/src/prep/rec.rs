@@ -188,6 +188,11 @@ fn aux_find<'a>(rec: &'a bam::Record, tag: &[u8; 2]) -> Option<&'a [u8]> {
     None
 }
 
+/// An attribute as stored: its type and value.
+pub fn aux_field<'a>(rec: &'a bam::Record, tag: &[u8; 2]) -> Option<&'a [u8]> {
+    aux_find(rec, tag)
+}
+
 /// A string (Z) attribute.
 pub fn aux_str<'a>(rec: &'a bam::Record, tag: &[u8; 2]) -> Option<&'a [u8]> {
     let field = aux_find(rec, tag)?;

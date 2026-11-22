@@ -897,9 +897,12 @@ P10 alone accounts for most of the change in somatic calls (174 passing position
 and 55 without a neighbour within 10 bases). Which of the two sets of calls is better was not
 assessed: there is no truth set for this sample.
 
-Time and memory, corrected against `-java_compat`: prep 761 s / 8.3 GB against 705 s / 5.2 GB;
-assembly 119 s / 7.2 GB against 118 s / 7.2 GB; depth and caller unchanged. The prep increase comes
-from the corrected claiming of cached reads (P5, P6): with P10 alone prep takes 674 s and 5.1 GB.
+Time and memory, corrected against `-java_compat`: prep 712 s / 5.1 GB against 712 s / 5.2 GB;
+assembly 119 s / 7.2 GB against 118 s / 7.2 GB; depth and caller unchanged. The first corrected
+version of prep took 761 s and 8.3 GB: the corrected claiming of cached reads (P5, P6) kept about 250
+bytes for each of up to 11.7 million waiting fragments, of which few are ever claimed. It now keeps a
+32-bit hash per waiting read id and applies the claim rule at the end from the cache BAMs, with the
+same output.
 
 ## 5. Performance
 
