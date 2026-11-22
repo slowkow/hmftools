@@ -84,9 +84,10 @@ and `.germline.vcf.gz`, each VCF with a tabix index.
 | caller | everything: tumor/normal, tumor only, germline only, PON and artefact PON, hotspots, repeat mask, target regions, `-write_breakend_tsv`, `-manual_ref_depth` | nothing known |
 
 What has and has not been tested for each is in REPORT.md, sections 2 and 6. In short: all four steps
-give Java's output on a small Illumina tumor/normal input and across the option cases; the whole-genome
-run has been made with the port but not yet compared with Java; reference genome 37 has not been run on
-real data in any step.
+give Java's output on a small Illumina tumor/normal input and across the option cases, and on an
+Illumina whole-genome tumor/normal pair every output from assembly on is identical to Java's (prep:
+the same records, with one pair of tied records per BAM in the other order, as Java itself does from
+run to run); reference genome 37 has not been run on real data in any step.
 
 ## What "the same" means
 

@@ -28,9 +28,13 @@ port was made; they are outside this repository, because the outputs are derived
   17 in the caller. The port reproduces those that change the output.
 - On the small input at 8 threads the Rust chain takes 24 s against Java's 95 s, with a peak of 1.9 GB
   against 44 GB (section 5).
-- A whole-genome tumor/normal pair has been run through the Rust chain at 8 threads in 14.6 minutes.
-  **Its output has not yet been compared with Java**: the Java one-thread baseline is still running.
-  The assembly step peaked at 33.4 GB on that input at first; it now peaks at 7.2 GB with the same
+- On an Illumina whole-genome tumor/normal pair (4.2 billion reads) every output of the Rust chain
+  equals the Java reference (section 2.6). The prep tables are identical, and the prep BAMs hold the
+  same records; in each BAM one pair of tied neighbouring records is in the other order, which is
+  Java's own nondeterminism (finding P7). From those prep outputs on, `assembly.tsv`, `breakend.tsv`
+  and all five VCFs are identical, whether the Rust steps read the Rust or the Java prep output.
+- On that pair the Rust chain at 8 threads takes 14 minutes against 2.9 hours for the Java reference
+  at one thread. The assembly step peaked at 33.4 GB at first; it now peaks at 7.2 GB with the same
   output (section 5).
 - Not ported: the assembly visualiser, and htsjdk's record validation behind `-bam_validation` in the
   depth step. Not tested: reference genome 37 on real data, in any step (section 6).
@@ -76,7 +80,7 @@ Java at one thread against the port. Scripts: `tools/esvee/prep_cmp.sh`, `prep_o
 - Unit tests: 31, of which 21 are the Java tests of the package; the rest check the emulated HashMap
   order against a JVM and the record helpers.
 
-Not tested: the whole genome against Java (section 5); sambamba as `-bamtool` (treated like samtools;
+The whole genome is in section 2.6. Not tested: sambamba as `-bamtool` (treated like samtools;
 not installed, so not compared); `ReadIdTrimmer` switching itself off part-way through a partition
 (ported as written, no test data reaches it); reference genome 37 with reads that match it.
 
@@ -167,7 +171,7 @@ reached" lines (finding D19); CRAM 3.1, which Java cannot read.
 Unit tests: 20, among them the two tests of the Java `DepthAnnotationTest` with the same cases and
 assertions.
 
-Not tested: a larger real input (the whole genome has been run with the port only); a real GRCh37 BAM
+The whole genome (52,061 variants) is in section 2.6. Not tested: a real GRCh37 BAM
 (`-ref_genome_version 37` was run on genome 38 data, where no chromosome name matches, and on the
 synthetic poly-G set). Malformed input on which Java throws inside htsjdk is not matched case by case
 (for example a mapped read without a cigar, or an `SA` attribute that is not a string): the port either
@@ -234,6 +238,43 @@ own chain:
 The germline VCF has one record more than in section 2.4 because the input chain differs: there the
 caller read the output of a Java chain run at 8 threads.
 
+### 2.6 Whole genome
+
+An Illumina whole-genome tumor/normal pair after REDUX, 4.2 billion reads in the two BAMs (tumor 120 GB,
+normal 96 GB).
+
+- Java reference: prep at one thread; assembly, depth and caller at one thread with
+  `-XX:+UnlockExperimentalVMOptions -XX:hashCode=2`, each reading the previous Java step's output
+  (`baseline/esvee/java/wgs_t1`).
+- Rust chain at 8 threads (`baseline/esvee/rust/wgs_t8`).
+- Rust assembly, depth and caller at 8 threads on the Java prep output
+  (`PREP_IN=... run_rust_steps.sh ... assembly`, output in `baseline/esvee/rust/wgs_javaprep_t8`), to
+  compare the later steps on the same input.
+
+| Output | Rust chain | Rust on Java's prep output |
+|---|---|---|
+| `prep.junction.tsv`, `prep.fragment_length.tsv`, `prep.disc_stats.tsv` | identical | (Java's) |
+| normal prep BAM | same 20,377,496 records; one pair of neighbouring records in the other order | (Java's) |
+| tumor prep BAM | same 16,658,562 records; one pair of neighbouring records in the other order | (Java's) |
+| `assembly.tsv` (85,306 rows), `breakend.tsv` | identical | identical |
+| raw, ref-depth, unfiltered VCF | identical (52,061 records each) | identical |
+| somatic VCF | identical (3,072 records) | identical |
+| germline VCF | identical (35,338 records) | identical |
+
+- Each swapped pair has the same position, strand, flags and alignment, so the two orders are equally
+  sorted. Their read names agree in the lowest 16 (normal) and 14 (tumor) bits of Java's spread string
+  hash, which puts them in the same bucket of a hash table; two random names agree that far about
+  once in 10,000 pairs. That is finding P7: Java orders such reads through a set keyed by identity
+  hash, and two Java runs on the exome pair already differed in this way. The swap changes nothing
+  downstream: the Rust chain's later outputs equal Java's.
+- The same Java chain run first without `-XX:hashCode=2` (default identity hashes; kept in
+  `wgs_t1/plain_hash`) differs from the reference in every output from assembly on. Counting a record
+  by chromosome, position, ref, alt and filter: 14 rows of `assembly.tsv` differ; the raw VCF has
+  52,062 variants instead of 52,061 (3 not in the reference, 2 of the reference missing); the somatic
+  VCF 3,078 calls instead of 3,072 (6 more, none missing); the germline VCF 35,337 instead of 35,338
+  (11 not in the reference, 12 missing). Java's somatic call set thus depends on the identity hashes,
+  which differ in every JVM run (section 3). Only one such run was made on this input.
+
 ## 3. Determinism of Java
 
 A comparison needs a Java output that is the same on every run. Measured on the small pair:
@@ -274,6 +315,9 @@ A comparison needs a Java output that is the same on every run. Measured on the 
 - Proof: with `-XX:+UnlockExperimentalVMOptions -XX:hashCode=2`, which makes every identity hash 1, two
   one-thread runs are byte-identical in every output, with all write types, the compressed bytes of the
   VCF included.
+- On the whole genome the identity hashes change the calls, not only ids: a one-thread Java chain with
+  default hashes against one with `-XX:hashCode=2`, from the same prep output, has 6 more somatic
+  calls (3,078 against 3,072) and 23 germline records not shared (section 2.6).
 - With constant hashes, one thread against 8 still differs: 7 lines of `assembly.tsv`, 3 of
   `breakend.tsv`, 3 of the VCF, 339 of `assembly_read.tsv`; `alignment.tsv` and `phased_assembly.tsv`
   in row order only; `phase_group_building.tsv` in order and in 27 lines. One cause found: support
@@ -356,8 +400,10 @@ the notes mark explicitly as not observed say so.
   of the spanning map therefore varies between runs. Observed: the cache BAMs of two one-thread runs
   hold the same records in a different order; and in final output, two one-thread runs on the exome
   pair give tumor prep BAMs that differ in the order of 2 pairs of records sharing position and strand.
-  Not seen on the small pair. Not reproduced: the port keeps insertion order, and so can differ from a
-  given Java run in the order of such pairs (section 2.1).
+  Not seen on the small pair; on the whole genome one such pair in each prep BAM differs from the Java
+  run (section 2.6). Not reproduced: the port keeps insertion order, and so can differ from a given
+  Java run in the order of such pairs (sections 2.1 and 2.6). It did not change any later output on
+  the whole genome.
 
 **Crash**
 
@@ -711,22 +757,25 @@ files. The port went from 3.5 s to 1.07 s in four steps: reference data loaded o
 (3.1 s), the repeat mask parsed in blocks on four threads (2.3 s), htslib's reader (1.8 s), and
 zlib-rs for inflating (1.07 s). What is left is one thread inflating the repeat mask, about 0.9 s.
 
-### Whole genome, Rust only
+### Whole genome
 
-An Illumina whole-genome tumor/normal pair after REDUX (4.2 billion reads in the two BAMs), the Rust
-chain at 8 threads (`baseline/esvee/rust/wgs_t8/status`):
+The pair of section 2.6. Java reference chain at one thread (`baseline/esvee/java/wgs_t1/status`,
+heap limit 64 GB); Rust at 8 threads (prep from `baseline/esvee/rust/wgs_t8/status`, the later steps
+of the current build from `baseline/esvee/rust/wgs_javaprep_t8/status`):
 
-| Step | Wall | Peak footprint |
+| Step | Java reference, 1 thread | Rust, 8 threads |
 |---|---|---|
-| prep | 672 s | 5.1 GB |
-| assembly | 149 s | 33.4 GB (7.2 GB after the changes below) |
-| depth | 55 s | 0.7 GB |
-| caller | 2.6 s | 0.5 GB |
-| total | 878 s (14.6 min) | |
+| prep | 8,466 s / 14.1 GB | 672 s / 5.1 GB |
+| assembly | 1,679 s / 30.4 GB | 110 s / 7.2 GB |
+| depth | 413 s / 12.6 GB | 60 s / 0.7 GB |
+| caller | 13.5 s / 6.5 GB | 2.6 s / 0.45 GB |
+| total | 10,572 s (2.9 h) | 844 s (14.1 min) |
 
-- **This output has not yet been compared with Java.** A Java one-thread baseline for the same input is
-  still running. Until it is compared, the whole-genome run shows only that the port completes and how
-  long it takes.
+- Java was not run at 8 threads on this input. Its output then depends on the thread count, and the
+  prep step needed 44 GB at 8 threads even on the small pair.
+- The Java run without `-XX:hashCode=2` took about as long (assembly 1,650 s, depth 404 s, caller
+  13.8 s).
+- The Rust prep step ran while the Java prep step was running, and other jobs were running too.
 - The prep step appears to be limited by the disk on this input: other jobs were running, and system
   time was more than a quarter of user time.
 
@@ -781,7 +830,7 @@ Not ported:
 - **Assembly:** some of the log text of `-asm_build_debug`.
 
 Not tested, or tested only in part:
-- **Whole genome against Java**, in any step (section 5).
+- **Whole genome:** one Illumina tumor/normal pair (section 2.6); no whole-genome SBX or Ultima data.
 - **Reference genome 37** on real data, in any step. Prep and caller were run with version 37 on genome
   38 data only (nothing matches); assembly not at all; depth on genome 38 data and a synthetic set.
 - **Caller on real SBX and Ultima calls.** The caller's SBX and Ultima paths were run on Illumina data
