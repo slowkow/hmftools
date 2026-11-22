@@ -501,6 +501,8 @@ the notes mark explicitly as not observed say so.
   `assembly/JunctionGroupAssembler.java:219`) are written by each task as it goes, so `decoy_match.tsv`
   and the decoy rows of `assembly.tsv` are in task completion order with more than one thread. Not
   reproduced: the port writes them in junction group order, the one-thread order.
+**Visualiser**
+
 - **A31. Visualiser fails on single breakends.** `assembly/vis/AssemblyVisualiser.java:717` throws
   `RuntimeException("Got a single breakend")` for an assembly alignment with a single breakend.
   `AssemblyApplication.runVisualiser` (line 474) catches it, logs at DEBUG and prints the stack trace
