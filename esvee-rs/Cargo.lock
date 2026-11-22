@@ -200,6 +200,7 @@ dependencies = [
  "memchr",
  "mimalloc",
  "rust-htslib",
+ "zlib-rs",
 ]
 
 [[package]]

@@ -1,0 +1,69 @@
+##fileformat=VCFv4.2
+##EsveeVersion=2.1
+##FILTER=<ID=PASS,Description="Variant passes all filters">
+##FILTER=<ID=PON,Description="Found in panel of normals">
+##FILTER=<ID=dedup,Description="Event is duplicate of another">
+##FILTER=<ID=delShortLowVaf,Description="Short low-VAF DEL artefacts with homology">
+##FILTER=<ID=invShortFragLowVaf,Description="Short (<300b) low-VAF INV artefacts">
+##FILTER=<ID=invShortIsolated,Description="Short (<100b) isolated INV artefacts">
+##FILTER=<ID=invShortLowVafHom,Description="Short (<3K) low-VAF INV artefacts with homology">
+##FILTER=<ID=lineSource,Description="Remote LINE source">
+##FILTER=<ID=minAF,Description="Variant allele fraction too low">
+##FILTER=<ID=minAnchorLength,Description="Trimmed anchor length is too short">
+##FILTER=<ID=minLength,Description="Variant is too short">
+##FILTER=<ID=minQual,Description="Insufficient quality">
+##FILTER=<ID=minSupport,Description="Below minimum fragment support">
+##FILTER=<ID=offTarget,Description="Outside target panel">
+##FILTER=<ID=sbxArtefact,Description="SBX artefact">
+##FILTER=<ID=sbxInvZeroMotif,Description="SBX artefact, zero-length INV with known motif">
+##FILTER=<ID=sbxStrandBias,Description="SBX strand-bias">
+##FILTER=<ID=sgl,Description="SGLs filtered entirely">
+##FILTER=<ID=sglStrandBias,Description="Single breakend with excessive strand bias and not a mobile line insertion">
+##FILTER=<ID=shortFrags,Description="Average variant fragment length is too short">
+##FILTER=<ID=strandBias,Description="Outside valid strand bias range">
+##FILTER=<ID=unpairedPositionRange,Description="Unpaired position range">
+##FILTER=<ID=weakJuncMinAF,Description="Low allele fraction at weak junction">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
+##FORMAT=<ID=AF,Number=1,Type=Float,Description="Allele frequency of the breakend">
+##FORMAT=<ID=DF,Number=1,Type=Integer,Description="Count of discordant fragments with a read either side of the breakend">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth (reads with MQ=255 or with bad mates are filtered)">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=REF,Number=1,Type=Integer,Description="Count of reads mapping across this breakend">
+##FORMAT=<ID=REFPAIR,Number=1,Type=Integer,Description="Count of reference read pairs spanning this breakend supporting the reference allele">
+##FORMAT=<ID=SB,Number=1,Type=Float,Description="Strand read bias">
+##FORMAT=<ID=SF,Number=1,Type=Integer,Description="Count of fragments supporting the breakend with a read overlapping the breakend">
+##FORMAT=<ID=VF,Number=1,Type=Integer,Description="Total variant fragments supporting the breakend">
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
+##INFO=<ID=ASMINFO,Number=1,Type=String,Description="Original junction coordinates">
+##INFO=<ID=ASMLEN,Number=1,Type=Integer,Description="Assembly sequence length">
+##INFO=<ID=ASMLNKS,Number=.,Type=Integer,Description="Id(s) of breakend(s) linked by assembly">
+##INFO=<ID=AVGLEN,Number=1,Type=Integer,Description="Average variant fragment length">
+##INFO=<ID=CIPOS,Number=2,Type=Integer,Description="Confidence interval around position">
+##INFO=<ID=HOMSEQ,Number=1,Type=String,Description="Sequence of base pair identical micro-homology at event breakpoints">
+##INFO=<ID=HOTSPOT,Number=0,Type=Flag,Description="Variant is a hotspot">
+##INFO=<ID=IHOMPOS,Number=2,Type=Integer,Description="Position of inexact homology">
+##INFO=<ID=INSALN,Number=1,Type=String,Description="Alternative alignments of insert sequence">
+##INFO=<ID=INSRMP,Number=1,Type=Float,Description="Portion of inserted sequence whose alignment overlaps the repeatmasker repeat">
+##INFO=<ID=INSRMRC,Number=1,Type=String,Description="Inserted sequence repeatmasker repeat class">
+##INFO=<ID=INSRMRT,Number=1,Type=String,Description="Inserted sequence repeatmasker repeat type">
+##INFO=<ID=LINE,Number=0,Type=Flag,Description="LINE insertion site">
+##INFO=<ID=MATEID,Number=1,Type=String,Description="Mate breakend ID">
+##INFO=<ID=MLR,Number=1,Type=Integer,Description="Max local indel repeat around breakend">
+##INFO=<ID=PJRR,Number=1,Type=Float,Description="Proximate junction read ratio">
+##INFO=<ID=PON_COUNT,Number=1,Type=Integer,Description="PON count if in PON">
+##INFO=<ID=SAGA,Number=1,Type=String,Description="ID and breakends of the matched SAGA variant">
+##INFO=<ID=SEGRL,Number=1,Type=Integer,Description="Repeat length of segment with highest QUAL contribution">
+##INFO=<ID=SRRR,Number=1,Type=Float,Description="Supplementary remote region ratio">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=TPR,Number=2,Type=Integer,Description="Unpaired read three-prime position range">
+##INFO=<ID=UFP,Number=1,Type=Integer,Description="Distinct fragment positions">
+##INFO=<ID=VF,Number=1,Type=Integer,Description="Total variant fragments supporting the breakend">
+##contig=<ID=chr1,length=100000>
+##contig=<ID=chr2,length=90000>
+##contig=<ID=chr3,length=80000>
+##contig=<ID=chrUn_test,length=5000>
+##esveeVersion=2.1
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SAMPLE_N	SAMPLE_T
+chr1	20000	2	T	]chr1:20500]t	321.50	PASS	ASMINFO=chr1:20000:-1_chr1:20500:1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=3;MLR=3;PJRR=0.400;PON_COUNT=77;SEGRL=300;SRRR=0.800;SVTYPE=DUP;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:30,25:0.455:0:55:30:0:0.500:25:25	./.:40,30:0.429:0:70:40:0:0.500:30:30
+chr1	20500	3	C	C[chr1:20000[	321.50	PASS	ASMINFO=chr1:20000:-1_chr1:20500:1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=2;MLR=3;PJRR=0.400;PON_COUNT=77;SEGRL=300;SRRR=0.800;SVTYPE=DUP;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:30,25:0.455:0:55:30:0:0.500:25:25	./.:40,30:0.429:0:70:40:0:0.500:30:30
+chr1	40000	5	G	.CCATGGTACCGATTACAGGCATCGATCGGATCCATTGACCGTAGCTAGCTAGGATCCGATCGATTGACCG	150	PASS	ASMINFO=chr1:40000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MLR=3;PJRR=0.400;PON_COUNT=41;SEGRL=300;SRRR=0.800;SVTYPE=SGL;UFP=20;VF=30	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:40,12:0.231:0:52:40:0:0.500:12:12	./.:50,20:0.286:0:70:50:0:0.500:20:20

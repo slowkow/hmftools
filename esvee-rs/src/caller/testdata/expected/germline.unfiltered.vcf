@@ -1,0 +1,98 @@
+##fileformat=VCFv4.2
+##EsveeVersion=2.1
+##FILTER=<ID=PASS,Description="Variant passes all filters">
+##FILTER=<ID=PON,Description="Found in panel of normals">
+##FILTER=<ID=dedup,Description="Event is duplicate of another">
+##FILTER=<ID=delShortLowVaf,Description="Short low-VAF DEL artefacts with homology">
+##FILTER=<ID=invShortFragLowVaf,Description="Short (<300b) low-VAF INV artefacts">
+##FILTER=<ID=invShortIsolated,Description="Short (<100b) isolated INV artefacts">
+##FILTER=<ID=invShortLowVafHom,Description="Short (<3K) low-VAF INV artefacts with homology">
+##FILTER=<ID=lineSource,Description="Remote LINE source">
+##FILTER=<ID=minAF,Description="Variant allele fraction too low">
+##FILTER=<ID=minAnchorLength,Description="Trimmed anchor length is too short">
+##FILTER=<ID=minLength,Description="Variant is too short">
+##FILTER=<ID=minQual,Description="Insufficient quality">
+##FILTER=<ID=minSupport,Description="Below minimum fragment support">
+##FILTER=<ID=offTarget,Description="Outside target panel">
+##FILTER=<ID=sbxArtefact,Description="SBX artefact">
+##FILTER=<ID=sbxInvZeroMotif,Description="SBX artefact, zero-length INV with known motif">
+##FILTER=<ID=sbxStrandBias,Description="SBX strand-bias">
+##FILTER=<ID=sgl,Description="SGLs filtered entirely">
+##FILTER=<ID=sglStrandBias,Description="Single breakend with excessive strand bias and not a mobile line insertion">
+##FILTER=<ID=shortFrags,Description="Average variant fragment length is too short">
+##FILTER=<ID=strandBias,Description="Outside valid strand bias range">
+##FILTER=<ID=unpairedPositionRange,Description="Unpaired position range">
+##FILTER=<ID=weakJuncMinAF,Description="Low allele fraction at weak junction">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
+##FORMAT=<ID=AF,Number=1,Type=Float,Description="Allele frequency of the breakend">
+##FORMAT=<ID=DF,Number=1,Type=Integer,Description="Count of discordant fragments with a read either side of the breakend">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth (reads with MQ=255 or with bad mates are filtered)">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=REF,Number=1,Type=Integer,Description="Count of reads mapping across this breakend">
+##FORMAT=<ID=REFPAIR,Number=1,Type=Integer,Description="Count of reference read pairs spanning this breakend supporting the reference allele">
+##FORMAT=<ID=SB,Number=1,Type=Float,Description="Strand read bias">
+##FORMAT=<ID=SF,Number=1,Type=Integer,Description="Count of fragments supporting the breakend with a read overlapping the breakend">
+##FORMAT=<ID=VF,Number=1,Type=Integer,Description="Total variant fragments supporting the breakend">
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">
+##INFO=<ID=ASMINFO,Number=1,Type=String,Description="Original junction coordinates">
+##INFO=<ID=ASMLEN,Number=1,Type=Integer,Description="Assembly sequence length">
+##INFO=<ID=ASMLNKS,Number=.,Type=Integer,Description="Id(s) of breakend(s) linked by assembly">
+##INFO=<ID=AVGLEN,Number=1,Type=Integer,Description="Average variant fragment length">
+##INFO=<ID=CIPOS,Number=2,Type=Integer,Description="Confidence interval around position">
+##INFO=<ID=HOMSEQ,Number=1,Type=String,Description="Sequence of base pair identical micro-homology at event breakpoints">
+##INFO=<ID=HOTSPOT,Number=0,Type=Flag,Description="Variant is a hotspot">
+##INFO=<ID=IHOMPOS,Number=2,Type=Integer,Description="Position of inexact homology">
+##INFO=<ID=INSALN,Number=1,Type=String,Description="Alternative alignments of insert sequence">
+##INFO=<ID=INSRMP,Number=1,Type=Float,Description="Portion of inserted sequence whose alignment overlaps the repeatmasker repeat">
+##INFO=<ID=INSRMRC,Number=1,Type=String,Description="Inserted sequence repeatmasker repeat class">
+##INFO=<ID=INSRMRT,Number=1,Type=String,Description="Inserted sequence repeatmasker repeat type">
+##INFO=<ID=LINE,Number=0,Type=Flag,Description="LINE insertion site">
+##INFO=<ID=MATEID,Number=1,Type=String,Description="Mate breakend ID">
+##INFO=<ID=MLR,Number=1,Type=Integer,Description="Max local indel repeat around breakend">
+##INFO=<ID=PJRR,Number=1,Type=Float,Description="Proximate junction read ratio">
+##INFO=<ID=PON_COUNT,Number=1,Type=Integer,Description="PON count if in PON">
+##INFO=<ID=SAGA,Number=1,Type=String,Description="ID and breakends of the matched SAGA variant">
+##INFO=<ID=SEGRL,Number=1,Type=Integer,Description="Repeat length of segment with highest QUAL contribution">
+##INFO=<ID=SRRR,Number=1,Type=Float,Description="Supplementary remote region ratio">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=TPR,Number=2,Type=Integer,Description="Unpaired read three-prime position range">
+##INFO=<ID=UFP,Number=1,Type=Integer,Description="Distinct fragment positions">
+##INFO=<ID=VF,Number=1,Type=Integer,Description="Total variant fragments supporting the breakend">
+##contig=<ID=chr1,length=100000>
+##contig=<ID=chr2,length=90000>
+##contig=<ID=chr3,length=80000>
+##contig=<ID=chrUn_test,length=5000>
+##esveeVersion=2.1
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SAMPLE_N
+chr1	1000	0	A	A[chr1:5000[	500	PASS	ASMINFO=chr1:1000:1_chr1:5000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=1;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr1	5000	1	C	]chr1:1000]C	500	PASS	ASMINFO=chr1:1000:1_chr1:5000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=0;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr1	20000	2	T	]chr1:20500]t	321.50	PON	ASMINFO=chr1:20000:-1_chr1:20500:1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=3;MLR=3;PJRR=0.400;PON_COUNT=77;SEGRL=300;SRRR=0.800;SVTYPE=DUP;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:30,25:0.455:0:55:30:0:0.500:25:25
+chr1	20500	3	C	C[chr1:20000[	321.50	PON	ASMINFO=chr1:20000:-1_chr1:20500:1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=2;MLR=3;PJRR=0.400;PON_COUNT=77;SEGRL=300;SRRR=0.800;SVTYPE=DUP;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:30,25:0.455:0:55:30:0:0.500:25:25
+chr1	30000	4	G	GACGTTGCAACGTTGCAACGTTGCAACGTTGCAACGTTGCAACGTTGCAACGTTGCAACGTTGCA.	180	PASS	ASMINFO=chr1:30000:1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;INSALN=chr3:30301|+|14S50M|1,chr2:777|-|64M|3;INSRMP=1.00;INSRMRC=Simple_repeat;INSRMRT=(CA)n;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=SGL;UFP=20;VF=30	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:50,0:0.000:0:50:50:0:0.500:0:0
+chr1	40000	5	G	.CCATGGTACCGATTACAGGCATCGATCGGATCCATTGACCGTAGCTAGCTAGGATCCGATCGATTGACCG	150	PON	ASMINFO=chr1:40000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MLR=3;PJRR=0.400;PON_COUNT=41;SEGRL=300;SRRR=0.800;SVTYPE=SGL;UFP=20;VF=30	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:40,12:0.231:0:52:40:0:0.500:12:12
+chr1	50000	6	A	A[chr2:60000[	45	PASS	ASMINFO=chr1:50000:1_chr2:60000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;HOTSPOT;IHOMPOS=0,0;MATEID=7;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=BND;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:100,0:0.000:0:100:100:0:0.500:0:0
+chr2	10000	8	G	GTTTTTTTTTTTTTTTTTTTT.	60	PASS	ASMINFO=chr2:10000:1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;INSALN=chr1:9000|+|20M|0;INSRMP=1.00;INSRMRC=Simple_repeat;INSRMRT=T(n);LINE;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=SGL;UFP=20;VF=30	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:40,0:0.000:0:40:40:0:0.500:0:0
+chr2	10012	9	G	.GATTACAGATTACAG	20	PASS	ASMINFO=chr2:10012:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=SGL;UFP=20;VF=30	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:40,0:0.000:0:40:40:0:0.500:0:0
+chr2	20000	10	A	A[chr2:25000[	200	dedup	ASMINFO=chr2:20000:1_chr2:25000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=11;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr2	20000	12	A	A[chr2:25000[	210	PASS	ASMINFO=chr2:20000:1_chr2:25000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=13;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr2	25000	11	C	]chr2:20000]C	200	dedup	ASMINFO=chr2:20000:1_chr2:25000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=10;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr2	25000	13	C	]chr2:20000]C	210	PASS	ASMINFO=chr2:20000:1_chr2:25000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=12;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr2	30000	14	A	A]chr2:30100]	10	invShortFragLowVaf;invShortLowVafHom;minQual	ASMINFO=chr2:30000:1_chr2:30100:1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;HOMSEQ=ACGT;IHOMPOS=-4,4;MATEID=15;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=INV;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:300,0:0.000:0:300:300:0:0.500:0:0
+chr2	30100	15	C	C]chr2:30000]	10	invShortFragLowVaf;invShortLowVafHom;minQual	ASMINFO=chr2:30000:1_chr2:30100:1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;HOMSEQ=ACGT;IHOMPOS=-4,4;MATEID=14;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=INV;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:300,0:0.000:0:300:300:0:0.500:0:0
+chr2	40000	16	G	GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.	170	minAnchorLength	ASMINFO=chr2:40000:1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;INSALN=chr1:123|-|40M|0;INSRMP=1.00;INSRMRC=Simple_repeat;INSRMRT=A(n);MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=SGL;UFP=20;VF=30	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:50,0:0.000:0:50:50:0:0.500:0:0
+chr2	50000	17	A	A[chr2:50020[	300	minLength	ASMINFO=chr2:50000:1_chr2:50020:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=18;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr2	50020	18	C	]chr2:50000]C	300	minLength	ASMINFO=chr2:50000:1_chr2:50020:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=17;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr2	60000	7	C	]chr1:50000]C	45	PASS	ASMINFO=chr1:50000:1_chr2:60000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;HOTSPOT;IHOMPOS=0,0;MATEID=6;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=BND;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:100,0:0.000:0:100:100:0:0.500:0:0
+chr3	1000	19	A	AACGTACGTACGTACGTACGTACGTACGTACGTACGTAC[chr3:1000[	250.25	PASS	ASMINFO=chr3:1000:1_chr3:1000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=20;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr3	1000	20	C	]chr3:1000]ACGTACGTACGTACGTACGTACGTACGTACGTACGTACC	250.25	PASS	ASMINFO=chr3:1000:1_chr3:1000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=19;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr3	3000	23	A	A[chr3:9000[	400	minSupport	ASMINFO=chr3:3000:1_chr3:9000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=24;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr3	9000	24	C	]chr3:3000]C	400	minSupport	ASMINFO=chr3:3000:1_chr3:9000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=23;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr3	10000	25	A	ATTGACCATGGCATCGATCGATCGGGATCCATGACGTAGCTAGTCGATCGTAGCTGA[chr3:10001[	350	PASS	ASMINFO=chr3:10000:1_chr3:10001:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=26;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr3	10001	26	C	]chr3:10000]TTGACCATGGCATCGATCGATCGGGATCCATGACGTAGCTAGTCGATCGTAGCTGAC	350	PASS	ASMINFO=chr3:10000:1_chr3:10001:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=25;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr3	12000	27	A	A[chr3:18000[	.	minQual	ASMINFO=chr3:12000:1_chr3:18000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=28;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr3	18000	28	C	]chr3:12000]C	.	minQual	ASMINFO=chr3:12000:1_chr3:18000:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=27;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,0:0.000:0:60:60:0:0.500:0:0
+chr3	20000	29	A	A[chr3:20010[	5	minLength	ASMINFO=chr3:20000:1_chr3:20010:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=30;MLR=3;PJRR=0.400;SAGA=saga_1;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,1:0.016:0:61:60:0:0.500:1:1
+chr3	20010	30	C	]chr3:20000]C	5	minLength	ASMINFO=chr3:20000:1_chr3:20010:-1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=29;MLR=3;PJRR=0.400;SAGA=saga_1;SEGRL=300;SRRR=0.800;SVTYPE=DEL;UFP=20;VF=40	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:60,1:0.016:0:61:60:0:0.500:1:1
+chr3	30000	31	A	[chr3:36000[A	275	PASS	ASMINFO=chr3:30000:-1_chr3:36000:-1;ASMLEN=900;ASMLNKS=33,34;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=32;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=INV;UFP=20;VF=40	GT:AD:DF:DP:REF	./.:70,0:0:70:70
+chr3	36000	32	C	[chr3:30000[C	275	PASS	ASMINFO=chr3:30000:-1_chr3:36000:-1;ASMLEN=900;ASMLNKS=33,34;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MATEID=31;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=INV;UFP=20;VF=40	GT:AD:DF:DP:REF	./.:75,0:0:75:75
+chr3	40000	33	G	GGGCATCGATCGGATCCATTGACCGTAGCTAGCTAGGATCCGATCGATTGACCGTACGATCGAT.	90	PASS	ASMINFO=chr3:40000:1;ASMLEN=900;AVGLEN=400;CIPOS=0,0;IHOMPOS=0,0;MLR=3;PJRR=0.400;SEGRL=300;SRRR=0.800;SVTYPE=SGL;UFP=20;VF=30	GT:AD:AF:DF:DP:REF:REFPAIR:SB:SF:VF	./.:100,0:0.000:0:100:100:0:0.500:0:0
