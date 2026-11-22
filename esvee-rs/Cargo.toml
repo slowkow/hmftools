@@ -13,6 +13,10 @@ mimalloc = { version = "0.1.52", default-features = false, optional = true }
 zlib-rs = "0.6.7"
 rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate", "bzip2", "lzma"] }
 
+[build-dependencies]
+# the assembly step builds the vendored BWA-MEM sources (vendor/bwa)
+cc = "1"
+
 [features]
 default = ["mimalloc"]
 # a faster allocator; build with --no-default-features to use the system one
