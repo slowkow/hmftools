@@ -79,7 +79,7 @@ and `.germline.vcf.gz`, each VCF with a tabix index.
 | Step | Ported | Not ported |
 |---|---|---|
 | prep | everything: tumor/normal, tumor only, normal only, BAM and CRAM input, Illumina, SBX and Ultima, the cache BAM and `-no_cache_bam` modes, `-write_types`, SAGA location matching (`-saga_fasta`) | nothing known |
-| assembly | everything that writes the TSVs and the raw VCF: tumor/normal, tumor only, germline only, Illumina, SBX and Ultima, SAGA, `-decoy_genome`, all `-write_types`, `-perf_debug` and `-perf_log_time` log lines | the assembly visualiser: `-run_assembly_vis` and `-purple_dir` are accepted and the main outputs are unchanged, but no HTML is written |
+| assembly | everything: the TSVs, the raw VCF and the visualiser files; tumor/normal, tumor only, germline only, Illumina, SBX and Ultima, SAGA, `-decoy_genome`, all `-write_types`, `-perf_debug` and `-perf_log_time` log lines | nothing known; the visualiser (`-run_assembly_vis` with `-specific_junctions`) writes the same `vis/*.html` as Java on the machine it was checked on (text positions come from that machine's font metrics) |
 | depth | everything, BAM and CRAM (3.0 and 3.1) | htsjdk's record validation behind `-bam_validation STRICT` and `LENIENT`: the option is accepted, records are not validated |
 | caller | everything: tumor/normal, tumor only, germline only, PON and artefact PON, hotspots, repeat mask, target regions, `-write_breakend_tsv`, `-manual_ref_depth` | nothing known |
 

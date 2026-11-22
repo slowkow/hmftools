@@ -15,3 +15,5 @@ pub mod java_math;
 pub mod java_sort;
 #[allow(dead_code)]
 pub mod regions;
+#[allow(dead_code)]
+pub mod vis;

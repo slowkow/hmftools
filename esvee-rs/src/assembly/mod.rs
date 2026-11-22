@@ -35,6 +35,7 @@ pub mod sequence_builder;
 pub mod sequence_compare;
 pub mod sequence_diff;
 pub mod types;
+pub mod vis;
 
 #[cfg(test)]
 mod tests;

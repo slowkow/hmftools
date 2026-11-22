@@ -170,6 +170,9 @@ impl AssemblyApplication {
         }
         self.write_assembly_output(&final_assemblies);
         self.write_variants(&assembly_alignments, &breakends)?;
+        if self.config.run_visualiser {
+            crate::assembly::vis::run_visualiser(&self.config, &assembly_alignments);
+        }
         self.results.assembly_writer.close();
         self.results.read_writer.close();
         self.results.breakend_writer.close();

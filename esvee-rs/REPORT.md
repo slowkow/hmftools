@@ -18,13 +18,13 @@ port was made; they are outside this repository, because the outputs are derived
   prep TSVs, `assembly.tsv`, `breakend.tsv`, and the raw, ref-depth, unfiltered, somatic and germline
   VCFs.
 - Each step was also compared with Java on its own, over option cases and other kinds of input: 42
-  cases for prep, 41 for assembly, 93 paired runs for depth, 96 cases for the caller. Public GIAB HG008
+  cases for prep, 52 for assembly, 93 paired runs for depth, 96 cases for the caller. Public GIAB HG008
   SBX and Ultima reads were used for prep and assembly, and an exome pair for prep and assembly.
 - A deterministic Java reference had to be defined first. Java's prep output depends on the thread
   count, and Java's assembly output changes from run to run even at one thread (section 3). The
   reference is Java at one thread with every identity hash made equal (`-XX:hashCode=2`). The port
   gives that result at any thread count.
-- 77 findings about the Java code are recorded in section 4: 11 in prep, 30 in assembly, 19 in depth,
+- 79 findings about the Java code are recorded in section 4: 11 in prep, 32 in assembly, 19 in depth,
   17 in the caller. The port reproduces those that change the output.
 - On the small input at 8 threads the Rust chain takes 24 s against Java's 95 s, with a peak of 1.9 GB
   against 44 GB (section 5).
@@ -36,7 +36,7 @@ port was made; they are outside this repository, because the outputs are derived
 - On that pair the Rust chain at 8 threads takes 14 minutes against 2.9 hours for the Java reference
   at one thread. The assembly step peaked at 33.4 GB at first; it now peaks at 7.2 GB with the same
   output (section 5).
-- Not ported: the assembly visualiser, and htsjdk's record validation behind `-bam_validation` in the
+- Not ported: htsjdk's record validation behind `-bam_validation` in the
   depth step. Not tested: reference genome 37 on real data, in any step (section 6).
 
 ## 2. Verification
@@ -92,7 +92,7 @@ are not DEBUG, sorted). With `-write_types ASSEMBLY_ALL` the files are `alignmen
 `assembly_read.tsv`, `breakend.tsv`, `decoy_match.tsv`, `phase_group_building.tsv`,
 `phased_assembly.tsv` and the raw VCF.
 
-All 41 cases are identical:
+All 52 cases are identical (41 without the visualiser, 11 with it):
 
 | Kind | Cases |
 |---|---|
@@ -102,6 +102,7 @@ All 41 cases are identical:
 | Exome | the exome pair |
 | SAGA | a synthetic resource built from the deletion and insertion breakends of the reference run, 381 variants including near misses (523 assemblies and 554 breakends matched); tumor only with `-assembly_detailed_tsv`; prep output carrying SAGA matches; an invalid resource (both tools stop the same way) |
 | Decoy | `-decoy_genome` with a BWA image |
+| Visualiser (`-run_assembly_vis`) | junctions of 2 and of 8 breakends of each SV type (10 and 39 files); assemblies with several breakend pairs (4 files); `-output_id` (10); `-purple_dir` (10, the same files as without it); `-log_debug` (5, DEBUG lines of the visualiser identical); public SBX pair (18); tumor only, germline only and public Ultima tumor (Java writes no files, findings A31 and A32); indel-only assemblies (no breakends, no files); the flag without `-specific_junctions` (ignored) |
 
 - **BWA.** `alignment.tsv` holds every raw field of each BWA record (location, coordinates, MAPQ,
   cigar, score, flags, NM, XA, MD). It is identical to Java's in every case, about 22,000 alignment
@@ -115,9 +116,16 @@ All 41 cases are identical:
   of adds and removes.
 
 Not tested: reference genome 37 (the only genome 37 prep output at hand has no junctions); a real
-decoy genome image (none was available: the SAGA test image stood in for it); the visualiser, which is
-not ported, and which could not be observed in Java either, because the test runs with specific
-junctions and the visualiser flag produced no breakends.
+decoy genome image (none was available: the SAGA test image stood in for it).
+
+**Visualiser.** Each case compares the `vis/` folder by file name and each file byte for byte: 96
+files in the 7 cases where Java writes any (some assemblies recur between cases). Two Java runs of one case wrote identical files, so there is
+nothing random to allow for. Text positions come from AWT font metrics, so Java's files depend on the
+machine's fonts; the port holds the metrics of the machine it was compared on (macOS). The drawing
+code (`src/common/vis`: SVG as JFreeSVG writes it, the HTML that j2html renders, the hmf-common view
+models) is checked by 15 unit tests against values dumped from the Java classes on synthetic input.
+The Java package has no unit tests. The port takes 0.5 to 5 s on these cases where Java takes 65 to
+157 s; a run without the flag is as fast as before (2.7 to 2.9 s on the small pair).
 
 ### 2.3 Depth
 
@@ -493,6 +501,15 @@ the notes mark explicitly as not observed say so.
   `assembly/JunctionGroupAssembler.java:219`) are written by each task as it goes, so `decoy_match.tsv`
   and the decoy rows of `assembly.tsv` are in task completion order with more than one thread. Not
   reproduced: the port writes them in junction group order, the one-thread order.
+- **A31. Visualiser fails on single breakends.** `assembly/vis/AssemblyVisualiser.java:717` throws
+  `RuntimeException("Got a single breakend")` for an assembly alignment with a single breakend.
+  `AssemblyApplication.runVisualiser` (line 474) catches it, logs at DEBUG and prints the stack trace
+  to stderr, so no file is written for such an assembly and the run reports success. Reproduced: the
+  port skips the same assemblies and logs the DEBUG line.
+- **A32. Visualiser writes nothing without a reference sample.** `AssemblyVisualiser.java:215` calls
+  `mConfig.ReferenceIds.get(0)`, which throws `IndexOutOfBoundsException` in a tumor-only run, for
+  every assembly; likewise `TumorIds.get(0)` in a germline-only run. The exception is caught as in
+  A31, so `-run_assembly_vis` gives no files in those modes. Reproduced.
 
 **Crash**
 
@@ -821,8 +838,6 @@ The changes, all in `src/assembly`, measured as peak footprint at 8 threads:
 ## 6. Not ported, not tested
 
 Not ported:
-- **Assembly visualiser.** `-run_assembly_vis` and `-purple_dir` are accepted and their side effect on
-  read caching is ported, so the main outputs are identical; no HTML is written.
 - **Depth: record validation.** htsjdk's `SAMRecord.isValid` checks behind `-bam_validation STRICT` and
   `LENIENT`. On a BAM that htsjdk finds invalid (synthetic: an unmapped read with a non-zero MAPQ) Java
   with STRICT stops with status 1 and the port carries on and writes the VCF. LENIENT only prints to
@@ -840,7 +855,8 @@ Not tested, or tested only in part:
 - **A real decoy genome image** in assembly; **sambamba** as prep's `-bamtool`; **`ReadIdTrimmer`**
   switching itself off part-way through a run.
 - **SAGA** was tested with synthetic resources only, in prep and assembly.
-- **Platforms.** Every run was on one macOS ARM machine.
+- **Platforms.** Every run was on one macOS ARM machine. The visualiser's text positions use that
+  machine's font metrics; Java on another system may place text differently.
 
 Known differences from Java that are not faults of either:
 - Header lines of an input VCF are kept as text in the depth and caller steps. htsjdk re-serialises
