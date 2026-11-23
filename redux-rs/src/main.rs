@@ -16,6 +16,7 @@ mod fmt;
 mod jitter;
 mod consensus;
 mod dup;
+mod faidx;
 mod log;
 mod out;
 mod partition;

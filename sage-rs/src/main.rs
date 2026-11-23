@@ -12,6 +12,7 @@ mod constants;
 mod dedup;
 mod evidence;
 mod evidence_stage;
+mod faidx;
 mod filters;
 mod fmt;
 mod matcher;

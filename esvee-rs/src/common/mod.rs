@@ -3,6 +3,7 @@
 pub mod args;
 #[allow(dead_code)]
 pub mod compat;
+pub mod faidx;
 #[allow(dead_code)]
 pub mod fmt;
 pub mod log;

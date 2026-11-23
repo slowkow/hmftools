@@ -1,7 +1,7 @@
 //! RefSequence: reference bases for a region plus a 1000 base buffer either side.
 
 use anyhow::Result;
-use rust_htslib::faidx;
+use crate::faidx;
 
 pub struct RefGenome {
     reader: faidx::Reader,

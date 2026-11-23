@@ -1,7 +1,7 @@
 //! Indexed FASTA access. Positions are 1-based and inclusive, as in the Java RefGenomeInterface.
 
 use anyhow::Result;
-use rust_htslib::faidx;
+use crate::faidx;
 
 /// An indexed FASTA. An uncompressed file is read with positioned reads at offsets worked out from the
 /// index; htslib reads it a byte at a time, which showed in profiles. Anything else goes through htslib.
