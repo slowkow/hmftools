@@ -1,15 +1,25 @@
-# Container image for the Rust ports
+# Running the Rust ports in oncoanalyser
 
-One image with the Rust ports of SAGE, REDUX and ESVEE, for use in place of the Java tools' images in
-oncoanalyser (https://github.com/slowkow/oncoanalyser, branch `rust-ports`, profile `rust_ports`).
+The Rust ports of SAGE, REDUX and ESVEE, packaged for use in place of the Java tools in oncoanalyser
+(https://github.com/slowkow/oncoanalyser, branch `rust-ports`, profile `rust_ports`). Two forms:
 
-Build from the repository root:
+**A folder on the host**, for running these steps without a container (oncoanalyser's
+`--rust_ports_bin`). The ports need nothing beyond the operating system. This builds them and copies
+them with the wrappers into one folder:
+
+```bash
+rust-docker/install.sh ~/rust-ports
+```
+
+**A container image**, for executors that run every task in a container (Google Cloud Batch, AWS
+Batch, Kubernetes) or when Docker is used anyway. Build from the repository root:
 
 ```bash
 docker build -f rust-docker/Dockerfile -t hmftools-rust:dev .
 ```
 
-`Dockerfile.dockerignore` limits the build context to the three crates and the wrappers.
+`Dockerfile.dockerignore` limits the build context to the three crates and the wrappers. The image
+has not been built yet; the folder has been checked with oncoanalyser's stub run.
 
 ## Contents
 
@@ -17,7 +27,7 @@ docker build -f rust-docker/Dockerfile -t hmftools-rust:dev .
 |---|---|
 | `sage-rs`, `redux-rs`, `esvee-rs` | the ports (`sage-rs/`, `redux-rs/`, `esvee-rs/`) |
 | `sage`, `redux`, `esvee` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them |
-| `samtools`, `sambamba` | given to REDUX and ESVEE as `-bamtool` |
+| `samtools`, `sambamba` | given to REDUX and ESVEE as `-bamtool`; the ports only check that the path exists (they sort and index BAMs themselves), so on the host these must be on `PATH` too |
 
 The wrappers drop JVM options (`-Xmx...`, `-XX:...`, `-D...=...`) and turn Java main classes into
 subcommands:
