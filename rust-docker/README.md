@@ -12,14 +12,25 @@ rust-docker/install.sh ~/rust-ports
 ```
 
 **A container image**, for executors that run every task in a container (Google Cloud Batch, AWS
-Batch, Kubernetes) or when Docker is used anyway. Build from the repository root:
+Batch, Kubernetes). Batch machines are x86-64, so build it for linux/amd64. On Google Cloud, Cloud
+Build does that and pushes the image to Artifact Registry, without Docker on your machine:
 
 ```bash
-docker build -f rust-docker/Dockerfile -t hmftools-rust:dev .
+rust-docker/cloud-build.sh <region>-docker.pkg.dev/<project>/<repository>/hmftools-rust
 ```
 
-`Dockerfile.dockerignore` limits the build context to the three crates and the wrappers. The image
-has not been built yet; the folder has been checked with oncoanalyser's stub run.
+It uploads only the committed files the image needs (about 6 MB; no build folders, nothing
+uncommitted), tags the image with the commit id, and takes about 3 minutes on the 32-CPU builder set
+in `cloudbuild.yaml`. With Docker, from the repository root:
+
+```bash
+docker build --platform linux/amd64 -f rust-docker/Dockerfile -t hmftools-rust:dev .
+```
+
+`Dockerfile.dockerignore` limits the build context to the three crates and the wrappers. The build
+runs every crate's unit tests on Linux and fails if one fails; the first Linux build found a crash
+that macOS hid (rust-htslib's `fetch_seq` freeing htslib's buffer with the Rust allocator), now fixed.
+For AWS, build the same Dockerfile and push it to ECR.
 
 ## Contents
 
