@@ -56,18 +56,34 @@ The speed-ups only reach sample throughput once oncoanalyser runs the Rust progr
    `-java_compat` must give identical PURPLE, LINX and ORANGE outputs. Then the corrected default:
    record how purity, ploidy, drivers and structural variants change.
 
-## 3. Alignment: decide separately
+## 3. Alignment and read preparation
 
-Alignment is most of the cost. A Rust rewrite of BWA-MEM2 is not planned: it is already vectorised
-C++, and a rewrite would at best match it. Options to measure instead:
+Alignment is most of the cost. Decision (2026-11-22): the pipeline will align with **bwa-mem3** in
+place of BWA-MEM2. oncoanalyser calls `bwa-mem2 mem -Y -K 100000000` piped into sambamba, so the
+alignment step needs its own module or container change, and the end-to-end check of section 2
+should run on bwa-mem3 alignments. A Rust rewrite of the aligner is not planned.
 
-- **Use the provider's alignments.** When the sequencing provider delivers aligned files on a
-  compatible reference, oncoanalyser can start at REDUX and skip alignment and read splitting
-  entirely. The hmftools callers are tuned on BWA-MEM2 output (soft clips, mapping qualities,
-  supplementary alignments), so this needs a check: run the chain on both alignments of the same pair
-  and compare purity, ploidy, small variants, structural variants and drivers.
-- **A faster aligner.** bwa-mem3: measure its speed and how its output differs from BWA-MEM2 on a
-  slice before using it for whole genomes.
+**fastp** (2.1% of the CPU time above) changes no reads in this pipeline. oncoanalyser runs it with
+adapter trimming, quality filtering, length filtering and poly-G trimming all turned off, for two
+purposes only:
+
+- splitting each FASTQ pair into chunks of `max_fastq_records` read pairs (10 million in 2.3.0), so
+  that alignment can be spread over many tasks at once; each chunk is aligned and sorted separately
+  and REDUX merges the chunks again;
+- with UMIs enabled, moving the UMI from the read sequence into the read name (off in this run).
+
+Its time goes into decompressing and recompressing every read. No replacement is needed:
+
+- oncoanalyser 3.0.0 sets `max_fastq_records = -1` by default and then does not run fastp at all
+  unless UMIs are enabled; in 2.3.0, `--max_fastq_records 0` does the same.
+- Splitting only pays off when the chunks run on many machines at once. On one machine, a single
+  aligner process per lane with all the threads avoids the split, the recompression and the merge.
+
+Still worth measuring: starting from the provider's alignments when they are delivered on a
+compatible reference, which skips alignment entirely. The hmftools callers are tuned on BWA-MEM
+output (soft clips, mapping qualities, supplementary alignments), so this needs the chain run on both
+alignments of the same pair and a comparison of purity, ploidy, small variants, structural variants
+and drivers.
 
 ## 4. Order of the remaining ports
 
