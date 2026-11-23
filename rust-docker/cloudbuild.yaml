@@ -1,0 +1,10 @@
+# Google Cloud Build: build the image (linux/amd64) and push it to ${_IMAGE}.
+# Run through rust-docker/cloud-build.sh, which uploads only the committed files the image needs.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    env: ["DOCKER_BUILDKIT=1"]
+    args: ["build", "-f", "rust-docker/Dockerfile", "-t", "${_IMAGE}", "."]
+images: ["${_IMAGE}"]
+options:
+  machineType: E2_HIGHCPU_32
+timeout: 3600s
