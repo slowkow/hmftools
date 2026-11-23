@@ -32,6 +32,12 @@ const ITEMS: &[&str] = &[
     "log_level",
 ];
 
+/// The options of the step and whether each is a flag (for the tests of the combined mode).
+#[cfg(test)]
+pub(crate) fn accepted_options() -> Vec<(&'static str, bool)> {
+    FLAGS.iter().map(|x| (*x, true)).chain(ITEMS.iter().map(|x| (*x, false))).collect()
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WriteType {
     PrepJunction,

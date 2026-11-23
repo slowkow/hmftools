@@ -362,7 +362,9 @@ fn open_readers(config: &PrepConfig) -> Result<Vec<bam::IndexedReader>> {
 }
 
 pub fn run(argv: &[String]) -> Result<()> {
-    crate::info!("Esvee version {}", crate::VERSION);
+    if crate::version_log_due() {
+        crate::info!("Esvee version {}", crate::VERSION);
+    }
     let mut config = PrepConfig::parse(argv)?;
     crate::info!("output({}) {}", config.output_dir, config.output_id.as_ref().map(|id| format!("outputId({id})")).unwrap_or_default());
     let start_time = std::time::Instant::now();

@@ -454,7 +454,8 @@ struct Queue {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    // ConfigBuilder.checkHelpAndVersion: "-version" anywhere prints the version and exits
+    // "-version" prints the version and exits. Java (ConfigBuilder.parseCommandLine) honours it only as the
+    // sole argument and refuses it among other options; here it is honoured anywhere
     if args.iter().any(|a| a == "-version") {
         println!("Sage version {}", vcfout::SAGE_VERSION);
         return Ok(());

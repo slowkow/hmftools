@@ -136,6 +136,12 @@ const ITEMS: &[&str] = &[
     "asm_map_qual_threshold", "disc_rate_increment", "purple_dir", "bamtool", "specific_chr", "specific_regions", "output_dir", "output_id", "log_level", "threads",
 ];
 
+/// The options of the step and whether each is a flag (for the tests of the combined mode).
+#[cfg(test)]
+pub(crate) fn accepted_options() -> Vec<(&'static str, bool)> {
+    FLAGS.iter().map(|x| (*x, true)).chain(ITEMS.iter().map(|x| (*x, false))).collect()
+}
+
 fn split_list(args: &Args, name: &str) -> Vec<String> {
     match args.value(name) {
         Some(v) => v.split(',').map(|s| s.to_string()).collect(),

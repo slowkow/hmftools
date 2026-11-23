@@ -67,7 +67,9 @@ pub struct AssemblyApplication {
 }
 
 pub fn run(argv: &[String]) -> Result<()> {
-    crate::info!("Esvee version {}", crate::VERSION);
+    if crate::version_log_due() {
+        crate::info!("Esvee version {}", crate::VERSION);
+    }
     let config = AssemblyConfig::from_args(argv)?;
     let results = ResultsWriter { assembly_writer: AssemblyWriter::new(&config), read_writer: AssemblyReadWriter::new(&config), breakend_writer: BreakendWriter::new(&config), phase_group_build_writer: PhaseGroupBuildWriter::new(&config) };
     let saga_matcher_factory = match &config.saga_fasta_file {

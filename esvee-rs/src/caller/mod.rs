@@ -5,6 +5,8 @@
 
 mod annotate;
 mod config;
+#[cfg(test)]
+pub(crate) use config::accepted_options;
 mod filters;
 mod pon;
 #[cfg(test)]
@@ -683,7 +685,9 @@ pub fn run(argv: &[String]) -> Result<()> {
     if values.has_flag("log_debug") || matches!(values.value("log_level"), Some("DEBUG") | Some("TRACE") | Some("ALL")) {
         crate::common::log::DEBUG.store(true, std::sync::atomic::Ordering::Relaxed);
     }
-    info!("Esvee version {}", crate::VERSION);
+    if crate::version_log_due() {
+        info!("Esvee version {}", crate::VERSION);
+    }
 
     let config = CallerConfig::new(&values)?;
     let filter_constants = filter_constants(&values, config.ref_gen_version);

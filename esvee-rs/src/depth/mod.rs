@@ -54,6 +54,11 @@ mod unmapped;
 mod vcf;
 
 use config::{form_output_file, DepthConfig};
+// for the combined mode (crate::esvee)
+pub(crate) use config::parse_java_double;
+pub(crate) use vcf::parse_java_int;
+#[cfg(test)]
+pub(crate) use config::accepted_options;
 use task::{DepthTask, ReadSource, ALLELE_FRACTION, REF_DEPTH, REF_DEPTH_PAIR};
 use vcf::{VariantContext, VcfHeader, VcfWriter};
 

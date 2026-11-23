@@ -16,6 +16,7 @@ measurements in full: [REPORT.md](REPORT.md).
 | depth | ported; identical VCF to Java on a small tumor/normal input and 22 synthetic inputs, at 1 and 8 threads; not ported: htsjdk record validation behind `-bam_validation STRICT` |
 | caller | ported; unfiltered, somatic and germline VCFs identical to Java on the small input and in 96 option cases; all 18 Java unit tests ported; SBX, Ultima and genome 37 not yet run on real data of those kinds |
 | end to end | on the small input every output of the Rust chain at 8 threads equals the Java reference chain (one thread, `-XX:hashCode=2`): prep BAMs and TSVs, assembly.tsv, breakend.tsv, raw / ref_depth / unfiltered / somatic / germline VCFs |
+| one call (EsveeApplication) | `esvee-rs <options>` without a step name runs the four steps with the options of all four, as oncoanalyser runs ESVEE; on the small input with oncoanalyser's command line (sambamba, its write types, SAGA and decoy) every output equals Java's EsveeApplication, tumor/normal and tumor only (REPORT.md, 2.5) |
 | whole genome | Illumina tumor/normal pair (4.2 billion reads): assembly.tsv, breakend.tsv and all five VCFs (52,061 variants, 3,072 somatic, 35,338 germline) identical to the Java reference chain, from the Rust prep output and from Java's; prep as above; Rust 14 min at 8 threads against 2.9 h for the Java reference at one thread |
 
 ## Measurements

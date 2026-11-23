@@ -246,6 +246,40 @@ own chain:
 The germline VCF has one record more than in section 2.4 because the input chain differs: there the
 caller read the output of a Java chain run at 8 threads.
 
+**All four steps in one call.** nf-core/oncoanalyser runs Java's `EsveeApplication`, which takes the
+options of all four steps on one command line (`esvee-rs <options>` without a step name; README, "All
+four steps in one call"). Run with oncoanalyser's command line on the small pair: `-bamtool` sambamba
+(1.0.0), its `-write_types` (no `DISCORDANT_STATS`; `PHASED_ASSEMBLY` and `ALIGNMENT` added), and the
+synthetic SAGA FASTA of the assembly option checks as `-saga_fasta` and its BWA image as
+`-decoy_genome`. Java at one thread with `-XX:hashCode=2` (output in `baseline/esvee/java/oa_tn`,
+`oa_t`); the port at 8 threads with `-java_compat` (`baseline/esvee/rust/oa_tn_compat`, `oa_t_compat`).
+
+| Output | tumor/normal | tumor only |
+|---|---|---|
+| names of the files written | the same 21 | the same 17 |
+| `prep.junction.tsv`, `prep.fragment_length.tsv`, `prep.disc_stats.tsv` | identical | identical |
+| prep BAMs | same records, same order (770,828 and 627,454); headers equal apart from `@PG` | same records, same order (521,667); header equal apart from `@PG` |
+| `assembly.tsv`, `breakend.tsv`, `phased_assembly.tsv`, `alignment.tsv` | identical | identical |
+| raw / ref-depth / unfiltered VCF | identical (2,392 records) | identical (2,006 records) |
+| somatic VCF | identical (29 records) | identical (899 records) |
+| germline VCF | identical (1,574 records) | not written, by either |
+
+The four steps of the port run one at a time with the options each Java config resolves to (and every
+input named explicitly) give the same files, with `-java_compat` and in the default mode, tumor/normal
+and tumor only; so does the binary from before the change, step by step (default mode, the pair). Java's prep BAMs sorted by
+sambamba are the same records in the same order as its samtools-sorted ones of the step-wise reference;
+with `-saga_fasta` the junction file has one more column (`SagaMatch`) and is otherwise identical.
+
+In one JVM `-XX:hashCode=2` also applies to prep, whose identity-keyed `HashSet<ReadGroup>` in
+`JunctionTracker.filterJunctions` then holds every entry in one bucket: prep took 2,218 s, against
+230 s for the same call with `-stages PREP` and without the option, which wrote the same prep files. A
+reference can therefore be made faster in two calls: `-stages PREP` without the option, then
+`-stages 'ASSEMBLY;REF_DEPTH;CALLING'` with it. The whole Java call took 2,276 s and 5.5 GB; the port 14.9 s and 2.3 GB
+(tumor only: Java 444 s and 3.7 GB, of which prep 411 s; the port 7.7 s and 1.1 GB). Java as
+oncoanalyser runs it, at 8 threads without the option, took 92.6 s and 37.2 GB for the pair; its
+output is not reproducible (section 3; against the reference the prep BAMs have 176 and 173 records fewer
+and the germline VCF one record fewer).
+
 ### 2.6 Whole genome
 
 An Illumina whole-genome tumor/normal pair after REDUX, 4.2 billion reads in the two BAMs (tumor 120 GB,

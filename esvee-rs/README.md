@@ -78,6 +78,54 @@ Outputs, with the Java names: `<sample>.esvee.prep.bam` (+ `.bai`) per sample an
 `-write_types`; `<tumor>.esvee.ref_depth.vcf.gz`; `<tumor>.esvee.unfiltered.vcf.gz`, `.somatic.vcf.gz`
 and `.germline.vcf.gz`, each VCF with a tabix index.
 
+### All four steps in one call
+
+Without a step name, esvee-rs does what the Java `EsveeApplication` does (the class the bioconda
+`esvee` wrapper runs, and so the command nf-core/oncoanalyser runs): it takes the options of all four
+steps on one command line and runs prep, assembly, depth and caller in turn.
+
+```
+esvee-rs \
+    -tumor TUMOR -tumor_bam tumor.redux.bam -reference NORMAL -reference_bam normal.redux.bam \
+    -esvee_prep_dir out/ -ref_genome ref.fasta -ref_genome_version 38 \
+    -known_hotspot_file known_fusions.38.bedpe -pon_sgl_file sgl_pon.38.bed.gz -pon_sv_file sv_pon.38.bedpe.gz \
+    -repeat_mask_file repeat_mask_data.38.fa.gz -unmap_regions unmap_regions.38.tsv \
+    -sequencing_type ILLUMINA -bamtool $(which sambamba) \
+    -write_types 'PREP_JUNCTION;PREP_BAM;FRAGMENT_LENGTH_DIST;JUNC_ASSEMBLY;PHASED_ASSEMBLY;ALIGNMENT;BREAKEND;VCF' \
+    -threads 8 -output_dir out/
+```
+
+Leave out `-reference` and `-reference_bam` for a tumor-only run. `-decoy_genome`, `-saga_fasta` and
+`-target_regions_bed` are taken as by the Java steps.
+
+- **Options.** The set is the union of the four steps' options, with Java's names, types and defaults
+  (`esvee-rs -help` lists them, in the format of Java's ConfigBuilder). An option a step registers goes
+  to that step; an unknown option is an error, as in Java. Path options are checked when the run
+  starts, before prep has written anything, so `-esvee_prep_dir` must exist beforehand (oncoanalyser
+  runs `mkdir -p esvee/`). Java also needs `-output_dir` to exist; the port creates it.
+- **How each step finds its inputs** is that of the Java configs when they share one command line:
+  prep and depth read `-sample` and `-bam_file`, or else the tumor and then the reference ids and BAMs;
+  assembly ignores `-tumor_bam` and `-reference_bam` and reads the prep BAMs and junction file from
+  `-esvee_prep_dir` (or `-output_dir`); depth reads `<output_dir><tumor>.esvee.raw.vcf.gz`; the caller
+  reads `<output_dir><tumor>.esvee.ref_depth.vcf.gz` and the prep files from `-esvee_prep_dir`. An
+  `-input_vcf` given on the command line is read by both depth and the caller, as in Java.
+- **`-write_types`** is read by prep for the prep types and by assembly for the assembly types. Prep
+  writes `disc_stats.tsv` in any case.
+- **`-stages PREP;ASSEMBLY;REF_DEPTH;CALLING`** runs only the stages listed (in that order, whatever the
+  order given), the later ones reading the files of earlier runs.
+- **`-version`** prints `Esvee version 2.1` and exits. (Java does this only when `-version` is the only
+  argument.)
+- `-java_compat` and `-java_compat_except` apply to all four steps.
+- **`-bamtool`**: the prep BAMs are sorted and indexed in the process with either tool named (see
+  "Differences from the Java tool"). Java's `sambamba sort` gives the same records in the same order as
+  `samtools sort`; only the `@PG` lines of the header differ.
+
+The output equals that of the four steps run one at a time with the matching options, and with
+`-java_compat` that of Java's `EsveeApplication` (REPORT.md, section 2.5). Run Java's reference for such a
+comparison as for the steps (one thread, `-XX:hashCode=2`); in one JVM the option also applies to prep,
+which then takes about ten times as long (its identity-keyed sets degrade to lists) with the same output;
+`-stages PREP` without the option and then `-stages 'ASSEMBLY;REF_DEPTH;CALLING'` with it avoids that.
+
 ## What is ported
 
 | Step | Ported | Not ported |

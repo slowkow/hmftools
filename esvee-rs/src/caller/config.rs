@@ -49,6 +49,12 @@ const ITEMS: &[(&str, ItemType, Option<&str>)] = &[
 
 const REQUIRED: &[&str] = &["ref_genome_version"];
 
+/// The options of the step and whether each is a flag (for the tests of the combined mode).
+#[cfg(test)]
+pub(crate) fn accepted_options() -> Vec<(&'static str, bool)> {
+    ITEMS.iter().map(|x| (x.0, x.1 == ItemType::Flag)).collect()
+}
+
 /// The values given on the command line
 pub struct ConfigValues {
     values: HashMap<&'static str, String>,

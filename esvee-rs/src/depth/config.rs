@@ -66,7 +66,7 @@ fn registered_items() -> Vec<Item> {
 }
 
 /// Double.parseDouble, near enough: surrounding whitespace and a trailing d/f type suffix are accepted
-fn parse_java_double(s: &str) -> Option<f64> {
+pub(crate) fn parse_java_double(s: &str) -> Option<f64> {
     let t = s.trim();
     let t = t.strip_suffix(['d', 'D', 'f', 'F']).unwrap_or(t);
     if t.is_empty() || t.eq_ignore_ascii_case("inf") || t.eq_ignore_ascii_case("+inf") || t.eq_ignore_ascii_case("-inf") || t.eq_ignore_ascii_case("nan") {
@@ -88,6 +88,12 @@ fn java_split(s: &str, delim: char) -> Vec<&str> {
         parts.pop();
     }
     parts
+}
+
+/// The options of the step and whether each is a flag (for the tests of the combined mode).
+#[cfg(test)]
+pub(crate) fn accepted_options() -> Vec<(&'static str, bool)> {
+    registered_items().iter().map(|x| (x.name, x.ty == ItemType::Flag)).collect()
 }
 
 struct Items(Vec<Item>);
@@ -309,7 +315,9 @@ impl DepthConfig {
             };
             super::set_log_level(rank as u8);
         }
-        info!("Esvee version {}", crate::VERSION);
+        if crate::version_log_due() {
+            info!("Esvee version {}", crate::VERSION);
+        }
 
         // FileCommon.parseSampleIds and parseBamFiles look up the tumor and reference options of the other
         // steps when -sample or -bam_file is absent; this step does not register them, so Java fails
