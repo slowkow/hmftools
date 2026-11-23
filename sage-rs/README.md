@@ -3,6 +3,12 @@
 A Rust reimplementation of [SAGE](../sage/README.md) 5.1, the somatic SNV / MNV / indel caller.
 It takes the same command-line options, and is faster and uses less memory.
 
+The Java reference is SAGE 5.1 as of hmftools commit `a224a2cd8e`. The Java source beside this crate is
+newer: upstream commit `de50386378` (2026-11) changed SAGE without changing its version number (the
+realigned-support test for indels near a soft-clipped end, a base-quality penalty scaled between 6
+and 12, SAGE's own `NM` count, and append's version check). Those changes are not in the port yet, so
+`-java_compat` reproduces the earlier commit, not the current Java source.
+
 By default the port corrects the faults found in the Java code. With `-java_compat` it behaves as Java
 does and writes the same VCF, byte for byte; that is how the port was verified. See "Corrections and
 `-java_compat`" below.
