@@ -116,8 +116,8 @@ Java from the pipeline.
 | Program | Size | Non-Java parts |
 |---|---|---|
 | PAVE | 9,100 | none; loads the Ensembl data cache |
-| PURPLE | 22,600 | plots drawn by R scripts |
-| LINX | 41,000 | visualiser plots with R and Circos |
+| PURPLE | 22,600 | plots drawn by R scripts and Circos (Perl) |
+| LINX | 41,000 | visualiser plots with R and Circos (Perl) |
 | Virus Interpreter | 600 | none |
 | CHORD | 2,300 | prediction by an R random forest |
 | SIGS | 1,500 | none |
@@ -146,6 +146,10 @@ SAGE append, used for RNA, is already part of `sage-rs`.
 
 Cohort and research tools that oncoanalyser does not run: compar, patient-db, panel-builder,
 pave-reverse, gene-utils, sv-tools, paddle, v-chord, v-cuppa, taur, hmf-id-generator.
+
+Programs outside hmftools that stay: bwa-mem3 with sambamba (alignment and sorting), samtools,
+VIRUSBreakend (GRIDSS with kraken2, until Viridian replaces it) and STAR for RNA. With waves A to C
+done, the pipeline needs no Java, R, Python or Perl, but it still runs these programs.
 
 ## 5. Shared code
 
