@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# `esvee` as oncoanalyser calls the Java tool, run by esvee-rs: JVM options are dropped and the Java
+# main classes of the four steps become esvee-rs subcommands; without a class the whole chain runs.
+# -java_compat or ESVEE_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+sub=()
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.esvee.EsveeApplication) ;;
+        com.hartwig.hmftools.esvee.prep.PrepApplication) sub=(prep) ;;
+        com.hartwig.hmftools.esvee.assembly.AssemblyApplication) sub=(assembly) ;;
+        com.hartwig.hmftools.esvee.depth.DepthAnnotator) sub=(depth) ;;
+        com.hartwig.hmftools.esvee.caller.CallerApplication) sub=(caller) ;;
+        com.hartwig.*) echo "esvee (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec esvee-rs ${sub[@]+"${sub[@]}"} ${args[@]+"${args[@]}"}

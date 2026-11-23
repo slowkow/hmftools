@@ -454,6 +454,11 @@ struct Queue {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // ConfigBuilder.checkHelpAndVersion: "-version" anywhere prints the version and exits
+    if args.iter().any(|a| a == "-version") {
+        println!("Sage version {}", vcfout::SAGE_VERSION);
+        return Ok(());
+    }
     // -java_compat and -java_compat_except <ids> are taken off before the options are parsed
     let args = match compat::take_options(&args) {
         Ok(a) => a,

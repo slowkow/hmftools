@@ -1,0 +1,15 @@
+# Only the three crates and the wrappers go into the build context.
+*
+!sage-rs/Cargo.toml
+!sage-rs/Cargo.lock
+!sage-rs/src
+!sage-rs/resources
+!redux-rs/Cargo.toml
+!redux-rs/Cargo.lock
+!redux-rs/src
+!esvee-rs/Cargo.toml
+!esvee-rs/Cargo.lock
+!esvee-rs/build.rs
+!esvee-rs/src
+!esvee-rs/vendor
+!rust-docker/bin

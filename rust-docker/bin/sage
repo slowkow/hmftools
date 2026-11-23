@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# `sage` as oncoanalyser calls the Java tool, run by sage-rs: JVM options are dropped and Java main
+# classes become sage-rs subcommands. -java_compat or SAGE_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+sub=()
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.sage.SageApplication) ;;
+        com.hartwig.hmftools.sage.append.SageAppendApplication) sub=(append) ;;
+        com.hartwig.hmftools.sage.tinc.TincAnalyser) sub=(tinc) ;;
+        com.hartwig.*) echo "sage (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec sage-rs ${sub[@]+"${sub[@]}"} ${args[@]+"${args[@]}"}

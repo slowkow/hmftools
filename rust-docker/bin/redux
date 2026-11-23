@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# `redux` as oncoanalyser calls the Java tool, run by redux-rs: JVM options are dropped.
+# -java_compat or REDUX_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.redux.ReduxApplication) ;;
+        com.hartwig.*) echo "redux (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec redux-rs ${args[@]+"${args[@]}"}
