@@ -7,6 +7,7 @@ use anyhow::{bail, Result};
 
 unsafe extern "C" {
     fn esvee_bwa_open_index(path: *const c_char) -> *mut c_void;
+    fn esvee_bwa_on_network_fs(path: *const c_char) -> c_int;
     fn esvee_bwa_destroy_index(idx: *mut c_void) -> c_int;
     fn esvee_bwa_contig_count(idx: *mut c_void) -> c_int;
     fn esvee_bwa_contig_name(idx: *mut c_void, i: c_int) -> *const c_char;
@@ -19,6 +20,42 @@ unsafe extern "C" {
     fn esvee_bwa_destroy_opts(opts: *mut c_void);
     fn esvee_bwa_create_alignments(idx: *mut c_void, opts: *mut c_void, seqs: *mut c_char, buf_size: *mut usize) -> *mut c_void;
     fn esvee_bwa_free(p: *mut c_void);
+}
+
+/// The image is memory-mapped, as in gatk-bwamem-jni, and the aligner then touches pages all over it.
+/// On a network file system (a bucket mounted with gcsfuse on Google Batch) each of those pages is a
+/// separate small read: on a 2M-read-pair test the two alignment passes took 28 minutes at 1% CPU. So
+/// there the file is first read through once in large sequential reads, which leaves it in the page
+/// cache that the mapping then uses (5.6 GB for GRCh38, about a minute from a bucket). Not a Java
+/// behaviour; the output is the same. ESVEE_IMAGE_PRELOAD=1 or 0 forces it on or off.
+fn preload_if_remote(path: &str, c_path: &CString) {
+    let wanted = match std::env::var("ESVEE_IMAGE_PRELOAD").ok().as_deref() {
+        Some("1") => true,
+        Some("0") => false,
+        _ => (unsafe { esvee_bwa_on_network_fs(c_path.as_ptr()) }) == 1,
+    };
+    if !wanted {
+        return;
+    }
+    let start = std::time::Instant::now();
+    let read = (|| -> std::io::Result<u64> {
+        use std::io::Read;
+        let mut file = std::fs::File::open(path)?;
+        let mut buf = vec![0u8; 16 << 20];
+        let mut total = 0u64;
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                return Ok(total);
+            }
+            total += n as u64;
+        }
+    })();
+    match read {
+        Ok(n) => crate::debug!("read the genome image {path} through once ({:.1} GB, {:.1}s)", n as f64 / 1e9, start.elapsed().as_secs_f64()),
+        // not fatal: the mapping still works, only more slowly
+        Err(e) => crate::debug!("could not read the genome image {path} through: {e}"),
+    }
 }
 
 /// hmf-common BwaMemAlignParams
@@ -109,6 +146,7 @@ impl BwaMemAligner {
     /// As `new`, with the BWA "all alignments" option (BwaMemAlignerConfig.allAlignments) on or off.
     pub fn new_all_alignments(index_path: &str, params: &BwaMemAlignParams, all_alignments: bool) -> Result<BwaMemAligner> {
         let c_path = CString::new(index_path)?;
+        preload_if_remote(index_path, &c_path);
         let idx = unsafe { esvee_bwa_open_index(c_path.as_ptr()) };
         if idx.is_null() {
             bail!("failed to open BWA index image: {index_path}");

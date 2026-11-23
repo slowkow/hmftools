@@ -11,6 +11,9 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <errno.h>
+#ifdef __linux__
+#include <sys/vfs.h>
+#endif
 #include "bwamem.h"
 #include "kstring.h"
 #include "bntseq.h"
@@ -110,6 +113,17 @@ static size_t bufLen( int32_t* pBuf ) {
 		}
 	}
 	return totLen;
+}
+
+/* esvee-rs addition: 1 if the file is on a FUSE (a cloud bucket mounted with gcsfuse, as on Google Batch)
+   or NFS file system, where each page of a mapped file is fetched by its own small network read */
+int esvee_bwa_on_network_fs( const char* path ) {
+#ifdef __linux__
+	struct statfs fs;
+	if ( statfs(path, &fs) == 0 && (fs.f_type == 0x65735546 /* FUSE */ || fs.f_type == 0x6969 /* NFS */) ) return 1;
+#endif
+	(void)path;
+	return 0;
 }
 
 /* jnibwa_openIndex, taking a path: maps the image and sets the result formatter */

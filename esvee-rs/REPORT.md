@@ -1081,6 +1081,17 @@ The changes, all in `src/assembly`, measured as peak footprint at 8 threads:
   used from any thread. With an older mimalloc, or with `--no-default-features`, reads come from the
   global allocator and the memory that freed reads held is returned less well.
 
+### On a network file system (Google Batch)
+
+On Google Batch the task inputs are read through the bucket mounted with gcsfuse. The BWA index image
+is memory-mapped (as in gatk-bwamem-jni, which Java ESVEE uses), and the aligner touches pages all over
+it, so each page became its own small network read: on the first Batch run (2026-11-23, 2M read pairs,
+tumor and normal) ESVEE took 28 minutes at 1% CPU, all of it in the two alignment passes; reading the
+BAMs took 20 seconds. Since then, when the image is on a FUSE or NFS mount, it is read through once in
+16 MB reads before it is mapped, which leaves it in the page cache that the mapping uses
+(`ESVEE_IMAGE_PRELOAD=1` or `0` forces this on or off). Output unchanged: the small pair's `esvee/`
+folder is identical with the read-through forced on.
+
 ## 6. Not ported, not tested
 
 Not ported:
