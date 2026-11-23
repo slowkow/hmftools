@@ -120,6 +120,16 @@ pub fn load_simple_variants(path: &str) -> Result<Vec<(String, crate::types::Sim
     Ok(out)
 }
 
+/// The folder of a file, as FileWriterUtils.pathFromFile: the working folder for a bare file name.
+/// (`Path::parent` gives an empty path there, which made the BQR file `/<sample>.redux.bqr.tsv` when
+/// oncoanalyser passed the BAM as a bare name.)
+fn folder_of(path: &str) -> String {
+    match std::path::Path::new(path).parent() {
+        Some(d) if !d.as_os_str().is_empty() => d.to_string_lossy().to_string(),
+        _ => ".".to_string(),
+    }
+}
+
 impl Config {
     pub fn from_args(args: &[String]) -> Result<Config> {
         Self::parse(args, false)
@@ -173,12 +183,9 @@ impl Config {
         );
         let tumor_bams = list(get("tumor_bam"));
         let reference_bams = list(get("reference_bam"));
-        let dir_of = |p: &String| {
-            std::path::Path::new(p).parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_else(|| ".".into())
-        };
         let jitter_bqr_dir = match get("jitter_bqr_dir") {
             Some(d) => d.clone(),
-            None => reference_bams.first().or(tumor_bams.first()).map(dir_of).unwrap_or_else(|| ".".into()),
+            None => reference_bams.first().or(tumor_bams.first()).map(|p| folder_of(p)).unwrap_or_else(|| ".".into()),
         };
         let version = req("ref_genome_version")?;
         let mut specific_regions = Vec::new();
@@ -309,5 +316,18 @@ impl Config {
             return true;
         }
         self.include_mt && crate::types::is_mito(chr)
+    }
+}
+
+#[cfg(test)]
+mod folder_tests {
+    use super::folder_of;
+
+    #[test]
+    fn folder_of_a_bam_path() {
+        assert_eq!(folder_of("tumor.redux.bam"), ".");
+        assert_eq!(folder_of("redux/tumor.redux.bam"), "redux");
+        assert_eq!(folder_of("/data/run/tumor.redux.bam"), "/data/run");
+        assert_eq!(format!("{}/{}.redux.bqr.tsv", folder_of("tumor.redux.bam"), "tumor"), "./tumor.redux.bqr.tsv");
     }
 }
