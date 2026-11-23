@@ -222,9 +222,15 @@ impl VariantData {
     pub fn is_insert(&self) -> bool {
         self.alt.len() > self.ref_.len()
     }
-    /// As Java: requires alt to equal ref, so this is never true for a real variant.
     pub fn is_mnv(&self) -> bool {
-        self.ref_.len() > 1 && self.alt == self.ref_
+        // S12, Java: `Alt.equals(Ref)` where the lengths were meant, so no variant is ever an MNV:
+        // MNVs are looked up in gnomAD at their first base only and always pass the recheck of the
+        // germline alt support. Corrected: the lengths are compared.
+        if crate::compat::java("S12") {
+            self.ref_.len() > 1 && self.alt == self.ref_
+        } else {
+            self.ref_.len() > 1 && self.alt.len() == self.ref_.len()
+        }
     }
     pub fn is_long_indel(&self) -> bool {
         self.ref_.len().max(self.alt.len()) as i32 >= LONG_INSERT_LENGTH
@@ -327,7 +333,7 @@ pub fn check_filters(v: &VariantData) -> FilterReason {
 // ---------------------------------------------------------------------------------------------
 // TincCalculator
 
-/// TincCalculator.populateDefaultLevels, with the same floating point accumulation
+/// TincCalculator.populateDefaultLevels
 pub fn populate_default_levels() -> Vec<f64> {
     let rounded = |level: f64, increment: f64| (jround(level / increment) as i32) as f64 * increment;
     let mut levels = Vec::new();
@@ -341,10 +347,18 @@ pub fn populate_default_levels() -> Vec<f64> {
         levels.push(rounded(level, 0.01));
         level += 0.01;
     }
-    level = 0.15;
-    while level <= 1.0 {
-        levels.push(level);
-        level += 0.05;
+    if crate::compat::java("S11") {
+        // S11, Java: the 0.05 steps are accumulated in floating point and not rounded as the two finer
+        // ranges are, so the levels are 0.39999999999999997, ..., 0.9500000000000003 and the last
+        // step overshoots 1.0, which is never tested.
+        level = 0.15;
+        while level <= 1.0 {
+            levels.push(level);
+            level += 0.05;
+        }
+    } else {
+        // Corrected: 0.15, 0.20, ..., 1.00
+        levels.extend((3..=20).map(|k| k as f64 / 20.0));
     }
     levels
 }
@@ -368,8 +382,7 @@ fn compute_contamination_score(variants: &[&VariantData], test_level: f64) -> f6
     fit_penalty
 }
 
-/// TincCalculator.calculate. Java's early exit never triggers (its counter is never incremented),
-/// so every level is scored.
+/// TincCalculator.calculate
 pub fn calculate(variants: &[&VariantData], test_levels: &[f64]) -> f64 {
     if variants.len() < TINC_MIN_VARIANTS {
         return 0.0;
@@ -382,18 +395,8 @@ pub fn calculate(variants: &[&VariantData], test_levels: &[f64]) -> f64 {
         return 0.0;
     }
     let exclude_lower_levels = tumor_af_total < TINC_TUMOR_AF_UPPER_LIMIT;
-    let mut lowest_score = -1.0;
-    let mut lowest_level = -1.0;
-    for &level in test_levels {
-        if exclude_lower_levels && level > 0.0 && level < TINC_TUMOR_AF_UPPER_TEST_MIN {
-            continue;
-        }
-        let score = compute_contamination_score(variants, level);
-        if lowest_score < 0.0 || score < lowest_score {
-            lowest_score = score;
-            lowest_level = level;
-        }
-    }
+    let (lowest_level, lowest_score) =
+        lowest_scoring_level(test_levels, exclude_lower_levels, |level| compute_contamination_score(variants, level));
     eprintln!(
         "tinc level({}) tumorAFTotal({}) minPenalty({})",
         java_fixed(lowest_level, 3),
@@ -401,6 +404,35 @@ pub fn calculate(variants: &[&VariantData], test_levels: &[f64]) -> f64 {
         java_fixed(lowest_score, 0)
     );
     lowest_level
+}
+
+/// The loop of TincCalculator.calculate: the level with the lowest score, and that score.
+fn lowest_scoring_level(test_levels: &[f64], exclude_lower_levels: bool, score_of: impl Fn(f64) -> f64) -> (f64, f64) {
+    let mut lowest_score = -1.0;
+    let mut lowest_level = -1.0;
+    // S10, Java: the early exit tests a counter that is never incremented, so every level is scored.
+    // Corrected (intent uncertain as to the count): the counter counts the levels since the lowest
+    // score, and the search stops once TEST_LEVEL_EARLY_EXIT of them have not improved on it.
+    const TEST_LEVEL_EARLY_EXIT: i32 = 5;
+    let early_exit = !crate::compat::java("S10");
+    let mut levels_since_lowest = 0;
+    for &level in test_levels {
+        if exclude_lower_levels && level > 0.0 && level < TINC_TUMOR_AF_UPPER_TEST_MIN {
+            continue;
+        }
+        let score = score_of(level);
+        if lowest_score < 0.0 || score < lowest_score {
+            lowest_score = score;
+            lowest_level = level;
+            levels_since_lowest = 0;
+        } else if early_exit {
+            levels_since_lowest += 1;
+            if levels_since_lowest >= TEST_LEVEL_EARLY_EXIT {
+                break;
+            }
+        }
+    }
+    (lowest_level, lowest_score)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -779,12 +811,26 @@ pub struct TincAnalyser {
     chromosome_index: Vec<u32>,
     /// Java only queries chr1-22,X,Y, except when the fit variants come from a file
     human_only: bool,
+    /// S13 corrected: records on other contigs are read as well, and are not used for the fit
+    keep_other_contigs: bool,
     pub level: f64,
 }
 
 impl TincAnalyser {
     pub fn new(cfg: TincConfig) -> Self {
-        TincAnalyser { cfg, variants: Vec::new(), chromosomes: Vec::new(), chromosome_index: Vec::new(), human_only: true, level: 0.0 }
+        // S13, Java: the rewrite only queries chr1-22, X and Y, so the mitochondrial records are absent
+        // from the rewritten VCF. Corrected: they are kept where they are; they take no part in the
+        // fit and have no gnomAD file, and the recovery and the germline alt support limit apply to
+        // them as to any record (as they do in Java when the fit variants come from a file).
+        TincAnalyser {
+            cfg,
+            variants: Vec::new(),
+            chromosomes: Vec::new(),
+            chromosome_index: Vec::new(),
+            human_only: true,
+            keep_other_contigs: !crate::compat::java("S13"),
+            level: 0.0,
+        }
     }
 
     pub fn variants(&self) -> &[VariantData] {
@@ -792,7 +838,8 @@ impl TincAnalyser {
     }
 
     fn load_vcf_variants(&mut self) -> Result<()> {
-        let human_only = self.human_only;
+        let human_only = self.human_only && !self.keep_other_contigs;
+        let sorted_check = self.human_only;
         let path = self.cfg.input_vcf.clone();
         let mut variants = Vec::new();
         let mut chromosomes: Vec<String> = Vec::new();
@@ -804,7 +851,7 @@ impl TincAnalyser {
             }
             if chromosomes.last().map(|c| c.as_str()) != Some(chr) {
                 if let Some(last) = chromosomes.last() {
-                    if human_only && chromosome_rank(last) >= chromosome_rank(chr) {
+                    if sorted_check && is_human_chromosome(chr) && chromosome_rank(last) >= chromosome_rank(chr) {
                         bail!("{path} is not sorted in chromosome order ({last} before {chr})");
                     }
                 }
@@ -823,17 +870,41 @@ impl TincAnalyser {
     fn annotate(&mut self) -> Result<()> {
         let mut wanted: Positions = HashMap::new();
         for (v, &c) in self.variants.iter().zip(&self.chromosome_index) {
-            wanted.entry(self.chromosomes[c as usize].clone()).or_default().insert(v.position);
+            let set = wanted.entry(self.chromosomes[c as usize].clone()).or_default();
+            set.insert(v.position);
+            if v.is_mnv() {
+                // every base of an MNV is looked up in gnomAD (never the case under S12)
+                set.extend((1..v.ref_.len() as i32).map(|i| v.position + i));
+            }
         }
-        let (pon, gnomad) = load_resources(&self.cfg, &wanted, &self.chromosomes)?;
+        let human: Vec<String> = self.chromosomes.iter().filter(|c| is_human_chromosome(c)).cloned().collect();
+        let (pon, gnomad) = load_resources(&self.cfg, &wanted, &human)?;
         let v38 = self.cfg.v38;
         for (v, &c) in self.variants.iter_mut().zip(&self.chromosome_index) {
             let chr = &self.chromosomes[c as usize];
-            if let Some(list) = gnomad.get(chr).and_then(|m| m.get(&v.position)) {
-                if let Some((_, _, freq)) = list.iter().find(|(r, a, _)| *r == v.ref_ && *a == v.alt) {
-                    v.gnomad_frequency = Some(*freq);
-                    v.pon_filtered = true;
+            let frequency = |pos: i32, ref_: &str, alt: &str| -> Option<f64> {
+                let list = gnomad.get(chr)?.get(&pos)?;
+                list.iter().find(|(r, a, _)| r == ref_ && a == alt).map(|(_, _, freq)| *freq)
+            };
+            // GnomadChrCache.getFrequency: an MNV needs every base, and takes the lowest frequency
+            let freq = if v.is_mnv() && v.ref_.is_ascii() && v.alt.is_ascii() {
+                let mut min_freq = Some(0.0);
+                for i in 0..v.ref_.len() {
+                    let Some(freq) = frequency(v.position + i as i32, &v.ref_[i..i + 1], &v.alt[i..i + 1]) else {
+                        min_freq = None;
+                        break;
+                    };
+                    if min_freq == Some(0.0) || Some(freq) < min_freq {
+                        min_freq = Some(freq);
+                    }
                 }
+                min_freq
+            } else {
+                frequency(v.position, &v.ref_, &v.alt)
+            };
+            if let Some(freq) = freq {
+                v.gnomad_frequency = Some(freq);
+                v.pon_filtered = true;
             }
             if let Some(list) = pon.get(chr).and_then(|m| m.get(&v.position)) {
                 if let Some(e) = list.iter().find(|e| e.ref_ == v.ref_ && e.alt == v.alt) {
@@ -867,6 +938,9 @@ impl TincAnalyser {
             let mut counts = [0usize; FILTER_REASONS.len()];
             let mut fitting: Vec<usize> = Vec::new();
             for (i, v) in self.variants.iter().enumerate() {
+                if !is_human_chromosome(&self.chromosomes[self.chromosome_index[i] as usize]) {
+                    continue;
+                }
                 let reason = check_filters(v);
                 if reason == FilterReason::None {
                     fitting.push(i);
@@ -923,7 +997,7 @@ impl TincAnalyser {
         let mut out = bgzf::Writer::from_path(&tmp).with_context(|| format!("creating {tmp}"))?;
         let mut body: Vec<u8> = Vec::with_capacity(1 << 20);
         let mut index = 0;
-        let human_only = self.human_only;
+        let human_only = self.human_only && !self.keep_other_contigs;
         let input = read_vcf(&self.cfg, |_, _, fields, text| {
             if human_only && !is_human_chromosome(fields[0]) {
                 return Ok(());
@@ -1137,10 +1211,43 @@ mod tests {
         let levels = populate_default_levels();
         assert_eq!(levels[0], 0.0);
         assert_eq!(levels[1], 0.005);
-        // the last level is 0.95, not 1.0: the accumulated value overshoots 1.0, as in Java
+        assert_eq!(levels.len(), 36);
+        assert_eq!(*levels.last().unwrap(), 1.0);
+        assert_eq!(levels[23], 0.4);
+        assert_eq!(&levels[..18], &crate::compat::with_java(true, populate_default_levels)[..18]);
+    }
+
+    #[test]
+    fn default_levels_of_java() {
+        // S11: the last level is 0.95, not 1.0: the accumulated value overshoots 1.0
+        let levels = crate::compat::with_java(true, populate_default_levels);
         assert_eq!(levels.len(), 35);
         assert_eq!(*levels.last().unwrap(), 0.9500000000000003);
         assert_eq!(levels[23], 0.39999999999999997);
+    }
+
+    #[test]
+    fn early_exit_after_five_levels_without_improvement() {
+        // S10
+        let levels: Vec<f64> = (0..10).map(|i| i as f64 / 10.0).collect();
+        let scores = [10.0, 9.0, 8.0, 9.0, 9.0, 9.0, 9.0, 9.0, 1.0, 2.0];
+        let score_of = |level: f64| scores[(level * 10.0).round() as usize];
+        assert_eq!(lowest_scoring_level(&levels, false, score_of), (0.2, 8.0));
+        assert_eq!(crate::compat::with_java(true, || lowest_scoring_level(&levels, false, score_of)), (0.8, 1.0));
+        // an improvement within five levels resets the count
+        let scores = [10.0, 9.0, 9.5, 9.5, 9.5, 9.5, 8.0, 8.5, 8.5, 8.5];
+        let score_of = |level: f64| scores[(level * 10.0).round() as usize];
+        assert_eq!(lowest_scoring_level(&levels, false, score_of), (0.6, 8.0));
+    }
+
+    #[test]
+    fn mnv_is_recognised() {
+        // S12
+        let mnv = VariantData::simple(100, "AC", "GT", 30, 0, 100, 50);
+        let snv = VariantData::simple(100, "A", "G", 30, 0, 100, 50);
+        let del = VariantData::simple(100, "AC", "A", 30, 0, 100, 50);
+        assert!(mnv.is_mnv() && !snv.is_mnv() && !del.is_mnv());
+        assert!(!crate::compat::with_java(true, || mnv.is_mnv()));
     }
 
     #[test]

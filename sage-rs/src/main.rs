@@ -6,6 +6,7 @@ mod append;
 
 mod bamio;
 mod candidate;
+mod compat;
 mod config;
 mod constants;
 mod dedup;
@@ -47,7 +48,10 @@ use types::*;
 
 /// ChromosomePartition
 pub(crate) fn partition(cfg: &Config, chr: &str, chr_length: i32) -> Vec<BaseRegion> {
-    let threads = cfg.threads.min(4) as i32;
+    // S24, Java: the slice size is divided by min(threads, 4), so a contig or region set shorter than
+    // four slices is cut differently at each thread count and the calls change with it. Corrected: the
+    // slices of one thread at any thread count.
+    let threads = if compat::java("S24") { cfg.threads.min(4) as i32 } else { 1 };
     let mut out = Vec::new();
     let regions: Vec<BaseRegion> =
         cfg.specific_regions.iter().filter(|(c, _, _)| c == chr).map(|(_, s, e)| BaseRegion::new(*s, *e)).collect();
@@ -131,12 +135,17 @@ fn sample_read_length(cfg: &Config, ref_data: &RefData, bam: &mut bamio::BamSlic
     Ok(constants::DEFAULT_READ_LENGTH)
 }
 
-/// SageApplication: UltimaUtils.setMaxRawQual(bqrCache.maxRawQual()). BqrCache.loadBqrFiles overwrites
-/// its maximum for each sample while iterating a HashMap keyed by sample id, so the value is that of
-/// the sample which comes last in that map (reference ids are inserted first), and 0 with -skip_bqr.
+/// SageApplication: UltimaUtils.setMaxRawQual(bqrCache.maxRawQual()).
+/// S15, Java: BqrCache.loadBqrFiles overwrites its maximum for each sample while iterating a HashMap
+/// keyed by sample id, so the value is that of the sample which comes last in that map (reference ids
+/// are inserted first), and 0 with -skip_bqr.
 pub(crate) fn ultima_max_raw_qual(cfg: &Config, bqr: &[quality::BqrMap]) -> i8 {
     if cfg.skip_bqr {
         return 0;
+    }
+    // S15 corrected: the maximum over every sample, which does not depend on the order of the map
+    if !compat::java("S15") {
+        return bqr.iter().map(|b| b.max_raw_qual()).max().unwrap_or(0);
     }
     // `bqr` is ordered tumor ids then reference ids
     let tumors = cfg.tumor_ids.len();
@@ -445,6 +454,14 @@ struct Queue {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // -java_compat and -java_compat_except <ids> are taken off before the options are parsed
+    let args = match compat::take_options(&args) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("{e:#}");
+            std::process::exit(1);
+        }
+    };
     if args.first().map(|a| a.as_str()) == Some("tinc") {
         return tinc::run_standalone(&args[1..]);
     }

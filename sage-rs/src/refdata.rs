@@ -231,9 +231,12 @@ fn load_hotspots(path: &str) -> Result<HashMap<String, Vec<SimpleVariant>>> {
     Ok(map)
 }
 
-/// BedFileReader.loadBedFileChrMap, including its quirk of starting a fresh list whenever the
-/// chromosome changes (a non-contiguous BED loses the earlier block).
-fn load_bed_chr_map(path: &str, v38: bool) -> Result<HashMap<String, Vec<BaseRegion>>> {
+/// BedFileReader.loadBedFileChrMap.
+pub(crate) fn load_bed_chr_map(path: &str, v38: bool) -> Result<HashMap<String, Vec<BaseRegion>>> {
+    // S6, Java: a fresh list is started whenever the chromosome changes, so a BED file that comes back
+    // to a chromosome loses the earlier block. Corrected: every block is kept, in position order.
+    let java_blocks = crate::compat::java("S6");
+    let mut revisited: Vec<String> = Vec::new();
     let mut map: HashMap<String, Vec<BaseRegion>> = HashMap::new();
     let mut current: Option<String> = None;
     for line in read_lines(path)? {
@@ -250,9 +253,16 @@ fn load_bed_chr_map(path: &str, v38: bool) -> Result<HashMap<String, Vec<BaseReg
         let chr = versioned_chr(f[0], v38);
         if current.as_deref() != Some(chr.as_str()) {
             current = Some(chr.clone());
-            map.insert(chr.clone(), Vec::new());
+            if java_blocks || !map.contains_key(&chr) {
+                map.insert(chr.clone(), Vec::new());
+            } else if !revisited.contains(&chr) {
+                revisited.push(chr.clone());
+            }
         }
         map.get_mut(&chr).unwrap().push(BaseRegion::new(f[1].parse::<i32>()? + 1, f[2].parse()?));
+    }
+    for chr in revisited {
+        map.get_mut(&chr).unwrap().sort_by_key(|r| (r.start, r.end));
     }
     Ok(map)
 }

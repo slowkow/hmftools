@@ -526,9 +526,12 @@ impl BaseSeqViewModel {
         Self::from_consensus_fragment(read, None, None)
     }
 
-    /// fromConsensusFragment / create. Java looks the mates' bases up at `baseIdx + unclippedStart`,
-    /// where baseIdx counts read bases, not reference positions; reproduced.
+    /// fromConsensusFragment / create.
     pub fn from_consensus_fragment(read: &Read, first: Option<&BaseSeqViewModel>, second: Option<&BaseSeqViewModel>) -> Self {
+        // S44, Java: the mates' bases are looked up at `baseIdx + unclippedStart`, where baseIdx counts
+        // read bases and not reference positions, so after an insert or a delete in the merged read
+        // the overlap border is drawn against the wrong columns. Corrected: the column of the base.
+        let java_overlap_index = crate::compat::java("S44");
         let unclipped_start = unclipped_start(read);
         let mut indexed: Vec<BaseViewModel> = Vec::new();
         let mut base_idx: usize = 0;
@@ -537,7 +540,7 @@ impl BaseSeqViewModel {
                 // a record whose cigar reads more bases than it holds is drawn with N at quality 0
                 let base = read.bases.get(base_idx).copied().unwrap_or(b'N');
                 let qual = read.quals.get(base_idx).map_or(0, |q| *q as i8 as i32);
-                let pos = base_idx as i32 + unclipped_start;
+                let pos = if java_overlap_index { base_idx as i32 } else { indexed.len() as i32 } + unclipped_start;
                 let overlapped = match (first, second) {
                     (Some(f), Some(s)) => !f.get_base(pos).is_missing() && !s.get_base(pos).is_missing(),
                     _ => false,

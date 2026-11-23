@@ -6,8 +6,14 @@ calls as the Java version on tumor/normal Illumina data, and runs substantially 
 ## Status
 
 The Rust port runs the full tumor/normal Illumina somatic pipeline and writes a bgzipped, tabix-indexed
-VCF. On every region tested so far the decompressed VCF is byte-identical to Java SAGE 5.1 run with
-`-threads 1`, at any Rust thread count.
+VCF. With `-java_compat`, on every region tested so far the decompressed VCF is byte-identical to Java
+SAGE 5.1 run with `-threads 1`, at any Rust thread count.
+
+Since 2026-11-22 the default is the corrected mode: 29 of the 48 Java findings numbered in REPORT.md,
+section 5, are corrected unless `-java_compat` (or `SAGE_JAVA_COMPAT=1`) is given. **Every statement
+below about equality with Java, and every record count given beside one, is about the port run with
+`-java_compat`.** What the corrections change is measured in REPORT.md 5.5; step 14 of the table is
+that work.
 
 | Step | State |
 |---|---|
@@ -25,6 +31,8 @@ VCF. On every region tested so far the decompressed VCF is byte-identical to Jav
 | 11. CRAM | Done: CRAM 3.0 and 3.1 input, decoded against `-ref_genome`. chr21 from CRAM is byte-identical to Java reading the same CRAM for the Illumina, SBX and Ultima pairs (5,908, 3,316 and 2,689 records). For the Illumina pair that is not the BAM result, in Java either: see QUIRKS.md. |
 | 12. Smaller options | Done: `-write_frag_lengths` and `-specific_var_file`, in the caller and in append, and `-run_tinc` with two tumors. Compared with Java on the public HG008 data and the Illumina pair: the fragment length files (1.1 to 5.3 million lines) and the VCFs are byte-identical. One site in a two-tumor `-disable_soft_filter` run differs because Java's own answer there is arbitrary (QUIRKS.md, `IndelDeduper`). |
 | 13. Visualiser | Done: `-vis_variants`, `-vis_pass_only`, `-vis_max_support_reads`, `-vis_output_dir`, `-vis_purple_vcf` (with the amino acid track). Compared with Java on the public HG008 data (SBX and Ultima, one and several samples, tumor only) and on the Illumina pair (paired reads, merged fragments, a PURPLE VCF): the same file names, and the same bytes once the read rows that Java orders at random are sorted. The VCF of a run with the visualiser on is identical to Java's. 181 unit tests pass. See "Visualiser" in QUIRKS.md for what cannot match. |
+
+| 14. Corrections | Done: `src/compat.rs` holds the switch (`-java_compat`, `-java_compat_except <ids>`, taken off the command line in `main`); each corrected place asks `compat::java("S<n>")` and keeps the Java path beside the corrected one. In Java mode the regression suite passes as before; the corrected mode runs the same inputs, gives the same output at 1, 3 and 6 threads, and gives the same calls from a CRAM as from the BAM of the same reads. Unit tests: see REPORT.md 5.5. |
 
 Regions compared (records identical / total), tumor and normal WGS BAMs on an external volume, 20-core machine:
 
@@ -203,10 +211,12 @@ Things that need care to meet that:
 - Read order and filtering from `BamSlicer` (`queryOverlapping`, drops duplicates and secondaries,
   keeps supplementaries only in the candidate stage), and the max-depth caps that depend on it.
 
-Known oddities in the Java code are ported as they are, and listed in `QUIRKS.md` as they are found,
-so they can be raised upstream rather than silently fixed. Examples so far: lost phase groups on key
-collision in `PhasedGroupCollection.merge`; an always-true check in `PhasingUtils.mergeUninformative`;
-`RC_JIT` declared with 3 values but written with 2; synced reads dropped on exception.
+Known oddities in the Java code are ported as they are, numbered in REPORT.md section 5 and listed by
+subject in `QUIRKS.md`, so they can be raised upstream. Examples: lost phase groups on key collision in
+`PhasedGroupCollection.merge` (S1); an always-true check in `PhasingUtils.mergeUninformative` (S3);
+`RC_JIT` declared with 3 values but written with 2 (S40); synced reads dropped on exception (S5).
+The port reproduces them under `-java_compat` and corrects them by default: the parity definition
+above is the definition of `-java_compat`.
 
 ## 5. Steps
 
@@ -241,6 +251,11 @@ sync, counters. This is the largest and most intricate step. Check against the f
 flat arrays in place of hash lookups, phasing data structures. Parity suite runs on every change.
 
 **7. Later** - TINC, append mode, then SBX and Ultima if needed.
+
+**14. Corrections** - number the Java findings; a switch between the corrected behaviour (default)
+and Java's (`-java_compat`); each correction beside the Java path, with a unit test where one can be
+written without real data; the regression suite unchanged in Java mode; the effect of each correction
+measured with `-java_compat_except <id>` against `-java_compat`.
 
 ## 6. Decisions and open questions
 

@@ -19,7 +19,8 @@ for t in java rust; do
         /usr/bin/time -l java -Xmx16g -cp "$jar" com.hartwig.hmftools.sage.tinc.TincAnalyser "${args[@]}" \
             -ref_genome "$SAGE_REF_GENOME" -log_debug > "$d/log" 2>&1
     else
-        /usr/bin/time -l "$here/../target/release/sage-rs" tinc "${args[@]}" > "$d/log" 2>&1
+        # -java_compat: the comparison is with Java
+        /usr/bin/time -l "$here/../target/release/sage-rs" tinc -java_compat "${args[@]}" > "$d/log" 2>&1
     fi
     echo "== $t"
     grep -i "tinc level\|fitCount\|recovered\| real \|peak memory\|rror" "$d/log" | sed 's/^[0-9:.]* \[[A-Z ]*\] //' | cut -c1-200

@@ -607,6 +607,14 @@ impl<'a> VariantFilters<'a> {
     }
 }
 
+/// SupportCount * min(AvgBQ[ALT] / AvgBQ[DP], 1)
+pub(crate) fn adjusted_alt_support_count(support: i32, qual_ratio: f64) -> i32 {
+    let ratio = jmin(qual_ratio, 1.0);
+    // S4, Java: `supportCount * (int)round(min(ratio, 1))` rounds the ratio to 0 or 1 before it
+    // multiplies. Corrected: the product is rounded.
+    if crate::compat::java("S4") { support * jround(ratio) as i32 } else { jround(support as f64 * ratio) as i32 }
+}
+
 fn below_min_tumor_vaf_probability(t: &ReadContextCounter) -> bool {
     let depth = t.depth();
     let base_qual_avg = t.qual_counters.recalibrated_base_quality_total as f64 / depth as f64;
@@ -615,7 +623,7 @@ fn below_min_tumor_vaf_probability(t: &ReadContextCounter) -> bool {
     if boost_novel_indel(t) {
         alt_base_qual_avg += DEFAULT_BASE_QUAL_FIXED_PENALTY as f64;
     }
-    let adjusted = support * jround(jmin(alt_base_qual_avg / base_qual_avg, 1.0)) as i32;
+    let adjusted = adjusted_alt_support_count(support, alt_base_qual_avg / base_qual_avg);
     let probability = 10f64.powf(-base_qual_avg / 10.0);
     let p_value = 1.0 - binomial_cdf(depth, probability, adjusted - 1);
     if t.tier == Tier::Hotspot {

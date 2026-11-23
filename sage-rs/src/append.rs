@@ -215,6 +215,8 @@ pub struct VariantContext {
     /// a flag has an empty value, a missing value is "."
     pub info: BTreeMap<String, String>,
     pub genotypes: Vec<Genotype>,
+    /// the line the record was read from
+    pub raw: Option<String>,
 }
 
 /// String.split(","): trailing empty strings are dropped
@@ -397,6 +399,7 @@ impl VariantContext {
             filters: parse_filters(cols[6]),
             info,
             genotypes,
+            raw: Some(line.to_string()),
         })
     }
 
@@ -530,6 +533,70 @@ impl VariantContext {
         line
     }
 
+    /// S19 corrected: the record with every existing field as it was read, and the last `added`
+    /// genotypes, those of the appended samples, in SAGE's own formatting. A FORMAT key the record did
+    /// not have is added at the end, with the default value of RegionAppendTask.checkGenotypeFields
+    /// for the existing samples.
+    pub fn encode_keeping_existing(&self, defs: &HeaderDefs, added: usize) -> String {
+        let Some(raw) = self.raw.as_deref() else { return self.encode(defs) };
+        let cols: Vec<&str> = raw.split('\t').collect();
+        let existing = self.genotypes.len() - added;
+        let original_keys: Vec<&str> = if cols.len() > 8 { cols[8].split(':').collect() } else { Vec::new() };
+        let new_genotypes = &self.genotypes[existing..];
+        let mut new_keys: BTreeSet<&str> = BTreeSet::new();
+        for g in new_genotypes {
+            new_keys.extend(g.attributes.keys().chain(g.standard.keys()).map(|k| k.as_str()));
+            if g.filters.is_some() {
+                new_keys.insert("FT");
+            }
+        }
+        let gt_first = original_keys.first() == Some(&"GT");
+        let add_gt = !gt_first && (original_keys.is_empty() || new_genotypes.iter().any(|g| g.gt.is_some()));
+        let added_keys: Vec<&str> = new_keys.into_iter().filter(|k| !original_keys.contains(k)).collect();
+        let mut keys: Vec<&str> = Vec::new();
+        if add_gt {
+            keys.push("GT");
+        }
+        keys.extend(&original_keys);
+        keys.extend(&added_keys);
+
+        let mut line = cols[..8].join("\t");
+        line.push('\t');
+        line.push_str(&keys.join(":"));
+        let value_of = |g: &Genotype, key: &str| -> String {
+            let value = match key {
+                "GT" => g.gt.clone().unwrap_or_else(|| "./.".to_string()),
+                "FT" => g.filters.clone().unwrap_or_default(),
+                _ => g.standard.get(key).or_else(|| g.attributes.get(key)).cloned().unwrap_or_default(),
+            };
+            if value.is_empty() { MISSING.to_string() } else { value }
+        };
+        for (i, g) in self.genotypes.iter().enumerate() {
+            line.push('\t');
+            if i < existing {
+                let column = cols.get(9 + i).copied().unwrap_or(MISSING);
+                if !add_gt && added_keys.is_empty() {
+                    line.push_str(column);
+                    continue;
+                }
+                let mut values: Vec<String> = column.split(':').map(|v| v.to_string()).collect();
+                values.resize(original_keys.len().max(values.len()), MISSING.to_string());
+                if add_gt {
+                    values.insert(0, "./.".to_string());
+                }
+                values.extend(added_keys.iter().map(|k| value_of(g, k)));
+                line.push_str(&values.join(":"));
+            } else if g.gt.is_none() && g.standard.is_empty() && g.attributes.is_empty() {
+                // a sample with no evidence collected (S20)
+                line.push_str(if keys.first() == Some(&"GT") { "./." } else { MISSING });
+            } else {
+                let values: Vec<String> = keys.iter().map(|k| value_of(g, k)).collect();
+                line.push_str(&values.join(":"));
+            }
+        }
+        line
+    }
+
     fn info_def_count(&self, defs: &HeaderDefs, key: &str) -> Option<FieldCount> {
         defs.info.get(key).map(|d| d.count)
     }
@@ -602,6 +669,7 @@ pub fn to_context(chromosome: &str, candidate: &Candidate) -> VariantContext {
         filters: None,
         info,
         genotypes: Vec::new(),
+        raw: None,
     }
 }
 
@@ -1047,7 +1115,14 @@ fn process_region(
             }
         }
     }
-    Ok((final_variants.iter().map(|v| v.encode(sh.defs)).collect(), frag_lines))
+    Ok((final_variants.iter().map(|v| encode_record(v, sh.defs, cfg.reference_ids.len())).collect(), frag_lines))
+}
+
+/// S19, Java: the existing records pass through htsjdk, which writes them in its own format: 0.000
+/// becomes 0.00, 0.005 becomes 5.000e-03, trailing missing genotype values are dropped. Corrected:
+/// what the record held is written as it was read.
+fn encode_record(v: &VariantContext, defs: &HeaderDefs, added: usize) -> String {
+    if crate::compat::java("S19") { v.encode(defs) } else { v.encode_keeping_existing(defs, added) }
 }
 
 // --- SageAppendApplication ---
@@ -1193,8 +1268,11 @@ pub fn run(args: &[String]) -> Result<()> {
         }
     }
 
-    // the header as htsjdk holds it after reading
-    let mut meta_lines: Vec<String> = input.meta_lines.iter().map(|l| repair_standard_header_line(l)).collect();
+    // S19, Java: the header as htsjdk holds it after reading, with the lines of standard fields whose
+    // number or type is not the standard one replaced. Corrected: the lines as they were read.
+    let java_format = crate::compat::java("S19");
+    let mut meta_lines: Vec<String> =
+        input.meta_lines.iter().map(|l| if java_format { repair_standard_header_line(l) } else { l.clone() }).collect();
     // addGenotypeHeader, called again in case this version has new genotype fields, and addAppendHeader.
     // VCFHeader.addMetaDataLine does not add a line when the header already has one of the same type and
     // id, whatever its definition, so the fields of an older VCF keep their header lines.
@@ -1274,9 +1352,12 @@ pub fn run(args: &[String]) -> Result<()> {
     if is_ultima() {
         crate::ultima::set_max_raw_qual(crate::ultima_max_raw_qual(&cfg, &bqr));
     }
-    // append does not load the gene panel, hotspots or Ensembl data, so no position is in an HLA gene
+    // S21, Java: append does not load the gene panel, hotspots or Ensembl data, so no position is in an
+    // HLA gene and the map quality cap of the highly polymorphic genes, which the caller applies to
+    // the same reads, never applies. Corrected: with -ensembl_data_dir the genes are loaded.
+    let ensembl_dir = if crate::compat::java("S21") { None } else { cfg.ensembl_data_dir.as_deref() };
     let ref_data = RefData::load(&crate::refdata::RefDataPaths {
-        ensembl_dir: None,
+        ensembl_dir,
         driver_gene_panel: None,
         panel_bed: None,
         hotspots: None,
@@ -1286,10 +1367,12 @@ pub fn run(args: &[String]) -> Result<()> {
 
     // every region task with variants, in the order the BAM's sequence dictionary lists the chromosomes
     let mut tasks: Vec<(String, BaseRegion, Vec<&VariantContext>)> = Vec::new();
+    let mut processed_chromosomes: Vec<String> = Vec::new();
     for chr in main_worker.bams[0].sequence_names() {
         if !cfg.process_chromosome(&chr) {
             continue;
         }
+        processed_chromosomes.push(chr.clone());
         let chromosome_variants: Vec<&VariantContext> = existing_variants.iter().filter(|v| v.chromosome == chr).collect();
         let chr_length = main_worker.genome.chromosome_length(&chr);
         for region in crate::partition(&cfg, &chr, chr_length) {
@@ -1324,7 +1407,46 @@ pub fn run(args: &[String]) -> Result<()> {
             });
         }
     });
-    for result in results {
+    // S20, Java: only the chromosomes that are processed (1-22, X, Y, and MT with -include_mt, of those
+    // in the BAM) are written, so the records of any other contig are dropped from the output.
+    // Corrected: they are written with no values for the appended samples, each contig where the
+    // input has it. Records left out by -specific_chr are still left out.
+    let mut passed_through: Vec<(usize, Vec<String>)> = Vec::new();
+    if !crate::compat::java("S20") {
+        let mut chromosome_order: Vec<&str> = Vec::new();
+        for v in &existing_variants {
+            if !chromosome_order.contains(&v.chromosome.as_str()) {
+                chromosome_order.push(&v.chromosome);
+            }
+        }
+        for (rank, chr) in chromosome_order.iter().enumerate() {
+            if processed_chromosomes.iter().any(|c| c == chr) || (!cfg.specific_chr.is_empty() && !cfg.specific_chr.iter().any(|c| c == chr)) {
+                continue;
+            }
+            // placed before the first processed chromosome that follows it in the input
+            let before = tasks
+                .iter()
+                .position(|(c, _, _)| chromosome_order.iter().position(|o| o == c).is_some_and(|r| r > rank))
+                .unwrap_or(tasks.len());
+            let lines = existing_variants
+                .iter()
+                .filter(|v| v.chromosome == *chr)
+                .map(|v| {
+                    let mut v = v.clone();
+                    v.genotypes.extend(cfg.reference_ids.iter().map(|id| Genotype { sample: id.clone(), ..Default::default() }));
+                    encode_record(&v, &defs, cfg.reference_ids.len())
+                })
+                .collect();
+            passed_through.push((before, lines));
+        }
+    }
+    let mut passed_through = passed_through.into_iter().peekable();
+    for (index, result) in results.into_iter().enumerate() {
+        while let Some((_, lines)) = passed_through.next_if(|(before, _)| *before <= index) {
+            for line in lines {
+                output.write(&line)?;
+            }
+        }
         let (lines, frag_lines) = result.into_inner().unwrap().ok_or_else(|| anyhow!("region task did not complete"))??;
         for line in lines {
             output.write(&line)?;
@@ -1333,6 +1455,11 @@ pub fn run(args: &[String]) -> Result<()> {
             for line in frag_lines {
                 writeln!(w, "{line}")?;
             }
+        }
+    }
+    for (_, lines) in passed_through {
+        for line in lines {
+            output.write(&line)?;
         }
     }
     output.close()?;
@@ -1373,6 +1500,48 @@ mod tests {
 
     // a field which only some samples have is "." for the others (".,." where two values are declared),
     // and trailing missing or empty values are dropped
+    /// S19: existing fields are written as they were read; the appended sample follows in its own format
+    #[test]
+    fn existing_record_text_is_kept() {
+        let line = "1\t100\t.\tA\tT\t149\tminMQF\tMQF=-5.513e+01;NEARBY_INDEL;TQP=1.221e-15\t\
+                    GT:AD:AED:AF:DP:FSB:RC_JIT:RSB\t./.:123,3:0.223,0.067:0.024:126:0.545,0.000:0,0:1.000,0.005";
+        let samples = vec!["S1".to_string()];
+        let mut variant = VariantContext::parse(line, &defs(), &samples).unwrap();
+        let mut added = Genotype { sample: "S2".to_string(), gt: Some("./.".to_string()), ..Default::default() };
+        added.standard.insert("AD".to_string(), "10,1".to_string());
+        added.standard.insert("DP".to_string(), "11".to_string());
+        added.attributes.insert("AF".to_string(), "0.091".to_string());
+        added.attributes.insert("RSB".to_string(), "0.500,0.000".to_string());
+        added.attributes.insert("AED".to_string(), String::new());
+        variant.genotypes.push(added);
+        assert_eq!(variant.encode_keeping_existing(&defs(), 1), format!("{line}\t./.:10,1:.:0.091:11:.:.:0.500,0.000"));
+
+        // a field the record did not have is added at the end, with a value for the existing sample
+        variant.genotypes[0].attributes.insert("MUC".to_string(), "0".to_string());
+        variant.genotypes[1].attributes.insert("MUC".to_string(), "7".to_string());
+        variant.genotypes[1].attributes.insert(LPS_APPEND_INFO.to_string(), "3=2/9".to_string());
+        let (fixed, sample) = line.rsplit_once('\t').unwrap();
+        assert_eq!(
+            variant.encode_keeping_existing(&defs(), 1),
+            format!("{fixed}:LPSA:MUC\t{sample}:.:0\t./.:10,1:.:0.091:11:.:.:0.500,0.000:3=2/9:7")
+        );
+    }
+
+    /// S20: a record that is not processed gets an empty genotype for the appended sample
+    #[test]
+    fn unprocessed_record_is_passed_through() {
+        let line = "GL000008.2\t100\t.\tA\tT\t149\tPASS\tTQP=1.221e-15\tGT:AD:DP:RSB\t./.:123,3:126:1.000,0.005";
+        let samples = vec!["S1".to_string()];
+        let mut variant = VariantContext::parse(line, &defs(), &samples).unwrap();
+        variant.genotypes.push(Genotype { sample: "S2".to_string(), ..Default::default() });
+        assert_eq!(variant.encode_keeping_existing(&defs(), 1), format!("{line}\t./."));
+        // through htsjdk's encoder (S19 as Java, S20 corrected)
+        assert_eq!(
+            variant.encode(&defs()),
+            "GL000008.2\t100\t.\tA\tT\t149\tPASS\tTQP=1.221e-15\tGT:AD:DP:RSB\t./.:123,3:126:1.00,5.000e-03\t./."
+        );
+    }
+
     #[test]
     fn missing_genotype_values() {
         let line = "1\t100\t.\tA\tC\t.\tPASS\t.\tGT:DP:LPSA:RSB\t./.:5:.:0.5,0.5\t./.:7:3=1/2";

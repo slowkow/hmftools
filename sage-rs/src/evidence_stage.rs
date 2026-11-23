@@ -177,6 +177,11 @@ pub fn set_read_context_ultima_models(ref_genome: &dyn RefBases, chr: &str, rc: 
             }
             rc.ultima = None;
             rc.no_matcher = true;
+            // S16, Java: `markedInvalid()`, the getter, is called where `markInvalid()` is meant, so the
+            // context stays valid. Corrected: it is marked. The counter counts nothing either way.
+            if !crate::compat::java("S16") {
+                std::sync::Arc::make_mut(&mut rc.ctx).marked_invalid = true;
+            }
         }
     }
     Ok(())

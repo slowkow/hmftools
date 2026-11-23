@@ -400,3 +400,49 @@ fn test_realignment_index_offset() {
 
     assert!(realigned_type == Realigned::None);
 }
+
+/// Not from Java. S9: the jitter realignment of test_insert_realignment2 inside a split read gives the
+/// result of the same read without the split; Java checks the jitter at the segment's index in the
+/// whole read.
+#[test]
+fn test_jitter_realignment_in_split_read() {
+    use crate::evidence::SplitReadSegment;
+    let ref_bases = format!("{}{}{}", REF_BASE_START, "CTTTCTTTTCTTTCTTTTTCTTTA", sub(REF_BASES_200, 0, 50));
+    let ref_sequence_ = ref_sequence(&format!("{}{}", ref_bases, sub(REF_BASES_200, 50, 100)));
+    let inserted_bases = "TTTCTTTC";
+    let var_position = 35;
+    let read_pos_start = 20;
+    let var_build_read_bases = format!(
+        "{}{}{}",
+        sub(&ref_bases, read_pos_start as usize, var_position as usize + 1),
+        inserted_bases,
+        &ref_bases[var_position as usize + 1..]
+    );
+    let var_build_read = build_sam_record(read_pos_start, "16M8I20M", &var_build_read_bases);
+    let ref_ = sub(&ref_bases, var_position as usize, var_position as usize + 1).to_string();
+    let var = create_simple_variant(var_position, &ref_, &format!("{ref_}{inserted_bases}"));
+    let read_context = build_read_context(&var, &var_build_read, var_position - read_pos_start, &ref_sequence_);
+
+    let read_bases = format!("{}{}", "CTTTCTTTTTCTTTCTTTCTTTCTTTA", sub(REF_BASES_200, 0, 20));
+    let plain_read = build_sam_record(read_pos_start, "9M1I10M2I25M", &read_bases);
+    let plain_index = realigned_read_index_position(&read_context, &plain_read);
+    let mut matcher = create_read_context_matcher(&read_context);
+    let plain = check_realignment(&read_context, &mut matcher, &plain_read, 16, plain_index, None, false);
+    assert!(plain == Realigned::Lengthened);
+
+    // the same bases after 30 bases of another exon
+    let prefix = 30;
+    let split_bases = format!("{}{}", sub(REF_BASES_200, 100, 100 + prefix), read_bases);
+    let mut split_read = build_sam_record(read_pos_start, "30M100N9M1I10M2I25M", &split_bases);
+    split_read.start -= 130;
+    let split_index = plain_index + prefix as i32;
+    let segment = SplitReadSegment::form_segment(&split_read, var_position, 16 + prefix as i32).unwrap();
+    assert_eq!(segment.segment_index_start, prefix as i32);
+    assert_eq!(segment.read_bases, read_bases.as_bytes());
+    let run = || {
+        let mut matcher = create_read_context_matcher(&read_context);
+        check_realignment(&read_context, &mut matcher, &split_read, 16 + prefix as i32, split_index, Some(&segment), false)
+    };
+    assert!(run() == Realigned::Lengthened);
+    assert!(crate::compat::with_java(true, run) == Realigned::None);
+}

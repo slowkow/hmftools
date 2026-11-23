@@ -1,10 +1,15 @@
 # sage-rs
 
 A Rust reimplementation of [SAGE](../sage/README.md) 5.1, the somatic SNV / MNV / indel caller.
-It takes the same command-line options and aims to write the same VCF, faster and with less memory.
+It takes the same command-line options, and is faster and uses less memory.
 
-See [PLAN.md](PLAN.md) for status and measurements and [QUIRKS.md](QUIRKS.md) for Java behaviours that
-are reproduced deliberately.
+By default the port corrects the faults found in the Java code. With `-java_compat` it behaves as Java
+does and writes the same VCF, byte for byte; that is how the port was verified. See "Corrections and
+`-java_compat`" below.
+
+See [PLAN.md](PLAN.md) for status and measurements, [REPORT.md](REPORT.md) for what was compared with
+Java and for the numbered list of Java findings (section 5), and [QUIRKS.md](QUIRKS.md) for the same
+findings by subject.
 
 ## Supported
 
@@ -20,8 +25,8 @@ first, as Java does), append mode
 `Chromosome`, `Position`, `Ref` and `Alt` columns; ignored, as in Java, when `-specific_chr` or
 `-specific_regions` is given), and the visualiser (below).
 
-CRAM input gives slightly different calls from BAM input of the same reads, in Java and so here too:
-see "CRAM" in [QUIRKS.md](QUIRKS.md).
+CRAM and BAM input of the same reads give the same calls. In Java, and here with `-java_compat`, they
+differ slightly (finding S7 in [REPORT.md](REPORT.md)).
 
 ## Build and run
 
@@ -52,6 +57,32 @@ and 15% more time); `-file_buffer_kb N` sets the buffer each alignment file hand
 less CPU time, at several times the memory (11.6 GB against 1.7 GB on a whole genome). It only pays
 when storage is fast enough to keep every thread busy.
 
+## Corrections and `-java_compat`
+
+The faults found in Java SAGE are numbered S1 to S48 in [REPORT.md](REPORT.md), section 5. For 29 of
+them the port takes a corrected path by default; section 5.5 says what each correction does and what
+it changes on the test data.
+
+- `-java_compat` (or `SAGE_JAVA_COMPAT=1` in the environment) gives Java's behaviour for every finding.
+  Use it to compare with Java, or to continue an analysis made with Java SAGE. It works for the caller,
+  `sage-rs append` and `sage-rs tinc`.
+- `-java_compat_except S4,S7` (or `SAGE_JAVA_COMPAT_EXCEPT`) gives Java's behaviour for every finding
+  but those listed.
+- The corrections that change the most records are the three in local phasing (S1 to S3: which variants
+  share an `LPS` id), the CRAM `NM` tag (S7), and in `append` the formatting of the existing records
+  (S19). For S5 (a pair of mates whose merge fails), S10 (the early exit of the TINC fit) and S45 (the
+  `AED` row of the visualiser) the intent of the Java code is not certain; the readings taken are
+  described in REPORT.md and are open to correction by the SAGE authors.
+- Twelve findings concern Java output that is not reproducible or a Java failure (thread-order `LPS`
+  ids, the `NEAR_HOTSPOT` flag, the random choice of reads in the visualiser, CRAM 3.1, ...). There
+  the port does one fixed thing in both modes, as before.
+- The corrected output cannot be checked against Java. It is checked by unit tests of the corrected
+  paths (`src/tests/corrections.rs` and the tests named in REPORT.md 5.5), by being the same at any
+  thread count, and by measuring what each correction changes.
+- The header of a corrected VCF differs from Java's in two declarations: `RC_JIT` is declared with the
+  two values that are written (S40), and the `fragmentLength` filter, which nothing applies, is not
+  declared (S41).
+
 ## Visualiser
 
 As Java SAGE, `sage-rs` can write one gzipped HTML file per variant showing the reads behind it
@@ -65,15 +96,21 @@ As Java SAGE, `sage-rs` can write one gzipped HTML file per variant showing the 
 | `-vis_output_dir DIR` | Where the files go; by default `vis/` beside the output VCF. |
 | `-vis_purple_vcf FILE` | Write files for the variants this PURPLE VCF flags `REPORTED`, with an amino acid track drawn from their `IMPACT` annotation and `-ensembl_data_dir`; the file names then carry the gene and the coding effect. |
 
-The files are the same as Java's apart from which reads are shown when there are more than the limit
-and the order of reads that tie, both of which Java leaves to a random number generator, and text
-positions, which in Java depend on the fonts of the machine: see [QUIRKS.md](QUIRKS.md). Append mode
-has no visualiser, as in Java.
+With `-java_compat` the files are the same as Java's apart from which reads are shown when there are
+more than the limit and the order of reads that tie, both of which Java leaves to a random number
+generator, and text positions, which in Java depend on the fonts of the machine: see
+[QUIRKS.md](QUIRKS.md). By default six faults of the Java visualiser are corrected (S38, S39, S44 to
+S47): among them, a reportable variant whose amino acid track cannot be drawn still gets its file,
+without the track. Append mode has no visualiser, as in Java.
 
 ## Comparing with Java
 
+Everything in this section needs the port in Java mode: `export SAGE_JAVA_COMPAT=1` before
+`bench/run_rust.sh`, or add `-java_compat` to its arguments.
+
 ```
 cp bench/env.example.sh bench/env.local.sh     # edit paths; not committed
+export SAGE_JAVA_COMPAT=1
 bench/run_java.sh chr21 1 -specific_chr chr21
 bench/run_rust.sh chr21 1 -specific_chr chr21
 diff <(gzip -dc $SAGE_OUT_DIR/java/chr21/chr21.sage.vcf.gz) <(gzip -dc $SAGE_OUT_DIR/rust/chr21/chr21.sage.vcf.gz)
@@ -85,7 +122,8 @@ separately, for runs where Java used more than one thread. `SAGE_TUMOR_ONLY=1` m
 leave out the reference sample.
 
 Java's partition size depends on the thread count for contigs shorter than `threads` x 100 kb (chrM),
-and so do its calls there; compare those with one thread on both sides.
+and so do its calls there (S24); compare those with one thread on both sides. Without `-java_compat`
+the port cuts such a contig the same way at every thread count.
 
 CRAM: `bench/make_cram_set.sh <out dir> [region] [version=3.0]` converts the sample set's BAMs and
 writes an `env.sh` for them; then `SAGE_ENV=<out dir>/env.sh SAGE_BAM_EXT=cram bench/run_java.sh ...`
@@ -98,7 +136,9 @@ that the recovery path is exercised.
 ## Tests
 
 `cargo test --release` runs the unit tests, including the Java SAGE unit tests ported to `src/tests`
-(one module per Java test class). Tests that are not from Java cover the port's own alignment reading
+(one module per Java test class). They run in the default, corrected mode; the few whose expected
+values hold a Java fault run inside `compat::with_java(true, ...)`, and `src/tests/corrections.rs`
+tests the corrected behaviour beside the Java one. Tests that are not from Java cover the port's own alignment reading
 (`alignment_reading`: region queries, the tag parser, the read cache against the file, CRAM against
 BAM), each fast path against the general code it stands in for, and the visualiser (`visualiser`:
 Java has no tests for it, so the expected values were generated by calling the Java classes from

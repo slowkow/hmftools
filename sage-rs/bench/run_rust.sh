@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Run the Rust port with the same arguments as run_java.sh.
+# To compare with Java, run it in Java mode: export SAGE_JAVA_COMPAT=1, or add -java_compat to the arguments.
 # usage: run_rust.sh <name> <threads> [extra sage args, e.g. -specific_regions "chr17:7660000-7700000"]
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)

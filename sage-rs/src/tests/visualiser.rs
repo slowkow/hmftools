@@ -214,6 +214,8 @@ fn show_events(events: &[AminoAcidEvent]) -> String {
 
 #[test]
 fn amino_acid_event_parsing() {
+    // the expected values are Java's, S38 included
+    let _java = crate::compat::scope(true);
     let f = fixtures();
     let mut checked = 0;
     for (key, expected) in f.iter().filter(|(k, _)| k.starts_with("hgvs.")) {
@@ -298,6 +300,8 @@ fn gene_regions_and_labels() {
 /// Every combination of four transcripts, six variants, eighteen protein changes and two view regions
 #[test]
 fn alt_gene_region_view_models_match_java() {
+    // the expected values are Java's, S38 and S47 included
+    let _java = crate::compat::scope(true);
     let f = fixtures();
     let reference = genome(2000);
     let ref_bases = |start: i32, end: i32| -> Result<Vec<u8>, String> {

@@ -91,6 +91,10 @@ fn leading_ref(s: &str) -> Option<(&str, i32, usize)> {
 /// AminoAcidEvent.parse
 pub fn parse_amino_acid_events(hgvs: &str) -> Result<Vec<AminoAcidEvent>, String> {
     use AminoAcidEvent::*;
+    // S38, Java: a stop written as `Ter` in a substitution (p.Gly12Ter) is looked up in the amino acid
+    // map and is a null pointer exception; an unknown three-letter code in a `delins` adds the four
+    // letters of "null" as amino acids. Corrected: `Ter` is the stop, an unknown code is an error.
+    let java_codes = crate::compat::java("S38");
     let bad = || format!("hgvs({hgvs}) does not follow expected format");
     if !hgvs.is_ascii() || hgvs.len() < 2 || &hgvs[..2] != "p." {
         return Err(bad());
@@ -139,7 +143,7 @@ pub fn parse_amino_acid_events(hgvs: &str) -> Result<Vec<AminoAcidEvent>, String
         if ref2.is_some() {
             return Err(bad());
         }
-        let alt = if working == "*" { b'*' } else { tri_to_single(working).ok_or_else(bad)? };
+        let alt = if working == "*" || (!java_codes && working == "Ter") { b'*' } else { tri_to_single(working).ok_or_else(bad)? };
         return Ok(vec![Substitution { pos: pos1, alt }]);
     }
     if working == "?" {
@@ -172,7 +176,6 @@ pub fn parse_amino_acid_events(hgvs: &str) -> Result<Vec<AminoAcidEvent>, String
     if is_insert && ref2 != pos1 + 1 {
         return Err(bad());
     }
-    // Java appends the map's value, so an unknown three-letter code adds the text "null"
     let mut alt_acids: Vec<u8> = Vec::new();
     while !working.is_empty() {
         if is_tri(working.as_bytes()) {
@@ -182,7 +185,8 @@ pub fn parse_amino_acid_events(hgvs: &str) -> Result<Vec<AminoAcidEvent>, String
             }
             match tri_to_single(tri) {
                 Some(c) => alt_acids.push(c),
-                None => alt_acids.extend_from_slice(b"null"),
+                None if java_codes => alt_acids.extend_from_slice(b"null"),
+                None => return Err(bad()),
             }
             working = &working[3..];
             continue;
@@ -514,8 +518,9 @@ pub fn alt_gene_region_view_models(
                             current_aa_pos += 1;
                         }
                         if stop_coding {
-                            // Java uses the index into the bases as a position here
-                            let pos = idx + 3;
+                            // S47, Java: the index into the fetched bases is used as a genome position
+                            // for the non-coding remainder. Corrected: the position after the stop codon.
+                            let pos = if crate::compat::java("S47") { idx + 3 } else { idx + 3 + ref_pos_start };
                             if pos <= render_region.end {
                                 models.push(GeneRegionViewModel::non_coding(BaseRegion::new(pos, render_region.end)));
                             }
@@ -557,8 +562,8 @@ pub fn alt_gene_region_view_models(
                             current_aa_pos += 1;
                         }
                         if stop_coding {
-                            // as above: an index compared with a position
-                            let pos = ref_idx - 3;
+                            // S47, as above: an index compared with a position
+                            let pos = if crate::compat::java("S47") { ref_idx - 3 } else { ref_idx - 3 + ref_pos_start };
                             if pos >= render_region.start {
                                 models.push(GeneRegionViewModel::non_coding(BaseRegion::new(render_region.start, pos)));
                             }

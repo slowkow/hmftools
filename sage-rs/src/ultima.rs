@@ -1493,8 +1493,10 @@ fn create_realigned_qual_models(
         let variant = SimpleVariant::new(ins_homopolymer.variant_pos, &[first_ref_base], &alt);
 
         let adjusted_var_read_index = ctx.var_index + var_read_index_offset;
-        // Java passes the offset rather than the index here; the bases are unused for an insert
-        let straddling_bases = get_straddling_read_bases(&variant, &ctx.read_bases, var_read_index_offset)?;
+        // S17, Java: the offset is passed where the read index is meant. The bases are not read for an
+        // insert, so nothing changes.
+        let straddling_index = if crate::compat::java("S17") { var_read_index_offset } else { adjusted_var_read_index };
+        let straddling_bases = get_straddling_read_bases(&variant, &ctx.read_bases, straddling_index)?;
         let qual_model = build_qual_model(ref_genome, &variant, straddling_bases, Some(ref_masks))?;
         realigned_qual_models.push(UltimaRealignedQualModel {
             variant,
@@ -1911,9 +1913,11 @@ impl ReadCigarState {
         }
     }
 
-    /// the copy constructor, which also resets the valid flag
+    /// the copy constructor
     fn copy(&self) -> Self {
-        ReadCigarState { valid: true, ..*self }
+        // S18, Java: the copy constructor sets the valid flag to true whatever the source holds.
+        // Corrected: the flag is copied. Both callers copy a state that is valid, so nothing changes.
+        ReadCigarState { valid: crate::compat::java("S18") || self.valid, ..*self }
     }
 
     fn op(&self) -> Op {

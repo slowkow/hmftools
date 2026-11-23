@@ -9,6 +9,7 @@ mod alignment_reading; // not from Java: BAM / CRAM reading, the tag parser and 
 mod artefacts; // seqtech/ArtefactsTest
 mod candidate_creation; // candidate/CandidateCreationTest
 mod candidate_serialisation; // candidate/CandidateSerialisationTest
+mod corrections; // not from Java: the corrected behaviour for the findings of REPORT.md section 5
 mod evicting_array; // common/EvictingArrayTest
 mod fragment_sync; // evidence/FragmentSyncTest
 mod homology; // common/HomologyTest

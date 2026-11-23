@@ -457,12 +457,14 @@ impl BamSlicer {
         let mut reader = bam::IndexedReader::from_path(path).with_context(|| format!("opening BAM {path}"))?;
         if is_cram(path) {
             reader.set_reference(ref_genome).with_context(|| format!("setting CRAM reference {ref_genome}"))?;
-            // htslib by default regenerates the MD and NM tags a CRAM leaves out; htsjdk does not, and
-            // Java SAGE then counts the mismatches itself (NumberEvents.getOrCalcNm), as is done here
+            // S7, Java: a CRAM leaves the NM tag out and htsjdk does not regenerate it, so SAGE counts the
+            // mismatches itself (NumberEvents.getOrCalcNm): only inside the region's reference bases,
+            // and for a merged fragment on the merged read. The count is not always the NM the BAM
+            // carries, so the calls from a CRAM differ from those from the BAM of the same reads.
+            // Corrected: htslib regenerates NM when it decodes the record, as the aligner defined it.
+            let decode_md: std::os::raw::c_int = if crate::compat::java("S7") { 0 } else { 1 };
             // SAFETY: the option takes one int argument
-            let ret = unsafe {
-                htslib::hts_set_opt(reader.htsfile(), htslib::hts_fmt_option_CRAM_OPT_DECODE_MD, 0 as std::os::raw::c_int)
-            };
+            let ret = unsafe { htslib::hts_set_opt(reader.htsfile(), htslib::hts_fmt_option_CRAM_OPT_DECODE_MD, decode_md) };
             if ret != 0 {
                 anyhow::bail!("setting CRAM options for {path}");
             }

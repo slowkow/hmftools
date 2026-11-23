@@ -490,13 +490,15 @@ pub struct FragmentSync {
     /// the Java HashMap never shrinks, so its capacity follows the peak size over its lifetime
     peak: usize,
     pub counts: [i32; 6],
+    /// compat::java("S5"), read once per region
+    java_exception: bool,
 }
 
 pub type SyncOutput = Vec<(Read, Option<FragmentData>)>;
 
 impl FragmentSync {
     pub fn new() -> Self {
-        FragmentSync { cached: HashMap::default(), seq: 0, peak: 0, counts: [0; 6] }
+        FragmentSync { cached: HashMap::default(), seq: 0, peak: 0, counts: [0; 6], java_exception: crate::compat::java("S5") }
     }
 
     /// handleOverlappingReads: Some(read) when the caller should process the read itself; otherwise
@@ -531,9 +533,18 @@ impl FragmentSync {
                     out.push((read, None));
                 }
                 Outcome::Exception => {
-                    // Java throws before removing the cached read, so it stays cached and the new read is dropped
                     self.counts[SYNC_EXCEPTION] += 1;
-                    self.cached.insert(other.name.clone(), (other, other_seq));
+                    if self.java_exception {
+                        // S5, Java: the merge throws before the cached read is removed, so the first mate
+                        // stays cached until the end of the slice, where it is processed out of order,
+                        // and the second mate is dropped.
+                        self.cached.insert(other.name.clone(), (other, other_seq));
+                    } else {
+                        // Corrected (intent uncertain): the pair is closed here and the first mate is
+                        // processed alone, in order, which is Java's rule for every other pair that
+                        // cannot be combined ("only the first record").
+                        out.push((other, None));
+                    }
                 }
             }
             return None;

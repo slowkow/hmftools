@@ -953,14 +953,30 @@ fn render_sample_qual_and_site_info(v: &SageVariant, first_counter: &ReadContext
             None => "null".to_string(),
         }),
     );
-    // Java shows the first counter's two averages, one under each sample
-    add(
-        "AED",
-        (
-            tumor.map(|_| java_fixed(first_counter.read_edge_distance.avg_distance_from_edge(), 2)),
-            reference.map(|_| java_fixed(first_counter.read_edge_distance.avg_alt_distance_from_edge(), 2)),
-        ),
-    );
+    if crate::compat::java("S45") {
+        // S45, Java: the row is filled from the first counter only, its average edge distance over all
+        // reads under "Tumor" and over the alt reads under "Normal".
+        add(
+            "AED",
+            (
+                tumor.map(|_| java_fixed(first_counter.read_edge_distance.avg_distance_from_edge(), 2)),
+                reference.map(|_| java_fixed(first_counter.read_edge_distance.avg_alt_distance_from_edge(), 2)),
+            ),
+        );
+    } else {
+        // Corrected (intent uncertain as to the layout): each sample's own pair, as the AED tag of the
+        // VCF has it: all reads, alt reads.
+        add(
+            "AED",
+            both(&|c| {
+                format!(
+                    "{}, {}",
+                    java_fixed(c.read_edge_distance.avg_distance_from_edge(), 2),
+                    java_fixed(c.read_edge_distance.avg_alt_distance_from_edge(), 2)
+                )
+            }),
+        );
+    }
 
     let value_cell = cell_style.text_align("right");
     let mut rows = String::new();
@@ -1037,7 +1053,10 @@ fn render_variant_info_table(vis: &VariantVis, v: &SageVariant, first_counter: &
     // (int)(-10 * logTqp) and round(round(mapQualFactor * 10) / 10)
     let tqp = jmin(jmax(first_counter.tumor_qual_probability, 0.0), 1.0);
     let total_tumor_quality = (-10.0 * jmax(tqp, 1e-20).log10()) as i32;
-    let map_qual_factor = jround(jround(first_counter.map_qual_factor * 10.0) as f64 / 10.0) as f64;
+    // S46, Java: `round(round(x * 10) / 10)` rounds a second time, to a whole number. Corrected: one
+    // decimal place.
+    let tenths = jround(first_counter.map_qual_factor * 10.0) as f64 / 10.0;
+    let map_qual_factor = if crate::compat::java("S46") { jround(tenths) as f64 } else { tenths };
     values.push(("Qual", span(&total_tumor_quality.to_string())));
     values.push(("Filter", span(&filter_str)));
     values.push(("Tier", span(vis.tier.name())));
@@ -1129,7 +1148,18 @@ fn build_html(
     let Some(first_vis) = tumor_vis.first().or(ref_vis.first()).copied() else { return Ok(None) };
     let first_counter = v.tumor_counters.first().or(v.ref_counters.first()).ok_or("no counters")?;
     let variant = v.variant();
-    let aa = amino_acid_elements(vis_cfg, chr, first_vis.view_region, variant, genome)?;
+    // S39, Java: any failure in the amino acid track (no amino acid entry for the transcript of an
+    // intergenic or non-coding variant, a protein change the parser does not accept) is an exception
+    // and the variant gets no file at all. Corrected: the file is written without the track, under
+    // the name a variant without a PURPLE record has.
+    let aa = match amino_acid_elements(vis_cfg, chr, first_vis.view_region, variant, genome) {
+        Ok(aa) => aa,
+        Err(e) if crate::compat::java("S39") => return Err(e),
+        Err(e) => {
+            eprintln!("[WARN ] variant({}:{}) is shown without the amino acid track: {}", chr, variant.pos, e);
+            None
+        }
+    };
     let (gene_name, variant_type) = match aa.as_ref() {
         Some(aa) => (Some(aa.impact.gene_name.as_str()), Some(aa.impact.canonical_effect.as_str())),
         None => (None, None),

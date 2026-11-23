@@ -371,6 +371,13 @@ pub(crate) fn has_jitter_match_type(
 
 /// JitterMatch.checkJitter
 pub fn check_jitter(ctx: &VariantReadContext, matcher: &Matcher, read: &Read, read_var_index: i32, is_msi: bool) -> Jitter {
+    check_jitter_bases(ctx, matcher, &read.bases, &read.quals, read_var_index, is_msi)
+}
+
+/// As `check_jitter`, on the given bases and qualities.
+pub(crate) fn check_jitter_bases(
+    ctx: &VariantReadContext, matcher: &Matcher, bases: &[u8], quals: &[u8], read_var_index: i32, is_msi: bool,
+) -> Jitter {
     if ctx.all_repeats.is_empty() {
         return Jitter::None;
     }
@@ -382,8 +389,7 @@ pub fn check_jitter(ctx: &VariantReadContext, matcher: &Matcher, read: &Read, re
                 let counts: &[i32] = if check_double { &[1, 2] } else { &[1] };
                 for &count in counts {
                     if has_jitter_match_type(
-                        repeat, ctx, matcher.alt_index_upper, read_var_index, &read.bases, &read.quals, jitter, at_start,
-                        count,
+                        repeat, ctx, matcher.alt_index_upper, read_var_index, bases, quals, jitter, at_start, count,
                     ) {
                         return jitter;
                     }
@@ -418,8 +424,6 @@ pub(crate) fn check_realignment(
     let offset = if ctx.variant.is_delete() { 0 } else { realigned_read_index - read_index };
     let (bases, quals): (&[u8], &[u8]) = match split {
         Some(seg) => {
-            // the index stays relative to the segment for the jitter check below, which Java makes
-            // against the whole read
             realigned_read_index -= seg.segment_index_start;
             (&seg.read_bases, &seg.read_quals)
         }
@@ -434,7 +438,15 @@ pub(crate) fn check_realignment(
     if matches!(info.kind, MatchType::Full | MatchType::PartialCore) {
         return if info.exact { Realigned::Exact } else { Realigned::LowQualMismatches };
     }
-    match check_jitter(ctx, matcher, read, realigned_read_index, is_msi) {
+    // S9, Java: with a split read the index is now relative to the segment, and the jitter check uses
+    // it against the bases of the whole read. Corrected: the jitter check is made on the segment, as
+    // the match above is.
+    let jitter = if split.is_some() && crate::compat::java("S9") {
+        check_jitter(ctx, matcher, read, realigned_read_index, is_msi)
+    } else {
+        check_jitter_bases(ctx, matcher, bases, quals, realigned_read_index, is_msi)
+    };
+    match jitter {
         Jitter::Shortened => Realigned::Shortened,
         Jitter::Lengthened => Realigned::Lengthened,
         Jitter::None => Realigned::None,
@@ -944,7 +956,11 @@ impl ReadContextCounter {
             return false;
         }
         let uncertain = match split {
-            Some(seg) => self.matcher.has_uncertain_core_bases(&self.ctx, &seg.read_quals, seg.read_var_index),
+            // S8, as in `covers` of process_read
+            Some(seg) if crate::compat::java("S8") => {
+                self.matcher.has_uncertain_core_bases(&self.ctx, &seg.read_quals, seg.read_var_index)
+            }
+            Some(seg) => self.matcher.has_uncertain_core_bases(&self.ctx, &seg.read_quals, read_index - seg.segment_index_start),
             None => self.matcher.has_uncertain_core_bases(&self.ctx, &read.quals, read_index),
         };
         if uncertain {
@@ -1106,9 +1122,13 @@ impl ReadContextCounter {
         let split_segment =
             if read.has_op(Op::N) { SplitReadSegment::form_segment(read, variant.pos, read_var_index) } else { None };
         let split = split_segment.as_ref();
-        // coversVariant: with a split segment Java ignores the index passed in
+        // S8, Java: with a split segment coversVariant and hasUncertainCoreBases ignore the index they
+        // are given and use the segment's variant index, also when the realigned index is asked about.
+        // Corrected: the index given, relative to the segment.
+        let java_split_index = split.is_some() && crate::compat::java("S8");
         let covers = |matcher: &Matcher, index: i32| match split {
-            Some(seg) => matcher.covers_variant(&ctx, seg.length(), seg.read_var_index),
+            Some(seg) if java_split_index => matcher.covers_variant(&ctx, seg.length(), seg.read_var_index),
+            Some(seg) => matcher.covers_variant(&ctx, seg.length(), index - seg.segment_index_start),
             None => matcher.covers_variant(&ctx, read.len(), index),
         };
         // determineReadContextMatch

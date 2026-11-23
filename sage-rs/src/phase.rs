@@ -164,11 +164,14 @@ pub(crate) struct GroupCollection {
     pub(crate) groups: Vec<PhasedGroup>,
     min_position: i32,
     max_position: i32,
+    group_count: usize,
+    java_bounds: bool,
+    java_merge: bool,
 }
 
 impl GroupCollection {
-    fn new() -> Self {
-        GroupCollection { map: Vec::new(), groups: Vec::new(), min_position: 0, max_position: 0 }
+    fn new(java_bounds: bool, java_merge: bool) -> Self {
+        GroupCollection { map: Vec::new(), groups: Vec::new(), min_position: 0, max_position: 0, group_count: 0, java_bounds, java_merge }
     }
     fn overlaps(&self, min: i32, max: i32) -> bool {
         positions_overlap(self.min_position, self.max_position, min, max)
@@ -190,17 +193,35 @@ impl GroupCollection {
             }
         }
         let g = PhasedGroup::new(id, pos_min, pos_max, positive.to_vec(), negative.to_vec(), pos);
-        // quirk: the emptiness test is on this key's list, not the whole collection
-        self.min_position = if groups.is_empty() { g.var_min } else { self.min_position.min(g.var_min) };
+        // S2, Java: the emptiness test is on this key's list, not on the collection, so the first group
+        // of every later key replaces the collection's minimum instead of lowering it. Corrected: only
+        // the first group of the collection sets it.
+        let first = if self.java_bounds { groups.is_empty() } else { self.group_count == 0 };
+        self.min_position = if first { g.var_min } else { self.min_position.min(g.var_min) };
         self.max_position = self.max_position.max(g.var_max);
         groups.push(g);
+        self.group_count += 1;
         true
     }
-    /// merge: putAll replaces this collection's list for any key the other also has
-    fn merge(&mut self, other: GroupCollection) {
+    fn merge(&mut self, other: GroupCollection, pos: &[i32]) {
+        self.group_count += other.group_count;
         for (k, list) in other.map {
             match self.map.iter_mut().find(|(key, _)| *key == k) {
-                Some(e) => e.1 = list,
+                // S1, Java: putAll replaces this collection's list for any key the other also has, and
+                // those groups are lost. Corrected: the other's groups join the list, and one that
+                // matches a group already there exactly is counted into it.
+                Some(e) if self.java_merge => e.1 = list,
+                Some(e) => {
+                    for g in list {
+                        match e.1.iter_mut().find(|x| x.exact_match(g.pos_min, g.pos_max, &g.positive, &g.negative)) {
+                            Some(x) => {
+                                x.read_count += g.read_count;
+                                x.merge_negatives(&g.negative, pos);
+                            }
+                            None => e.1.push(g),
+                        }
+                    }
+                }
                 None => self.map.push((k, list)),
             }
         }
@@ -220,6 +241,9 @@ pub struct Phaser {
     pub(crate) collections: Vec<GroupCollection>,
     next_group_id: i32,
     pub(crate) pos: Vec<i32>,
+    /// compat::java("S2") and ("S1"), read once per region
+    java_bounds: bool,
+    java_merge: bool,
 }
 
 impl PhaseSink for Phaser {
@@ -244,7 +268,7 @@ impl PhaseSink for Phaser {
                         let (nmin, nmax) = (self.collections[index + 1].min_position, self.collections[index + 1].max_position);
                         if self.collections[index].overlaps(nmin, nmax) {
                             let next = self.collections.remove(index + 1);
-                            self.collections[index].merge(next);
+                            self.collections[index].merge(next, pos);
                         }
                     }
                 }
@@ -254,7 +278,7 @@ impl PhaseSink for Phaser {
             }
             index += 1;
         }
-        let mut c = GroupCollection::new();
+        let mut c = GroupCollection::new(self.java_bounds, self.java_merge);
         c.add(pos_min, pos_max, self.next_group_id, positive, negative, pos);
         self.next_group_id += 1;
         self.collections.push(c);
@@ -353,13 +377,25 @@ pub(crate) fn merge_by_extension(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
 }
 
 pub(crate) fn merge_uninformative(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
+    // S3, Java: the test for "a single variant not present as a +ve in another group" looks in the
+    // group itself, where it is always found, so such a group is only removed when it is the only one;
+    // and the loop index is not adjusted when groups ahead of it are removed, so the group that moves
+    // into the current place is skipped. Corrected: the other groups are searched, and the index
+    // follows the current group.
+    let java = crate::compat::java("S3");
     let mut index = 0;
     while index < groups.len() {
-        // quirk: the Java test is always true for any other group, so a single-variant group is
-        // only removed here when it is the only group
-        if groups[index].positive.len() == 1 && groups.len() == 1 {
-            groups.remove(index);
-            continue;
+        if groups[index].positive.len() == 1 {
+            let counter = groups[index].positive[0];
+            let alone = if java {
+                groups.len() == 1
+            } else {
+                !groups.iter().enumerate().any(|(j, g)| j != index && g.positive.contains(&counter))
+            };
+            if alone {
+                groups.remove(index);
+                continue;
+            }
         }
         let matching: Vec<usize> = (0..groups.len())
             .filter(|&j| j != index && (groups[index].positives_match(&groups[j]) || groups[j].is_subset_of(&groups[index])))
@@ -372,15 +408,23 @@ pub(crate) fn merge_uninformative(groups: &mut Vec<PhasedGroup>, pos: &[i32]) {
             for &j in matching.iter().rev() {
                 groups.remove(j);
             }
+            if !java {
+                index -= matching.iter().filter(|&&j| j < index).count();
+            }
         }
-        // as in Java, the index is not adjusted for groups removed ahead of it
         index += 1;
     }
 }
 
 impl Phaser {
     pub fn new() -> Self {
-        Phaser { collections: Vec::new(), next_group_id: 0, pos: Vec::new() }
+        Phaser {
+            collections: Vec::new(),
+            next_group_id: 0,
+            pos: Vec::new(),
+            java_bounds: crate::compat::java("S2"),
+            java_merge: crate::compat::java("S1"),
+        }
     }
 
     /// assignLocalPhaseSets: `passing` and `valid` are indexed like the tumor counters.
@@ -567,5 +611,100 @@ pub fn remove_uninformative_lps(variants: &mut [SageVariant], passing_sets: &[i3
                 variants[i].remove_lps(lps);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compat::with_java;
+
+    const POS: [i32; 6] = [100, 200, 300, 400, 500, 600];
+
+    fn phaser() -> Phaser {
+        let mut p = Phaser::new();
+        p.pos = POS.to_vec();
+        p
+    }
+
+    fn group_count(p: &Phaser) -> usize {
+        p.collections.iter().map(|c| c.map.iter().map(|(_, l)| l.len()).sum::<usize>()).sum()
+    }
+
+    /// S1: a collection merged into another keeps its groups where both have a group at the same key
+    #[test]
+    fn merged_collections_keep_all_groups() {
+        let run = || {
+            let mut p = phaser();
+            p.register(&[], &[2, 3], &[]); // 300-400
+            p.register(&[], &[1], &[0]); // 100-200, a second collection, key 200
+            p.register(&[], &[1, 2], &[]); // 200-300 joins the first collection under key 200 and merges the two
+            assert_eq!(p.collections.len(), 1);
+            group_count(&p)
+        };
+        assert_eq!(run(), 3);
+        assert_eq!(with_java(true, run), 2);
+    }
+
+    /// S1: a group that matches one already there exactly is counted into it
+    #[test]
+    fn merge_counts_exact_matches_once() {
+        let pos = POS.to_vec();
+        let mut a = GroupCollection::new(false, false);
+        a.add(200, 300, 0, &[1, 2], &[], &pos);
+        let mut b = GroupCollection::new(false, false);
+        b.add(200, 300, 1, &[1, 2], &[], &pos);
+        b.add(200, 400, 2, &[1, 3], &[], &pos);
+        a.merge(b, &pos);
+        assert_eq!(a.map.len(), 1);
+        assert_eq!(a.map[0].1.len(), 2);
+        assert_eq!(a.map[0].1[0].read_count, 2);
+        assert_eq!(a.group_count, 3);
+    }
+
+    /// S2: a group under a new key lowers the collection's minimum, it does not replace it
+    #[test]
+    fn collection_minimum_is_not_overwritten() {
+        let run = || {
+            let mut p = phaser();
+            p.register(&[], &[0, 2], &[]); // 100-300
+            p.register(&[], &[1, 2], &[]); // 200-300, a new key in the same collection
+            (p.collections[0].min_position, p.collections[0].max_position)
+        };
+        assert_eq!(run(), (100, 300));
+        assert_eq!(with_java(true, run), (200, 300));
+    }
+
+    /// S3: a single-variant group is dropped when no other group has its variant
+    #[test]
+    fn uninformative_single_variant_group_is_removed() {
+        let run = || {
+            let pos = POS.to_vec();
+            let mut groups =
+                vec![PhasedGroup::new(0, 100, 100, vec![0], vec![1], &pos), PhasedGroup::new(1, 200, 300, vec![1, 2], vec![], &pos)];
+            merge_uninformative(&mut groups, &pos);
+            groups.iter().map(|g| g.id).collect::<Vec<_>>()
+        };
+        assert_eq!(run(), vec![1]);
+        assert_eq!(with_java(true, run), vec![0, 1]);
+    }
+
+    /// S3: after groups ahead of the current one are removed, the next group is not skipped
+    #[test]
+    fn uninformative_merge_visits_every_group() {
+        let run = || {
+            let pos = POS.to_vec();
+            let mut groups = vec![
+                PhasedGroup::new(0, 200, 200, vec![1], vec![], &pos),
+                PhasedGroup::new(1, 200, 300, vec![1, 2], vec![], &pos),
+                PhasedGroup::new(2, 400, 500, vec![3, 4], vec![], &pos),
+                PhasedGroup::new(3, 400, 500, vec![3, 4], vec![5], &pos),
+            ];
+            merge_uninformative(&mut groups, &pos);
+            groups.iter().map(|g| (g.id, g.read_count, g.allocated)).collect::<Vec<_>>()
+        };
+        assert_eq!(run(), vec![(1, 1, 1.0), (2, 2, 0.0)]);
+        // Java skips group 2, and group 3 then takes it in
+        assert_eq!(with_java(true, run), vec![(1, 1, 1.0), (3, 2, 0.0)]);
     }
 }

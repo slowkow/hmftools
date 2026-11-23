@@ -119,8 +119,20 @@ pub fn read_context_vcf_info(ctx: &crate::read_context::VariantReadContext) -> S
 
 /// The ##INFO and ##FORMAT header lines (FILTER, contig and version lines are added by the writer).
 pub fn header_field_lines() -> impl Iterator<Item = &'static str> {
-    HEADER_FIELDS.lines()
+    // S40, Java: RC_JIT is declared with three values (the third a quality penalty) and written with
+    // two. Corrected: the declaration says what is written.
+    let java_rc_jit = crate::compat::java("S40");
+    HEADER_FIELDS.lines().map(move |line| {
+        if !java_rc_jit && line.starts_with("##FORMAT=<ID=RC_JIT,") {
+            RC_JIT_HEADER_LINE
+        } else {
+            line
+        }
+    })
 }
+
+const RC_JIT_HEADER_LINE: &str =
+    "##FORMAT=<ID=RC_JIT,Number=2,Type=Integer,Description=\"Read context jitter [Shortened, Lengthened]\">";
 
 /// One VCF data line, as VariantContextFactory.create + htsjdk's encoder would write it.
 pub fn record(chr: &str, v: &SageVariant) -> String {
@@ -263,10 +275,16 @@ impl VcfWriter {
             "##fileformat=VCFv4.2".to_string(),
             "##FILTER=<ID=PASS,Description=\"All filters passed\">".to_string(),
         ];
-        for (_, name, desc) in ALL_FILTERS.iter() {
+        // S41, Java: the fragmentLength filter is declared, but its test is commented out and no record
+        // can carry it. Corrected: it is not declared.
+        let java_filters = crate::compat::java("S41");
+        for (filter, name, desc) in ALL_FILTERS.iter() {
+            if !java_filters && *filter == crate::filters::SoftFilter::FragmentLength {
+                continue;
+            }
             lines.push(format!("##FILTER=<ID={name},Description=\"{desc}\">"));
         }
-        lines.extend(HEADER_FIELDS.lines().map(|x| x.to_string()));
+        lines.extend(header_field_lines().map(|x| x.to_string()));
         if run_tinc {
             lines.extend(crate::tinc::TINC_HEADER_LINES.iter().map(|x| x.to_string()));
         }

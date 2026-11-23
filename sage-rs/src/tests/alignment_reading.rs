@@ -348,10 +348,39 @@ fn test_cached_reads_equal_reads_from_the_file() {
     }
 }
 
-/// A CRAM gives the reads its BAM gives, except that NM is absent where the CRAM left it out: it is
-/// not regenerated, as htsjdk does not regenerate it.
+/// S7 corrected: a CRAM gives the reads its BAM gives, and every read has NM: the one the BAM carries,
+/// or the one htslib works out where the BAM has none.
+#[test]
+fn test_cram_reads_have_nm() {
+    let reference = write_reference("alignment_reading_cram_nm");
+    let bam_path = write_alignments("alignment_reading_cram_nm", bam::Format::Bam, &reference);
+    let cram_path = write_alignments("alignment_reading_cram_nm", bam::Format::Cram, &reference);
+    let mut from_bam = BamSlicer::open(&bam_path, &reference, 1).unwrap();
+    let mut from_cram = BamSlicer::open(&cram_path, &reference, 1).unwrap();
+    let mut reads = 0;
+    for regions in region_sets() {
+        let mut bam_reads: Vec<Read> = Vec::new();
+        from_bam.slice_ref(CHR, &regions, true, |read| bam_reads.push(read.clone())).unwrap();
+        let mut cram_reads: Vec<Read> = Vec::new();
+        from_cram.slice_ref(CHR, &regions, true, |read| cram_reads.push(read.clone())).unwrap();
+        assert_eq!(bam_reads.len(), cram_reads.len());
+        for (b, c) in bam_reads.iter_mut().zip(cram_reads.iter_mut()) {
+            assert!(c.nm.is_some());
+            if b.nm.is_none() {
+                b.nm = c.nm;
+            }
+            assert_eq!(describe(b), describe(c));
+            reads += 1;
+        }
+    }
+    assert!(reads > 0);
+}
+
+/// S7, Java: a CRAM gives the reads its BAM gives, except that NM is absent where the CRAM left it out:
+/// it is not regenerated, as htsjdk does not regenerate it.
 #[test]
 fn test_cram_reads_equal_bam_reads() {
+    let _java = crate::compat::scope(true);
     let reference = write_reference("alignment_reading_cram");
     let bam_path = write_alignments("alignment_reading_cram", bam::Format::Bam, &reference);
     let cram_path = write_alignments("alignment_reading_cram", bam::Format::Cram, &reference);
