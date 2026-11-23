@@ -448,6 +448,16 @@ R27 ends the process.
   on a network disk the re-read took 227 s. The index is not byte-identical to one from `samtools index`
   (chunks are merged differently); 3,307 region queries, `idxstats` and htsjdk reads gave the same
   results with both.
+- **Port bug, found on the first Google Batch run (2026-11-23) and fixed:** until then, a record that
+  followed a block ended early (because the record did not fit) started, in the index, at the end of
+  the previous block rather than at the start of the next one. htslib reads such offsets; htsjdk
+  refuses to seek there (`Invalid file pointer`), so Java BamTools failed on the REDUX BAM, and any
+  Java tool querying it by region could. On a 2M-read-pair BAM, 1,564 of 66,021 chunk starts were
+  affected; the earlier htsjdk checks had not queried any of them. The writer now does what htslib's
+  own indexed writer does (`bgzf_flush_try`, then `hts_idx_amend_last`). The BAM is byte-identical; the
+  index now gives htsjdk's answers for every 100 kb window, the same records as `samtools index`
+  (35,264 queries, 28.3 million records), and the unit test
+  `out::tests::index_offsets_never_point_at_a_block_end` checks it (28 bad offsets before the fix).
 - The jitter analysis costs about one second where Java allocates for every read and builds every
   table twice.
 - Memory is a few hundred MB against about 20 GB.

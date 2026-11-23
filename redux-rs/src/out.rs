@@ -6,6 +6,11 @@ use rust_htslib::htslib;
 use std::ffi::CString;
 use std::io::{Read, Seek, SeekFrom, Write};
 
+unsafe extern "C" {
+    // htslib (hts.c), linked statically; not in rust-htslib's bindings
+    fn hts_idx_amend_last(idx: *mut htslib::hts_idx_t, offset: u64);
+}
+
 /// A BGZF stream of BAM records, with or without the BAM header.
 pub struct RawBamOut {
     fp: *mut htslib::BGZF,
@@ -39,11 +44,24 @@ impl RawBamOut {
     }
     #[inline]
     pub fn write(&mut self, rec: &bam::Record) -> Result<()> {
+        let indexing = !self.idx.is_null() && !self.idx_failed;
+        if indexing {
+            // As htslib's own indexed BAM writer (bam_write_idx1): end the block now if the record will
+            // not fit, then move the index's start of this record to the new block. Otherwise a record
+            // that follows a block ended early starts, in the index, at the end of the previous block:
+            // valid for htslib, but htsjdk (the Java tools) refuses to seek there ("Invalid file pointer").
+            let b = &rec.inner;
+            let block_len = b.l_data as isize - b.core.l_extranul as isize + 32;
+            if unsafe { htslib::bgzf_flush_try(self.fp, 4 + block_len) } < 0 {
+                bail!("failed to write a record to {}", self.path);
+            }
+            unsafe { hts_idx_amend_last(self.idx, self.tell()) };
+        }
         if unsafe { htslib::bam_write1(self.fp, &rec.inner) } < 0 {
             bail!("failed to write a record to {}", self.path);
         }
         self.written += 1;
-        if !self.idx.is_null() && !self.idx_failed {
+        if indexing {
             let b = &rec.inner;
             let r = unsafe {
                 htslib::hts_idx_push(self.idx, b.core.tid, b.core.pos, htslib::bam_endpos(b), self.tell(), (b.core.flag & 4 == 0) as i32)
@@ -330,4 +348,73 @@ pub fn write_text(path: &str, text: &str) -> Result<()> {
     let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
     f.write_all(text.as_bytes())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_htslib::bam::record::{Cigar, CigarString};
+
+    /// Uncompressed size of each BGZF block, by its file offset
+    fn block_sizes(path: &str) -> std::collections::HashMap<u64, u64> {
+        let data = std::fs::read(path).unwrap();
+        let (mut sizes, mut at) = (std::collections::HashMap::new(), 0usize);
+        while at + 18 <= data.len() {
+            let bsize = u16::from_le_bytes([data[at + 16], data[at + 17]]) as usize + 1;
+            let isize = u32::from_le_bytes(data[at + bsize - 4..at + bsize].try_into().unwrap());
+            sizes.insert(at as u64, isize as u64);
+            at += bsize;
+        }
+        sizes
+    }
+
+    /// Each record starts its own 16 kb window, so every block that ends early (a record that does not
+    /// fit) has a record starting at the next block, with a linear-index entry and a chunk start. Those
+    /// must point at the start of the next block, not the end of the previous one: htsjdk refuses to
+    /// seek to a block's end ("Invalid file pointer"), which made the Java tools fail on redux-rs BAMs.
+    #[test]
+    fn index_offsets_never_point_at_a_block_end() {
+        let dir = std::env::temp_dir().join(format!("redux_out_index_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("part.bam").to_string_lossy().to_string();
+        let mut out = RawBamOut::create(&path, 1).unwrap();
+        out.enable_index();
+        for i in 0..3000u32 {
+            let len = 100 + (i as usize * 37) % 151;
+            let mut rec = bam::Record::new();
+            rec.set(format!("read{i}").as_bytes(), Some(&CigarString(vec![Cigar::Match(len as u32)])), &vec![b'A'; len], &vec![30u8; len]);
+            rec.set_tid(0);
+            rec.set_pos(i as i64 * 16_384);
+            rec.set_mtid(-1);
+            rec.set_mpos(-1);
+            out.write(&rec).unwrap();
+        }
+        out.close().unwrap();
+
+        let sizes = block_sizes(&path);
+        let early = sizes.values().filter(|&&n| n > 0 && n < 0xff00).count();
+        assert!(early > 10, "the test needs blocks that end early ({early})");
+        let refs = read_bai(&format!("{path}.bai")).unwrap();
+        let into_block = |v: u64| sizes.get(&(v >> 16)).is_some_and(|&n| (v & 0xffff) < n);
+        let (mut starts, mut bad) = (0, Vec::new());
+        for r in &refs {
+            for chunks in r.bins.values() {
+                for &(beg, _) in chunks {
+                    starts += 1;
+                    if !into_block(beg) {
+                        bad.push(beg);
+                    }
+                }
+            }
+            for &v in r.linear.iter().filter(|&&v| v != 0) {
+                starts += 1;
+                if !into_block(v) {
+                    bad.push(v);
+                }
+            }
+        }
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(starts > 3000);
+        assert!(bad.is_empty(), "{} of {starts} index offsets point at a block end, e.g. {:?}", bad.len(), bad.first().map(|v| (v >> 16, v & 0xffff)));
+    }
 }
