@@ -170,8 +170,13 @@ impl SbxDuplicateCollapser {
 
         // the lists by orientation of the lower position and primary or supplementary, in the order a
         // java.util.HashMap walks the keys "R", "F", "R_S" and "F_S"
+        // R7: Java takes the orientation of the lower position, which for an unpaired read is forward on both
+        // strands (the lower position of a reverse read is its 3' end), so forward and reverse reads collapse
+        // together. Corrected: the orientation of the read, as in the fragment key.
+        let java_orientation = crate::compat::java("R7");
         let key_index = |c: &FragmentCoords| -> usize {
-            match (c.lower_forward, c.supp.is_some()) {
+            let forward = if c.unpaired && !java_orientation && !c.read_is_lower { c.upper_forward } else { c.lower_forward };
+            match (forward, c.supp.is_some()) {
                 (false, false) => 0,
                 (true, false) => 1,
                 (false, true) => 2,

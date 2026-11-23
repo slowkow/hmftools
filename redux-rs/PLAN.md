@@ -1,7 +1,10 @@
 # redux-rs: status
 
-A port of REDUX 2.1 (`../redux`). Parity means: the BAM holds the same records in the same order as
-Java's, and the other output files are byte-identical. See README.md for how the thread count enters.
+A port of REDUX 2.1 (`../redux`). By default the port corrects the faults found in the Java code
+(REPORT.md, section 3); `-java_compat` reproduces them. Parity means, with `-java_compat`: the BAM holds
+the same records in the same order as Java's, and the other output files are byte-identical. See
+README.md for how the thread count enters. Every comparison with Java in this file was made in Java
+mode (before the corrections existed, the only mode).
 
 ## Done and compared with Java
 
@@ -18,7 +21,22 @@ Java's, and the other output files are byte-identical. See README.md for how the
 | SBX | SbxRoutines, SbxDuplexIndelBuilder, SbxIndelConsensus, SbxDuplicateCollapser, SbxBamSampler | `sbx.rs`, `sbx_dup.rs`, `consensus/sbx_indel.rs` |
 | Ultima | UltimaRoutines, UltimaStats | `ultima.rs` |
 | UMIs | UmiConfig, UmiGroupBuilder, PolyGUmiMerger, JitterUmiMerger, UmiStatistics | `umi.rs` |
-| Unit tests | the Java tests of the ported classes (71 core, 36 SBX, 21 UMI, BQR, jitter, Ultima); 184 Rust tests | `tests/`, and next to the modules |
+| Unit tests | the Java tests of the ported classes (71 core, 36 SBX, 21 UMI, BQR, jitter, Ultima) and tests of the corrected paths; 211 Rust tests | `tests/`, and next to the modules |
+| The switch between corrected and Java behaviour | not in Java | `compat.rs` |
+
+## Corrections
+
+Done: 24 of the 40 numbered findings are corrected by default, each behind `compat::java("<id>")` with
+the Java path beside it (REPORT.md, sections 3.1 to 3.5). The Java-mode regression (88 stored Java
+baselines) gives the same result as before the corrections.
+
+Left as in Java, in both modes, with the reason in REPORT.md section 3.6:
+- R12 (the outlier pass of the jitter tables) and two of the three options of R13: the code holds no
+  rule to apply.
+- R15 (duplicates are not matched across a partition boundary): needs the partitions to read and
+  group across their boundaries; the redesign is described in section 3.6.
+- R23 (Ultima consensus on bases that disagree): Java has no rule; the port stops with a message.
+- R30 (`-output_id` and the names of the side files): downstream tools find these files by name.
 
 ## Not done
 
@@ -50,6 +68,15 @@ Java's, and the other output files are byte-identical. See README.md for how the
 - **Jitter.** Sites are sorted per chromosome and each worker follows the sorted reads with a cursor;
   counts go to a dense per-worker window. Java queries an interval tree and allocates per read.
 - **BQR.** A flat slot array per position instead of a map of lists per position; per-reader key table.
+  In Java mode the array is Java's block of 100K positions. In the default mode it is a window that
+  moves with the reads (R2), and the positions next to a partition boundary are set aside by both
+  partitions and counted by whichever completes second (R16), so no partition waits for another.
+- **Read cache.** In Java mode a partition whose cache nears 100,000 reads waits for the read counts of
+  the earlier partitions, to give Java's one-thread result. In the default mode the counter starts
+  again with each region (R21) and nothing waits.
+- **The switch.** `compat::java("<id>")` is an atomic load in the default mode and in Java mode (a set
+  lookup only under `-java_compat_except`). The BQR reader, the read cache and the partition reader
+  read it once when they are made.
 
 ## Measurements
 
@@ -98,6 +125,9 @@ CPU is user time. In the whole-genome run Rust's phases were 3 minutes for the f
 partitions and 4 for joining, jitter and the index; Java's were 5, 32 and 8. The BAMs match except
 for the order of unplaced reads and, in the whole genome, the same few hundred duplicate flags on one
 very deep contig that differ on macOS at 16 threads (Java's result there depends on thread timing).
+
+Both modes on the same whole genome (2026-11-22, shared machine, 32 partitions, 6 worker threads,
+external SSD): REPORT.md, section 6.
 
 One thread, taken while other jobs were running; CPU time is the fairer figure:
 

@@ -391,7 +391,8 @@ pub fn ols_no_intercept(y: &[f64], x: &[[f64; 2]]) -> Result<[f64; 2]> {
     }
     // AbstractMultipleLinearRegression.validateSampleData requires more rows than predictors plus one, also
     // without an intercept: two rows are an exception in Java, which ends the run
-    if m < 3 {
+    // R29: two rows fix the line exactly, and the README asks for "at least 2" repeat counts; corrected: solved
+    if m < 2 || (m < 3 && crate::compat::java("R29")) {
         bail!("org.apache.commons.math3.exception.MathIllegalArgumentException: not enough data ({m} rows) for this many predictors (2 predictors)");
     }
     // qrt[column][row]
@@ -515,7 +516,19 @@ mod tests {
         assert!((p[1] + 0.1).abs() < 1e-12);
         // singular, and too few rows
         assert!(ols_no_intercept(&[0.0, 0.0, 0.0], &[[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]).is_err());
-        assert!(ols_no_intercept(&[0.1, 0.2], &[[1.0, 0.1], [2.0, 0.2]]).is_err());
+        // two rows: an exception in Java (R29)
+        assert!(crate::compat::with_java(true, || ols_no_intercept(&[0.1, 0.2], &[[1.0, 0.1], [2.0, 0.2]])).is_err());
+    }
+
+    #[test]
+    fn regression_with_two_rows_gives_the_line_through_them() {
+        // R29 corrected: y = 0.05 x - 0.1 at x = 7 and 9, weights 0.2 and 0.1
+        let (w, xs) = ([0.2, 0.1], [7.0, 9.0]);
+        let y: Vec<f64> = (0..2).map(|i| w[i] * (0.05 * xs[i] - 0.1)).collect();
+        let x: Vec<[f64; 2]> = (0..2).map(|i| [w[i] * xs[i], w[i]]).collect();
+        let p = ols_no_intercept(&y, &x).unwrap();
+        assert!((p[0] - 0.05).abs() < 1e-12 && (p[1] + 0.1).abs() < 1e-12);
+        assert!(ols_no_intercept(&[0.1], &[[1.0, 0.1]]).is_err());
     }
 
     fn table_with(rows: &[(i32, &[(i32, i32)])]) -> JitterCountsTable {

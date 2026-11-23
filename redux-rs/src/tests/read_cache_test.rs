@@ -331,3 +331,55 @@ fn test_read_cache_above_dynamic_threshold() {
     let fragment_coord_reads = read_cache.pop_reads().expect("popped reads");
     assert_eq!(80, fragment_coord_reads.total_read_count());
 }
+
+/// R14: the pop distance is shortened while the cache holds the threshold or more, and restored below it.
+/// In Java it never leaves the default.
+#[test]
+fn pop_distance_follows_the_cache_size() {
+    let names = names();
+    let run = |java: bool| {
+        crate::compat::with_java(java, || {
+            let ids = &mut ReadIdGenerator::new();
+            let bases = "A".repeat(10);
+            let mut read_cache = ReadCache::new(100, 50, false, 100, 100, 100);
+            for _ in 0..40 {
+                for read_pos in [100, 110, 120] {
+                    let read = create_sam_record(&ids.next_id(), CHR_1, read_pos, &bases, "10M", CHR_1, 200, false, false, None, true, Some("10M"));
+                    read_cache.process_read(read, &names);
+                }
+            }
+            let full = read_cache.check_state().0;
+            // the purge halves the cache; ten more reads bring the next size check, under the threshold again
+            read_cache.pop_reads().expect("popped reads");
+            for _ in 0..10 {
+                let read = create_sam_record(&ids.next_id(), CHR_1, 120, &bases, "10M", CHR_1, 200, false, false, None, true, Some("10M"));
+                read_cache.process_read(read, &names);
+            }
+            (full, read_cache.check_state().0)
+        })
+    };
+    assert_eq!(run(true), (100, 100));
+    assert_eq!(run(false), (90, 100));
+}
+
+/// R21: the size-check counter and the last counted size start again after a region. Java keeps them.
+#[test]
+fn size_check_starts_again_with_each_region() {
+    let names = names();
+    let run = |java: bool| {
+        crate::compat::with_java(java, || {
+            let ids = &mut ReadIdGenerator::new();
+            let bases = "A".repeat(10);
+            let mut read_cache = ReadCache::new(100, 50, false, 100, 100, 100);
+            for _ in 0..105 {
+                let read = create_sam_record(&ids.next_id(), CHR_1, 100, &bases, "10M", CHR_1, 200, false, false, None, true, Some("10M"));
+                read_cache.process_read(read, &names);
+            }
+            read_cache.evict_all();
+            let (_, counter, last) = read_cache.check_state();
+            (counter, last)
+        })
+    };
+    assert_eq!(run(true), (5, 100));
+    assert_eq!(run(false), (0, 0));
+}

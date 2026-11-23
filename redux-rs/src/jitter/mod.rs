@@ -75,6 +75,8 @@ struct JitterConfig {
     sequencing_type: SequencingType,
     uses_duplex_umis: bool,
     apply_bq_filter: bool,
+    /// the lowest mapping quality of a read that is analysed
+    min_map_quality: i32,
     write_site_file: bool,
     coefficients_file: Option<String>,
     error_rates_file: Option<String>,
@@ -326,14 +328,23 @@ impl Totals {
     }
 
     /// MicrosatelliteSiteData.isRealVariant with the JitterConstants thresholds.
+    #[cfg(test)]
     fn is_real_variant(&self, site: usize) -> bool {
+        self.is_real_variant_with(site, crate::compat::java("R11"))
+    }
+
+    fn is_real_variant_with(&self, site: usize, java_total: bool) -> bool {
         let passing = self.passing[site] as i32;
         if passing < MIN_PASSING_SITE_READS {
             return true;
         }
-        // Java never increments mTotalReadCount, so the rejected fraction is 1 - passing / 0.0 = -Infinity and this
-        // test never fires
-        let total_read_count = 0;
+        // R11: Java never increments mTotalReadCount, so the rejected fraction is 1 - passing / 0.0 = -Infinity and
+        // the test never fires. Corrected: the total is every read of the site, passing or rejected.
+        let total_read_count = if java_total {
+            0
+        } else {
+            ConsensusType::ALL.iter().fold(passing, |sum, ct| sum.wrapping_add(self.rejected_count(site, *ct)))
+        };
         let fraction_rejected = 1.0 - passing as f64 / total_read_count as f64;
         if fraction_rejected - MAX_REJECTED_READ_FRACTION > -EPSILON {
             return true;
@@ -380,8 +391,9 @@ impl MsJitterAnalyser {
     pub fn new(config: &Config) -> Result<Option<Self>> {
         let args = &config.args;
         let Some(msi_file) = args.value("ref_genome_msi_file") else { return Ok(None) };
-        // read and checked as Java does; REDUX 2.1 uses none of these three values
-        args.integer("msi_min_map_quality", DEFAULT_MIN_MAPPING_QUALITY)?;
+        // read and checked as Java does; REDUX 2.1 uses none of these three values (R13). Corrected: the minimum
+        // mapping quality is applied to the reads of the jitter analysis; the other two stay without effect
+        let min_map_quality = args.integer("msi_min_map_quality", DEFAULT_MIN_MAPPING_QUALITY)?;
         args.integer("msi_max_sites_per_type", DEFAULT_NUM_SITES_PER_TYPE)?;
         args.decimal("max_site_alt_contribution", DEFAULT_MAX_SINGLE_SITE_ALT_CONTRIBUTION)?;
         // ConfigBuilder.addPath: a path that is given must exist
@@ -398,6 +410,7 @@ impl MsJitterAnalyser {
             sequencing_type: config.sequencing_type,
             uses_duplex_umis: config.umi_enabled && config.umi_duplex,
             apply_bq_filter: !args.has_flag("msi_no_bq_filter"),
+            min_map_quality: if crate::compat::java("R13") { DEFAULT_MIN_MAPPING_QUALITY } else { min_map_quality },
             write_site_file: args.has_flag("write_msi_site_file"),
             coefficients_file: args.value("msi_model_coefficients").map(str::to_string),
             error_rates_file: args.value("msi_model_error_rates").map(str::to_string),
@@ -419,6 +432,7 @@ impl MsJitterAnalyser {
     pub fn processor(&self) -> MsJitterProcessor<'_> {
         MsJitterProcessor {
             shared: self,
+            min_map_quality: self.config.min_map_quality.clamp(0, 255) as u8,
             is_sbx: self.config.sequencing_type == SequencingType::Sbx,
             apply_bq_filter: self.config.apply_bq_filter,
             store_lengths: self.config.write_site_file,
@@ -439,7 +453,8 @@ impl MsJitterAnalyser {
         let consensus_types = self.config.consensus_types();
 
         // MicrosatelliteSiteData.shouldKeepSite
-        let real_variant: Vec<bool> = (0..self.sites.len()).map(|i| totals.is_real_variant(i)).collect();
+        let java_total = crate::compat::java("R11");
+        let real_variant: Vec<bool> = (0..self.sites.len()).map(|i| totals.is_real_variant_with(i, java_total)).collect();
 
         if self.config.write_site_file {
             let filename = format!("{}/{}.repeat.tsv.gz", self.config.output_dir, self.config.sample_id);
@@ -568,6 +583,8 @@ fn fit_jitter_models(chart_tables: &[JitterCountsTable]) -> Result<Vec<JitterMod
 /// The per-thread part of SampleReadProcessor and MicrosatelliteSiteData.addReadToStats.
 pub struct MsJitterProcessor<'a> {
     shared: &'a MsJitterAnalyser,
+    /// the lowest mapping quality of a read that is analysed
+    pub min_map_quality: u8,
     is_sbx: bool,
     apply_bq_filter: bool,
     store_lengths: bool,

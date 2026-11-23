@@ -132,7 +132,7 @@ pub fn run(
     // one extra task extracts the reads that are already unmapped and unplaced
     let task_count = regions.len() + usize::from(extract_fully_unmapped);
     let next = AtomicUsize::new(0);
-    let worker_count = config.threads.min(task_count).max(1);
+    let worker_count = crate::worker_limit(config.threads).min(task_count).max(1);
     let results: Vec<Result<Stage1Result>> = std::thread::scope(|scope| {
         let mut handles = Vec::new();
         for w in 0..worker_count {

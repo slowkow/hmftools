@@ -1,5 +1,8 @@
 //! `redux-rs compare_bams <a.bam> <b.bam> [threads]`: checks that two BAMs hold the same records in the same order.
 //! Integer attributes are compared by value, since writers choose different integer widths.
+//!
+//! `redux-rs diff_bams <a.bam> <b.bam> [threads]`: counts the differences between two coordinate-sorted BAMs of
+//! the same reads, by kind. It is how the effect of a correction is measured (REPORT.md, section 3).
 
 use crate::rec::*;
 use anyhow::Result;
@@ -122,5 +125,171 @@ pub fn run(args: &[String]) -> Result<()> {
         }
     }
     println!("IDENTICAL ({n} records)");
+    Ok(())
+}
+
+/// One side of `diff_bams`: reads the records of one position at a time.
+struct Blocks {
+    reader: bam::Reader,
+    next: Option<bam::Record>,
+}
+
+impl Blocks {
+    fn open(path: &str, threads: usize) -> Result<Self> {
+        let mut reader = bam::Reader::from_path(path)?;
+        reader.set_threads(threads)?;
+        let mut b = Blocks { reader, next: None };
+        b.advance()?;
+        Ok(b)
+    }
+    fn advance(&mut self) -> Result<()> {
+        let mut rec = bam::Record::new();
+        self.next = match self.reader.read(&mut rec) {
+            Some(x) => {
+                x?;
+                Some(rec)
+            }
+            None => None,
+        };
+        Ok(())
+    }
+    /// (tid as unsigned so that unplaced reads sort last, position)
+    fn key(&self) -> Option<(u32, i64)> {
+        self.next.as_ref().map(|r| (r.tid() as u32, r.pos()))
+    }
+    fn take_block(&mut self, key: (u32, i64), out: &mut Vec<bam::Record>) -> Result<()> {
+        out.clear();
+        while self.key() == Some(key) {
+            out.push(self.next.take().unwrap());
+            self.advance()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct DiffCounts {
+    records_a: u64,
+    records_b: u64,
+    identical: u64,
+    changed: u64,
+    duplicate_flag: u64,
+    cigar: u64,
+    bases: u64,
+    quals: u64,
+    attributes: u64,
+    other_fields: u64,
+    only_a: u64,
+    only_a_consensus: u64,
+    only_b: u64,
+    only_b_consensus: u64,
+    unplaced_a: u64,
+    unplaced_b: u64,
+}
+
+fn record_hash(r: &bam::Record) -> u128 {
+    use std::hash::{Hash, Hasher};
+    let mut out = 0u128;
+    for seed in 0..2u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        seed.hash(&mut h);
+        r.qname().hash(&mut h);
+        r.flags().hash(&mut h);
+        r.seq().encoded[..r.seq_len().div_ceil(2)].hash(&mut h);
+        r.qual().hash(&mut h);
+        aux_sorted_copy(aux_bytes(r)).hash(&mut h);
+        out = (out << 64) | h.finish() as u128;
+    }
+    out
+}
+
+pub fn diff(args: &[String]) -> Result<()> {
+    const DUPLICATE: u16 = 0x400;
+    let threads: usize = args.get(2).map(|t| t.parse()).transpose()?.unwrap_or(4);
+    let mut a = Blocks::open(&args[0], threads)?;
+    let mut b = Blocks::open(&args[1], threads)?;
+    let mut c = DiffCounts::default();
+    let (mut block_a, mut block_b) = (Vec::new(), Vec::new());
+    let (mut unplaced_sum_a, mut unplaced_sum_b) = (0u128, 0u128);
+    let is_consensus = |r: &bam::Record| r.qname().starts_with(b"CNS_");
+    loop {
+        let key = match (a.key(), b.key()) {
+            (None, None) => break,
+            (Some(x), None) => x,
+            (None, Some(y)) => y,
+            (Some(x), Some(y)) => x.min(y),
+        };
+        if key.0 == u32::MAX {
+            // unplaced reads have no order to rely on: compared as a set, by a sum of hashes. There can be tens of
+            // millions of them at one "position", so they are read one at a time
+            while a.key().is_some_and(|k| k.0 == u32::MAX) {
+                unplaced_sum_a = unplaced_sum_a.wrapping_add(record_hash(a.next.as_ref().unwrap()));
+                c.unplaced_a += 1;
+                a.advance()?;
+            }
+            while b.key().is_some_and(|k| k.0 == u32::MAX) {
+                unplaced_sum_b = unplaced_sum_b.wrapping_add(record_hash(b.next.as_ref().unwrap()));
+                c.unplaced_b += 1;
+                b.advance()?;
+            }
+            c.records_a += c.unplaced_a;
+            c.records_b += c.unplaced_b;
+            continue;
+        }
+        a.take_block(key, &mut block_a)?;
+        b.take_block(key, &mut block_b)?;
+        c.records_a += block_a.len() as u64;
+        c.records_b += block_b.len() as u64;
+        let mut used = vec![false; block_b.len()];
+        for ra in &block_a {
+            let found = block_b.iter().enumerate().position(|(i, rb)| {
+                !used[i] && rb.qname() == ra.qname() && (rb.flags() & !DUPLICATE) == (ra.flags() & !DUPLICATE)
+            });
+            let Some(i) = found else {
+                c.only_a += 1;
+                c.only_a_consensus += is_consensus(ra) as u64;
+                continue;
+            };
+            used[i] = true;
+            let rb = &block_b[i];
+            let duplicate_flag = ra.flags() != rb.flags();
+            let cigar = ra.raw_cigar() != rb.raw_cigar();
+            let bases = ra.seq_len() != rb.seq_len() || ra.seq().encoded != rb.seq().encoded;
+            let quals = ra.qual() != rb.qual();
+            let attributes = !aux_equal(aux_bytes(ra), aux_bytes(rb));
+            let other = ra.mapq() != rb.mapq() || ra.mtid() != rb.mtid() || ra.mpos() != rb.mpos() || ra.insert_size() != rb.insert_size();
+            if duplicate_flag || cigar || bases || quals || attributes || other {
+                c.changed += 1;
+                c.duplicate_flag += duplicate_flag as u64;
+                c.cigar += cigar as u64;
+                c.bases += bases as u64;
+                c.quals += quals as u64;
+                c.attributes += attributes as u64;
+                c.other_fields += other as u64;
+            } else {
+                c.identical += 1;
+            }
+        }
+        for (i, rb) in block_b.iter().enumerate() {
+            if !used[i] {
+                c.only_b += 1;
+                c.only_b_consensus += is_consensus(rb) as u64;
+            }
+        }
+    }
+    println!("records: a {} b {}", c.records_a, c.records_b);
+    println!("placed records identical: {}", c.identical);
+    println!(
+        "placed records changed: {} (duplicate flag {}, cigar {}, bases {}, qualities {}, attributes {}, other fields {})",
+        c.changed, c.duplicate_flag, c.cigar, c.bases, c.quals, c.attributes, c.other_fields
+    );
+    println!("placed records only in a: {} (consensus reads {})", c.only_a, c.only_a_consensus);
+    println!("placed records only in b: {} (consensus reads {})", c.only_b, c.only_b_consensus);
+    println!(
+        "unplaced records: a {} b {}, {}",
+        c.unplaced_a,
+        c.unplaced_b,
+        if c.unplaced_a == c.unplaced_b && unplaced_sum_a == unplaced_sum_b { "the same set" } else { "different" }
+    );
     Ok(())
 }

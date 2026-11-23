@@ -180,6 +180,7 @@ fn consensus_types() {
 
 fn test_config(sequencing_type: SequencingType, write_site_file: bool, output_dir: &str) -> JitterConfig {
     JitterConfig {
+        min_map_quality: 50,
         sample_id: "SAMPLE".to_string(),
         output_dir: output_dir.to_string(),
         sequencing_type,
@@ -605,9 +606,37 @@ fn fit_fails_with_two_rows_for_the_regression() {
         row.add_reads(1, 300);
     }
     let grid = fit::SearchGrid::new();
-    assert!(fit::perform_fit(&grid, &table).is_err());
+    assert!(crate::compat::with_java(true, || fit::perform_fit(&grid, &table)).is_err());
+    // R29 corrected: the two scales give the line; it is used when it rises, as with more rows
+    let p = fit::perform_fit(&grid, &table).unwrap();
+    assert!(p.scale_fit_gradient.is_finite() && p.scale_fit_intercept.is_finite() && p.microsatellite_skew.is_finite());
     table.get_or_create_row(9).add_reads(0, 100);
     assert!(fit::perform_fit(&grid, &table).is_ok());
+}
+
+#[test]
+fn site_with_many_rejected_reads_is_left_out() {
+    // R11: 20% or more of the reads of a site rejected. Java never counts the reads, so the test cannot fire
+    let records = vec![("chr1".to_string(), 101, 108, b"A".to_vec())];
+    let run = |passing: usize, rejected: usize, java: bool| {
+        let analyser = MsJitterAnalyser::from_parts(test_config(SequencingType::Illumina, false, ""), Sites::build(records.clone()).unwrap());
+        {
+            let mut p = analyser.processor();
+            add_reads(&mut p, "chr1", passing, 81, "40M", &bases_with_a(40, &[(20, 28)]), None);
+            // an insert that is not a multiple of the unit within the repeat: rejected
+            add_reads(&mut p, "chr1", rejected, 81, "24M1I23M", &bases_with_a(48, &[(20, 24), (25, 29)]), None);
+        }
+        let totals = analyser.totals.lock().unwrap();
+        (totals.rejected_count(0, ConsensusType::None), totals.is_real_variant_with(0, java))
+    };
+    let (rejected, real) = run(80, 20, false);
+    if rejected == 20 {
+        assert!(real);
+        assert!(!run(81, 19, false).1);
+        assert!(!run(80, 20, true).1);
+    } else {
+        panic!("the test read was not rejected ({rejected})");
+    }
 }
 
 #[test]
@@ -620,4 +649,29 @@ fn msi_model_matches_java() {
     let predicted = calc.calc_predicted_msi_rate(&reference_tables()).unwrap();
     assert_eq!(predicted.to_bits(), 0x404e90f16b714215);
     assert_eq!(crate::fmt::java_fixed(predicted, 4), "61.1324");
+}
+
+/// R13: -msi_min_map_quality sets the lowest mapping quality of a read of the jitter analysis. Java reads the
+/// option and applies the minimum of the base quality recalibration (50) whatever its value.
+#[test]
+fn min_map_quality_of_the_jitter_reads() {
+    let records = vec![("chr1".to_string(), 101, 108, b"A".to_vec())];
+    let passing = |option: i32, map_quality: u8| {
+        let mut config = test_config(SequencingType::Illumina, false, "");
+        config.min_map_quality = option;
+        let analyser = MsJitterAnalyser::from_parts(config, Sites::build(records.clone()).unwrap());
+        let bqr = crate::bqr::BaseQualRecalibration::for_test(SequencingType::Illumina);
+        {
+            let mut capture = crate::capture::ReadCapture { jitter: Some(analyser.processor()), bqr: bqr.region_reader() };
+            let mut rec = record(81, "40M", &bases_with_a(40, &[(20, 28)]));
+            rec.set_mapq(map_quality);
+            capture.capture(&rec, "chr1");
+        }
+        analyser.totals.lock().unwrap().passing[0]
+    };
+    assert_eq!(passing(50, 60), 1);
+    assert_eq!(passing(50, 40), 0);
+    assert_eq!(passing(30, 40), 1);
+    assert_eq!(passing(30, 20), 0);
+    assert_eq!(passing(60, 55), 0);
 }

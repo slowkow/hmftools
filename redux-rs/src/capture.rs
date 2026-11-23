@@ -18,13 +18,14 @@ impl ReadCapture<'_> {
         if rec.flags() & (0x4 | 0x400 | 0x800 | 0x100) != 0 {
             return;
         }
-        if rec.mapq() < BQR_MIN_MAP_QUAL {
-            return;
-        }
+        // Java applies the BQR minimum to both; R13 corrected: the jitter analysis has its own (-msi_min_map_quality)
+        let map_quality = rec.mapq();
         if let Some(j) = &mut self.jitter {
-            j.process_read(rec, chromosome);
+            if map_quality >= j.min_map_quality {
+                j.process_read(rec, chromosome);
+            }
         }
-        if self.bqr.is_active() {
+        if map_quality >= BQR_MIN_MAP_QUAL && self.bqr.is_active() {
             self.bqr.process_record(rec);
         }
     }

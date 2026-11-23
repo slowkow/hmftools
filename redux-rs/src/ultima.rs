@@ -322,13 +322,31 @@ pub fn undetermined_consensus_base_error(read_id: &str) -> anyhow::Error {
 pub struct UltimaRoutines {
     /// -ultima_drop_qual_tags (UTLIMA_DROP_QUAL_TAGS): the t0 and tp attributes are dropped from every read
     drop_qual_tags: bool,
+    /// R26 corrected: the base quality recalibration needs t0, so with -ultima_drop_qual_tags the two attributes
+    /// stay on the read until it has been counted and are taken off as it is written (`drop_raw_quals`)
+    pub drop_after_capture: bool,
     aux: Vec<u8>,
     entries: Vec<u8>,
 }
 
 impl UltimaRoutines {
     pub fn new(drop_qual_tags: bool) -> Self {
-        UltimaRoutines { drop_qual_tags, aux: Vec::with_capacity(1024), entries: Vec::with_capacity(256) }
+        UltimaRoutines { drop_qual_tags, drop_after_capture: false, aux: Vec::with_capacity(1024), entries: Vec::with_capacity(256) }
+    }
+
+    /// For the reads of a partition, which go through the base quality recalibration when `bqr_enabled`.
+    /// R26: Java drops t0 before the recalibration reads it and fails with a NullPointerException.
+    pub fn for_partition(drop_qual_tags: bool, bqr_enabled: bool) -> Self {
+        let mut u = Self::new(drop_qual_tags);
+        u.drop_after_capture = drop_qual_tags && bqr_enabled && !crate::compat::java("R26");
+        u
+    }
+
+    /// Takes the raw quality attributes off a read that is about to be written (see `drop_after_capture`).
+    pub fn drop_raw_quals(rec: &mut bam::Record) {
+        for tag in RAW_QUAL_ATTRIBUTES {
+            crate::rec::set_attribute(rec, tag, None);
+        }
     }
 
     /// UltimaRoutines.preProcessRead
@@ -343,7 +361,7 @@ impl UltimaRoutines {
     pub fn strip_attributes(&mut self, rec: &mut bam::Record, stats: Option<&mut UltimaStats>) -> Result<()> {
         let flags = rec.flags();
         let mut keep_raw_quals = flags & (FLAG_UNMAPPED | FLAG_SECONDARY | FLAG_SUPPLEMENTARY | FLAG_DUPLICATE) == 0;
-        if self.drop_qual_tags {
+        if self.drop_qual_tags && !self.drop_after_capture {
             keep_raw_quals = false;
         }
         let form_custom_tags = flags & (FLAG_UNMAPPED | FLAG_SECONDARY) == 0;

@@ -9,6 +9,7 @@ mod bamin;
 mod bqr;
 mod capture;
 mod compare;
+mod compat;
 mod config;
 #[allow(dead_code)]
 mod fmt;
@@ -55,6 +56,21 @@ fn main() {
         }
         return;
     }
+    if argv.first().map(String::as_str) == Some("diff_bams") && argv.len() >= 3 {
+        if let Err(e) = compare::diff(&argv[1..]) {
+            error!("{e:#}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    // -java_compat and -java_compat_except are not options of the Java tool: taken off before the options are parsed
+    let argv = match compat::take_options(&argv) {
+        Ok(a) => a,
+        Err(e) => {
+            error!("{e:#}");
+            std::process::exit(1);
+        }
+    };
     if let Err(e) = run(&argv) {
         error!("{e:#}");
         std::process::exit(1);
@@ -71,7 +87,8 @@ fn run(argv: &[String]) -> Result<()> {
     set_read_length(&mut config, &genome)?;
 
     let jitter = jitter::MsJitterAnalyser::new(&config)?;
-    let bqr = bqr::BaseQualRecalibration::new(&config, &genome)?;
+    let mut bqr = bqr::BaseQualRecalibration::new(&config, &genome)?;
+    bqr.set_partitions(&create_partitions(&config, &genome));
 
     if config.bqr_jitter_msi_only {
         return run_capture_only(&config, &genome, jitter.as_ref(), &bqr, start);
@@ -85,7 +102,7 @@ fn run_capture_only(
     start: std::time::Instant,
 ) -> Result<()> {
     let partitions = create_partitions(config, genome);
-    let worker_count = config.threads.min(partitions.len()).max(1);
+    let worker_count = worker_limit(config.threads).min(partitions.len()).max(1);
     let next = AtomicUsize::new(0);
     std::thread::scope(|scope| -> Result<()> {
         let mut handles = Vec::new();
@@ -221,7 +238,7 @@ fn run_full(
             let next_bucket = AtomicUsize::new(0);
             std::thread::scope(|scope| -> Result<()> {
                 let mut handles = Vec::new();
-                for _ in 0..config.threads.min(4).min(bucket_paths.len()).max(1) {
+                for _ in 0..worker_limit(config.threads).min(4).min(bucket_paths.len()).max(1) {
                     handles.push(scope.spawn(|| -> Result<()> {
                         loop {
                             let i = next_bucket.fetch_add(1, Ordering::Relaxed);
@@ -281,7 +298,7 @@ fn run_full(
     // second pass: the partitions
     let part_paths: Vec<String> = (0..partitions.len()).map(|i| format!("{temp_prefix}.{i}.sorted.part")).collect();
     let next = AtomicUsize::new(0);
-    let worker_count = config.threads.min(partitions.len()).max(1);
+    let worker_count = worker_limit(config.threads).min(partitions.len()).max(1);
     let outputs: Vec<std::sync::Mutex<Option<partition::PartitionOutput>>> = (0..partitions.len()).map(|_| std::sync::Mutex::new(None)).collect();
     let cache_sync = dup::CacheSync::new(partitions.len());
     // the final BAM is written under a temporary name while the partitions run: a joiner thread appends each
@@ -420,7 +437,7 @@ fn run_full(
         if part_indexes.iter().all(|(p, _)| std::path::Path::new(p).exists()) {
             out::merge_part_indexes(&part_indexes, header.target_count() as usize, no_coor + existing_unmapped as u64, &final_index)?;
         } else {
-            out::index_bam(&final_bam, config.threads)?;
+            out::index_bam(&final_bam, worker_limit(config.threads))?;
         }
         temp_files.extend(part_indexes.into_iter().map(|(p, _)| p));
         if !config.keep_interim_bams {
@@ -471,6 +488,17 @@ fn run_full(
     }
     info!("Redux complete, mins({:.3})", start.elapsed().as_secs_f64() / 60.0);
     Ok(())
+}
+
+/// The number of worker threads for `-threads n`: n, or less when the environment variable REDUX_WORKERS is set.
+/// `-threads` also fixes how the genome is split into partitions, and with it the output in Java mode; this
+/// limits the threads without changing the split (for comparing with a Java run made with more threads than
+/// the machine should be given).
+pub fn worker_limit(threads: usize) -> usize {
+    match std::env::var("REDUX_WORKERS").ok().and_then(|v| v.parse::<usize>().ok()) {
+        Some(limit) if limit >= 1 => threads.min(limit),
+        _ => threads,
+    }
 }
 
 /// Tells the joiner thread which partition files are complete.

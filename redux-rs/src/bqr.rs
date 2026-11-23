@@ -172,9 +172,28 @@ pub struct BaseQualRecalibration {
     sample_id: String,
     regions: Vec<ChrBaseRegion>,
     results: Mutex<BaseQualityResults>,
+    /// R16: the first position of each partition region that follows another region of the same chromosome directly
+    boundaries: HashSet<(String, i32)>,
+    /// R16: the uncounted positions next to a boundary, left by the first of its two partitions to complete
+    boundary_stash: Mutex<HashMap<(String, i32), Vec<RawPosition>>>,
 }
 
 impl BaseQualRecalibration {
+    /// R16: tells the readers where one partition ends and the next begins within a chromosome, so that the
+    /// positions that reads of both partitions cover are counted with the reads of both.
+    pub fn set_partitions(&mut self, partitions: &[Vec<ChrBaseRegion>]) {
+        self.boundaries.clear();
+        if crate::compat::java("R16") || crate::compat::java("R2") {
+            return;
+        }
+        let ends: HashSet<(&str, i32)> = partitions.iter().flatten().map(|r| (r.chromosome.as_str(), r.end)).collect();
+        for r in partitions.iter().flatten() {
+            if ends.contains(&(r.chromosome.as_str(), r.start - 1)) {
+                self.boundaries.insert((r.chromosome.clone(), r.start));
+            }
+        }
+    }
+
     pub fn new(config: &Config, _genome: &RefGenome) -> Result<Self> {
         // BqrConfig: the bqr_debug_* options only add debug logging in Java and are ignored
         let enabled = !config.args.has_flag("bqr_disable");
@@ -187,6 +206,8 @@ impl BaseQualRecalibration {
             sample_id: config.sample_id.clone(),
             regions: Vec::new(),
             results: Mutex::new(BaseQualityResults { counts: vec![0; KEY_TABLE_SIZE], total_reads_used: 0, total_alts_filtered: 0 }),
+            boundaries: HashSet::new(),
+            boundary_stash: Mutex::new(HashMap::new()),
         };
         if enabled {
             bqr.regions = form_regions(config);
@@ -210,7 +231,16 @@ impl BaseQualRecalibration {
 
     /// BaseQualRecalibration.finalise: converts the combined counts to records and writes the file.
     pub fn finalise(&self) -> Result<()> {
-        let results = self.results.lock().unwrap();
+        let mut results = self.results.lock().unwrap();
+        // R16: positions left at a boundary whose other partition gave nothing (it failed, or was not run)
+        let mut left: Vec<((String, i32), Vec<RawPosition>)> = self.boundary_stash.lock().unwrap().drain().collect();
+        left.sort_by(|a, b| a.0.cmp(&b.0));
+        for (_, positions) in left {
+            for raw in &positions {
+                let filtered = convert_position(raw.tnc, raw.flags, raw.indel_count, raw.aligned_count, true, &mut results.counts, raw);
+                results.total_alts_filtered = results.total_alts_filtered.wrapping_add(filtered);
+            }
+        }
         debug!(
             "writing base quality recalibration, readsUsed({}) altsFiltered({})",
             results.total_reads_used, results.total_alts_filtered
@@ -288,6 +318,7 @@ fn jmax(a: f64, b: f64) -> f64 {
 pub fn convert_to_records(all_quality_counts: &HashMap<BqrKey, i32>) -> Vec<BqrRecord> {
     const NO_BASE_OR_QUAL: u8 = 1;
     let mut result = Vec::new();
+    let java_negative_zero = crate::compat::java("R31");
 
     let ref_count_map: HashMap<BqrKey, i32> =
         all_quality_counts.iter().filter(|(k, _)| k.ref_base == k.alt).map(|(k, v)| (*k, *v)).collect();
@@ -318,8 +349,9 @@ pub fn convert_to_records(all_quality_counts: &HashMap<BqrKey, i32>) -> Vec<BqrR
         }
         let p = tri_nuc_rate * observed_count as f64 / denom as f64;
         let calc_probability = if p <= 1.0 { p } else { 1.0 };
-        // BaseQualAdjustment.probabilityToPhredQual; a probability of 1 gives -0.0, which Java prints as "-0.00"
-        -10.0 * calc_probability.log10()
+        // BaseQualAdjustment.probabilityToPhredQual; R31: a probability of 1 gives -0.0, which Java prints as "-0.00"
+        let qual = -10.0 * calc_probability.log10();
+        if java_negative_zero { qual } else { qual + 0.0 }
     };
 
     let mut synthetic_alt_keys: HashSet<BqrKey> = HashSet::new();
@@ -498,6 +530,149 @@ fn for_each_count(
     }
 }
 
+/// The counts of one position: its AltQualityCounts as (key, positive strand count, negative strand count).
+trait CountSource {
+    fn each(&self, f: impl FnMut(u32, i32, i32));
+}
+
+/// The counts of a position held in a reader's slots.
+struct SlotCounts<'a> {
+    slot: &'a PosData,
+    row: &'a [i32],
+    combo_keys: &'a [u32],
+    arena: &'a [AltQualityCount],
+}
+
+impl CountSource for SlotCounts<'_> {
+    #[inline(always)]
+    fn each(&self, f: impl FnMut(u32, i32, i32)) {
+        for_each_count(self.slot, self.row, self.combo_keys, self.arena, f)
+    }
+}
+
+/// The data of a position taken out of a reader before its counts are formed (R16).
+#[derive(Clone)]
+struct RawPosition {
+    position: i32,
+    tnc: [u8; 3],
+    flags: u8,
+    indel_count: i32,
+    aligned_count: i32,
+    counts: Vec<(u32, i32, i32)>,
+}
+
+impl CountSource for &RawPosition {
+    fn each(&self, mut f: impl FnMut(u32, i32, i32)) {
+        for &(key, pos, neg) in &self.counts {
+            f(key, pos, neg);
+        }
+    }
+}
+
+/// BqrRegionReader.convertToKeyCounts with BaseQualityData.formKeyCounts: applies the indel and alt filters to one
+/// position and adds its counts by key. Only valid keys are kept (context and alt of A, C, G, T). `check_alts` is
+/// false when the position has no base other than the ref base. Returns the number of alts filtered.
+#[inline(always)]
+fn convert_position(
+    tnc: [u8; 3], flags: u8, indel_count: i32, aligned_count: i32, check_alts: bool, counts: &mut [i32], source: impl CountSource,
+) -> i32 {
+    if flags & FLAG_HIGH_QUAL_INDEL != 0 {
+        return 0;
+    }
+    let indel_vaf_threshold = if flags & FLAG_MEDIUM_QUAL_INDEL != 0 { BQR_INDEL_MED_QUAL_VAF } else { BQR_INDEL_LOW_QUAL_VAF };
+    // BaseQualityData.indelVaf
+    let denom = indel_count.wrapping_add(aligned_count) as f64;
+    let indel_vaf = if denom > 0.0 { indel_count as f64 / denom } else { 0.0 };
+    if indel_vaf > indel_vaf_threshold {
+        return 0;
+    }
+
+    // exclude any alt with too much support (regardless of quality); alts are indexed by BAM base code
+    let ref_base = tnc[1];
+    let mut failed_alts = 0u16;
+    if check_alts {
+        let mut standard_alt_counts = [0i32; 16];
+        let mut dual_alt_counts = [0i32; 16];
+        let (mut standard_alts, mut dual_alts, mut all_alts) = (0u16, 0u16, 0u16);
+        let (mut standard_total, mut dual_total) = (0i32, 0i32);
+        source.each(|key, pos, neg| {
+            let is_dual = (key >> 16) == ConsensusType::Dual as u32;
+            let code = ((key >> 8) & 0xf) as usize;
+            let total = pos.wrapping_add(neg);
+            if is_dual {
+                dual_total = dual_total.wrapping_add(total);
+            } else {
+                standard_total = standard_total.wrapping_add(total);
+            }
+            if BAM_BASE_LETTERS[code] == ref_base {
+                return;
+            }
+            let bit = 1u16 << code;
+            all_alts |= bit;
+            if is_dual {
+                dual_alts |= bit;
+                dual_alt_counts[code] = dual_alt_counts[code].wrapping_add(total);
+            } else {
+                standard_alts |= bit;
+                standard_alt_counts[code] = standard_alt_counts[code].wrapping_add(total);
+            }
+        });
+
+        // BaseQualityData.passesAltTest
+        let passes_alt_test = |alt_count: i32, alt_vaf: f64, low_af: f64, high_af: f64, ad_limit: i32| -> bool {
+            alt_vaf < low_af || (alt_vaf < high_af && alt_count <= ad_limit)
+        };
+        for code in 0..16usize {
+            let bit = 1u16 << code;
+            if all_alts & bit == 0 {
+                continue;
+            }
+            let mut include_alt = true;
+            if standard_alts & bit != 0 {
+                let count = standard_alt_counts[code];
+                let vaf = count as f64 / standard_total as f64;
+                include_alt = passes_alt_test(count, vaf, BQR_NON_DUAL_AF_LOW, BQR_NON_DUAL_AF_HIGH, BQR_NON_DUAL_AD);
+            }
+            if include_alt && dual_alts & bit != 0 {
+                let count = dual_alt_counts[code];
+                let vaf = count as f64 / dual_total as f64;
+                include_alt = passes_alt_test(count, vaf, BQR_DUAL_AF_LOW, BQR_DUAL_AF_HIGH, BQR_DUAL_AD);
+            }
+            if !include_alt {
+                failed_alts |= bit;
+            }
+        }
+    }
+
+    // BqrKey.isValid: the context must be A, C, G, T; the key of a negative strand count is the reverse complement
+    let (Some(b0), Some(b1), Some(b2)) = (dna_index(tnc[0]), dna_index(tnc[1]), dna_index(tnc[2])) else {
+        return failed_alts.count_ones() as i32;
+    };
+    let tnc_index = b0 * 16 + b1 * 4 + b2;
+    let tnc_index_reversed = (3 - b2) * 16 + (3 - b1) * 4 + (3 - b0);
+    source.each(|key, pos, neg| {
+        let code = ((key >> 8) & 0xf) as usize;
+        if failed_alts & (1u16 << code) != 0 {
+            return;
+        }
+        let Some(alt_index) = dna_index(BAM_BASE_LETTERS[code]) else { return };
+        let read_type = (key >> 16) as usize;
+        let quality = (key & 0xff) as usize;
+        if quality >= QUAL_SLOTS {
+            return; // not reached: negative Java qualities are never counted
+        }
+        if pos > 0 {
+            let c = &mut counts[key_index(tnc_index, alt_index, read_type, quality)];
+            *c = c.wrapping_add(pos);
+        }
+        if neg > 0 {
+            let c = &mut counts[key_index(tnc_index_reversed, 3 - alt_index, read_type, quality)];
+            *c = c.wrapping_add(neg);
+        }
+    });
+    failed_alts.count_ones() as i32
+}
+
 /// RefSequence: the ref bases of the current block with a buffer of 5 bases at each end.
 struct RefSequence {
     start: i32,
@@ -633,6 +808,23 @@ fn alignment_end_from_cigar(read_start: i32, cigar: &[u8]) -> i32 {
     current_position - 1
 }
 
+/// The last aligned position of a read that starts at `read_start` with this cigar: M, D, N, = and X use the reference.
+fn alignment_end_from_cigar_corrected(read_start: i32, cigar: &[u8]) -> i32 {
+    let mut end = read_start - 1;
+    let mut element_length: i32 = 0;
+    for &c in cigar {
+        if c.is_ascii_digit() {
+            element_length = element_length.wrapping_mul(10).wrapping_add((c - b'0') as i32);
+        } else {
+            if matches!(c, b'M' | b'D' | b'N' | b'=' | b'X') {
+                end = end.wrapping_add(element_length);
+            }
+            element_length = 0;
+        }
+    }
+    end
+}
+
 /// BqrRegionReader: gathers the counts for the reads of one partition. The reads of each region arrive in coordinate order.
 pub struct BqrRegionReader<'a> {
     shared: &'a BaseQualRecalibration,
@@ -676,7 +868,36 @@ pub struct BqrRegionReader<'a> {
     pending_reads_used: i64,
     pending_alts_filtered: i32,
     pending: bool,
+
+    /// R27 corrected: an Ultima read without a usable t0 attribute ends the run with a message
+    check_t0: bool,
+    /// R36 corrected: the totals of the debug line are added once
+    fix_totals: bool,
+    /// R1 corrected: the max index is the highest index created
+    fix_max_index: bool,
+    /// R2 corrected: the positions are held in a window that moves with the reads, instead of blocks that cut reads off
+    window: bool,
+    /// R3 corrected: an unpaired read has no short-fragment boundaries
+    fix_unpaired_boundaries: bool,
+    /// R4 corrected: the mate's end is worked out from all of its cigar
+    fix_mate_end: bool,
+    /// R5 corrected: the ref block does not outlive its region
+    fix_stale_block: bool,
+
+    /// R16: whether the current region has a boundary with another partition inside the BQR regions
+    boundary_zone: bool,
+    /// positions from here on are also covered by reads of the next partition
+    tail_from: i32,
+    /// positions before this are also covered by reads of the previous partition
+    hold_until: i32,
+    tail: Vec<RawPosition>,
+    held: Vec<RawPosition>,
+    tail_key: Option<(String, i32)>,
+    head_key: Option<(String, i32)>,
 }
+
+/// R16: how far past its first position a partition keeps positions back for the reads of the partition before
+const BOUNDARY_HOLD: i32 = 100_000;
 
 impl<'a> BqrRegionReader<'a> {
     fn new(shared: &'a BaseQualRecalibration) -> Self {
@@ -709,6 +930,20 @@ impl<'a> BqrRegionReader<'a> {
             pending_reads_used: 0,
             pending_alts_filtered: 0,
             pending: false,
+            check_t0: !crate::compat::java("R27"),
+            fix_totals: !crate::compat::java("R36"),
+            fix_max_index: !crate::compat::java("R1"),
+            window: !crate::compat::java("R2"),
+            fix_unpaired_boundaries: !crate::compat::java("R3"),
+            fix_mate_end: !crate::compat::java("R4"),
+            fix_stale_block: !crate::compat::java("R5"),
+            boundary_zone: false,
+            tail_from: i32::MAX,
+            hold_until: i32::MIN,
+            tail: Vec::new(),
+            held: Vec::new(),
+            tail_key: None,
+            head_key: None,
         }
     }
 
@@ -721,6 +956,11 @@ impl<'a> BqrRegionReader<'a> {
     /// read starts outside of its positions, and a region on a non-human contig leaves the state unchanged.
     pub fn initialise(&mut self, region: &ChrBaseRegion) {
         if !regions::is_human_chromosome(&region.chromosome) {
+            if self.fix_stale_block {
+                // R5: Java leaves the reader active with the block of the region before
+                self.has_active_region = false;
+                self.ref_seq = None;
+            }
             return;
         }
         // ChrBaseRegion.overlaps compares the chromosomes as HumanChromosome, ie without regard to a chr prefix
@@ -741,6 +981,121 @@ impl<'a> BqrRegionReader<'a> {
         self.overlap_start = first.start;
         self.overlap_end = last.end;
         self.has_active_region = true;
+
+        // R16: Java counts a position near a partition boundary once with the reads of each partition
+        if self.window && !shared.boundaries.is_empty() {
+            let chromosome = &region.chromosome;
+            if shared.boundaries.contains(&(chromosome.clone(), region.start)) {
+                self.head_key = Some((chromosome.clone(), region.start));
+                self.hold_until = (region.start - 1).saturating_add(BOUNDARY_HOLD);
+            }
+            if shared.boundaries.contains(&(chromosome.clone(), region.end + 1)) {
+                self.tail_key = Some((chromosome.clone(), region.end + 1));
+                self.tail_from = region.end;
+            }
+            self.boundary_zone = self.head_key.is_some() || self.tail_key.is_some();
+        }
+    }
+
+    /// R2 corrected. Java works in blocks of 100K bases that start at a read: a read is cut off at the end of its
+    /// block, and the positions between that end and the next block get no further reads. Here the positions are
+    /// held in a window that moves with the reads, so every base in the BQR regions is counted. Reads reach the
+    /// reader slightly out of order, so the window starts 2,500 bases before the read, the distance at which Java
+    /// purges. Returns whether the read has bases to count.
+    fn check_window(&mut self, read_start: i32, read_end: i32) -> bool {
+        const BEHIND: i32 = BASE_DATA_PURGE_POS_CHECK / 2;
+        if read_start > self.overlap_end {
+            if read_start > self.overlap_end.saturating_add(BEHIND) {
+                // the reads are now past the BQR region(s)
+                self.process_completed_local_region();
+                self.ref_seq = None;
+                self.has_active_region = false;
+            }
+            return false;
+        }
+        if read_end < self.overlap_start {
+            return false;
+        }
+        let need_end = read_end.min(self.overlap_end);
+        let window_start = match &self.ref_seq {
+            Some(rs) => {
+                if need_end <= rs.end - REF_SEQ_BUFFER {
+                    return true;
+                }
+                (read_start - BEHIND).max(rs.start + REF_SEQ_BUFFER)
+            }
+            None => read_start - BEHIND,
+        };
+        let window_start = window_start.max(self.overlap_start).max(1 + REF_SEQ_BUFFER);
+        let window_end = window_start.saturating_add(REF_BASE_REGION_SIZE).max(need_end).min(self.overlap_end);
+        if window_end <= window_start {
+            return false;
+        }
+        if self.genome.is_none() {
+            match RefGenome::open(&self.shared.ref_genome_file) {
+                Ok(g) => self.genome = Some(g),
+                Err(e) => panic!("failed to open ref genome {}: {e}", self.shared.ref_genome_file),
+            }
+        }
+        let ref_seq = RefSequence::new(&self.overlap_chromosome, window_start, window_end, self.genome.as_ref().unwrap());
+        self.move_window(ref_seq);
+        if self.next_purge_position == 0 {
+            self.next_purge_position = read_start + BASE_DATA_PURGE_POS_CHECK;
+        }
+        true
+    }
+
+    /// Makes `ref_seq` the window: the positions before it are complete, those it shares with the old window move.
+    fn move_window(&mut self, ref_seq: RefSequence) {
+        let length = ref_seq.length();
+        let Some(old) = self.ref_seq.take() else {
+            self.data_allocated = false;
+            self.allocate_slots(length);
+            self.arena.clear();
+            self.purge_index = 0;
+            self.max_index = 0;
+            self.ref_seq = Some(ref_seq);
+            return;
+        };
+        let shift = (ref_seq.start - old.start).max(0) as usize;
+        self.ref_seq = Some(old);
+        let old_length = self.slots.len();
+        let first_kept = shift.min(old_length);
+        let mut i = self.purge_index.max(0) as usize;
+        while i < first_kept && i as i32 <= self.max_index {
+            if self.slots[i].flags & FLAG_PRESENT != 0 {
+                self.finalise_slot(i);
+            }
+            i += 1;
+        }
+        // the kept positions move to the front; their alt counts move to a new arena
+        let mut arena = Vec::new();
+        let kept = old_length - first_kept;
+        for k in 0..kept {
+            let mut slot = self.slots[first_kept + k];
+            if slot.flags & FLAG_PRESENT != 0 && slot.next != NO_ENTRY {
+                let mut index = slot.next;
+                slot.next = arena.len() as u32;
+                while index != NO_ENTRY {
+                    let mut e = self.arena[index as usize];
+                    index = e.next;
+                    e.next = if index == NO_ENTRY { NO_ENTRY } else { arena.len() as u32 + 1 };
+                    arena.push(e);
+                }
+            }
+            self.slots[k] = slot;
+        }
+        self.arena = arena;
+        self.dense.copy_within(first_kept * DENSE_WIDTH..old_length * DENSE_WIDTH, 0);
+        self.slots.truncate(kept);
+        self.slots.resize(length.max(kept), EMPTY_POS_DATA);
+        self.dense.truncate(kept * DENSE_WIDTH);
+        self.dense.resize(length.max(kept) * DENSE_WIDTH, 0);
+        self.purge_index = (self.purge_index - shift as i32).max(0);
+        self.max_index = (self.max_index - shift as i32).max(0);
+        self.created_min = if self.created_min == usize::MAX { usize::MAX } else { self.created_min.saturating_sub(shift) };
+        self.created_max = self.created_max.saturating_sub(shift);
+        self.ref_seq = Some(ref_seq);
     }
 
     /// BqrRegionReader.checkLocalRegion: moves to a new block of up to 100K ref bases starting at this read.
@@ -803,6 +1158,11 @@ impl<'a> BqrRegionReader<'a> {
         // counted repeatedly; they only appear in a debug log
         self.pending_reads_used = self.pending_reads_used.wrapping_add(self.total_reads_used);
         self.pending_alts_filtered = self.pending_alts_filtered.wrapping_add(self.total_alts_filtered);
+        if self.fix_totals {
+            // R36: the totals now hold what has not been reported yet
+            self.total_reads_used = 0;
+            self.total_alts_filtered = 0;
+        }
         self.pending = true;
 
         if self.created_min <= self.created_max {
@@ -819,6 +1179,9 @@ impl<'a> BqrRegionReader<'a> {
         self.next_purge_position = 0;
         self.purge_index = 0;
         self.max_index = 0;
+        if self.window {
+            self.ref_seq = None;
+        }
     }
 
     /// Java sets the array entry to null.
@@ -831,6 +1194,23 @@ impl<'a> BqrRegionReader<'a> {
     /// BqrRegionReader.onRegionComplete; also adds this reader's counts to the shared results.
     pub fn on_region_complete(&mut self) {
         self.process_completed_local_region();
+        if self.boundary_zone {
+            if let Some(key) = self.tail_key.take() {
+                let tail = std::mem::take(&mut self.tail);
+                self.exchange_boundary(key, tail);
+            }
+            if let Some(key) = self.head_key.take() {
+                let held = std::mem::take(&mut self.held);
+                self.exchange_boundary(key, held);
+            }
+            self.boundary_zone = false;
+            self.tail_from = i32::MAX;
+            self.hold_until = i32::MIN;
+        }
+        if self.fix_stale_block {
+            // R5: Java keeps the last block of a region as the current one of the next region
+            self.ref_seq = None;
+        }
         self.merge_into_results();
     }
 
@@ -857,123 +1237,120 @@ impl<'a> BqrRegionReader<'a> {
         while i <= self.max_index {
             if let Some(slot) = self.slots.get(i as usize) {
                 if slot.flags & FLAG_PRESENT != 0 {
-                    self.convert_to_key_counts(i as usize);
+                    self.finalise_slot(i as usize);
                 }
             }
             i += 1;
         }
     }
 
-    /// BqrRegionReader.convertToKeyCounts with BaseQualityData.formKeyCounts: applies the indel and alt filters to one
-    /// position and adds its counts by key. Only valid keys are kept (context and alt of A, C, G, T).
+    /// BqrRegionReader.convertToKeyCounts with BaseQualityData.formKeyCounts for the position at this slot.
     fn convert_to_key_counts(&mut self, slot_index: usize) {
         let slot = self.slots[slot_index];
-        if slot.flags & FLAG_HIGH_QUAL_INDEL != 0 {
-            return;
-        }
-        let indel_vaf_threshold = if slot.flags & FLAG_MEDIUM_QUAL_INDEL != 0 { BQR_INDEL_MED_QUAL_VAF } else { BQR_INDEL_LOW_QUAL_VAF };
-        // BaseQualityData.indelVaf
-        let denom = slot.indel_count.wrapping_add(slot.aligned_count) as f64;
-        let indel_vaf = if denom > 0.0 { slot.indel_count as f64 / denom } else { 0.0 };
-        if indel_vaf > indel_vaf_threshold {
-            return;
-        }
-        let row = &self.dense[slot_index * DENSE_WIDTH..(slot_index + 1) * DENSE_WIDTH];
-        let combo_keys = &self.combo_keys[..];
-        let arena = &self.arena[..];
-
-        // exclude any alt with too much support (regardless of quality); alts are indexed by BAM base code
-        let ref_base = slot.tnc[1];
-        let mut failed_alts = 0u16;
-        if slot.next != NO_ENTRY {
-            let mut standard_alt_counts = [0i32; 16];
-            let mut dual_alt_counts = [0i32; 16];
-            let (mut standard_alts, mut dual_alts, mut all_alts) = (0u16, 0u16, 0u16);
-            let (mut standard_total, mut dual_total) = (0i32, 0i32);
-            for_each_count(&slot, row, combo_keys, arena, |key, pos, neg| {
-                let is_dual = (key >> 16) == ConsensusType::Dual as u32;
-                let code = ((key >> 8) & 0xf) as usize;
-                let total = pos.wrapping_add(neg);
-                if is_dual {
-                    dual_total = dual_total.wrapping_add(total);
-                } else {
-                    standard_total = standard_total.wrapping_add(total);
-                }
-                if BAM_BASE_LETTERS[code] == ref_base {
-                    return;
-                }
-                let bit = 1u16 << code;
-                all_alts |= bit;
-                if is_dual {
-                    dual_alts |= bit;
-                    dual_alt_counts[code] = dual_alt_counts[code].wrapping_add(total);
-                } else {
-                    standard_alts |= bit;
-                    standard_alt_counts[code] = standard_alt_counts[code].wrapping_add(total);
-                }
-            });
-
-            // BaseQualityData.passesAltTest
-            let passes_alt_test = |alt_count: i32, alt_vaf: f64, low_af: f64, high_af: f64, ad_limit: i32| -> bool {
-                alt_vaf < low_af || (alt_vaf < high_af && alt_count <= ad_limit)
-            };
-            for code in 0..16usize {
-                let bit = 1u16 << code;
-                if all_alts & bit == 0 {
-                    continue;
-                }
-                let mut include_alt = true;
-                if standard_alts & bit != 0 {
-                    let count = standard_alt_counts[code];
-                    let vaf = count as f64 / standard_total as f64;
-                    include_alt = passes_alt_test(count, vaf, BQR_NON_DUAL_AF_LOW, BQR_NON_DUAL_AF_HIGH, BQR_NON_DUAL_AD);
-                }
-                if include_alt && dual_alts & bit != 0 {
-                    let count = dual_alt_counts[code];
-                    let vaf = count as f64 / dual_total as f64;
-                    include_alt = passes_alt_test(count, vaf, BQR_DUAL_AF_LOW, BQR_DUAL_AF_HIGH, BQR_DUAL_AD);
-                }
-                if !include_alt {
-                    failed_alts |= bit;
-                }
-            }
-            self.total_alts_filtered = self.total_alts_filtered.wrapping_add(failed_alts.count_ones() as i32);
-        }
-
-        // BqrKey.isValid: the context must be A, C, G, T; the key of a negative strand count is the reverse complement
-        let (Some(b0), Some(b1), Some(b2)) = (dna_index(slot.tnc[0]), dna_index(slot.tnc[1]), dna_index(slot.tnc[2])) else {
-            return;
+        let source = SlotCounts {
+            slot: &slot,
+            row: &self.dense[slot_index * DENSE_WIDTH..(slot_index + 1) * DENSE_WIDTH],
+            combo_keys: &self.combo_keys[..],
+            arena: &self.arena[..],
         };
-        let tnc_index = b0 * 16 + b1 * 4 + b2;
-        let tnc_index_reversed = (3 - b2) * 16 + (3 - b1) * 4 + (3 - b0);
-        let counts = &mut self.counts;
-        for_each_count(&slot, row, combo_keys, arena, |key, pos, neg| {
-            let code = ((key >> 8) & 0xf) as usize;
-            if failed_alts & (1u16 << code) != 0 {
+        let filtered =
+            convert_position(slot.tnc, slot.flags, slot.indel_count, slot.aligned_count, slot.next != NO_ENTRY, &mut self.counts, source);
+        self.total_alts_filtered = self.total_alts_filtered.wrapping_add(filtered);
+    }
+
+    /// The counts of a position as they stand, for a position that reads of another partition also cover (R16).
+    fn raw_position(&self, slot_index: usize) -> RawPosition {
+        let slot = &self.slots[slot_index];
+        let mut counts = Vec::new();
+        for_each_count(
+            slot, &self.dense[slot_index * DENSE_WIDTH..(slot_index + 1) * DENSE_WIDTH], &self.combo_keys, &self.arena,
+            |key, pos, neg| counts.push((key, pos, neg)),
+        );
+        RawPosition {
+            position: self.ref_seq.as_ref().unwrap().start + slot_index as i32,
+            tnc: slot.tnc,
+            flags: slot.flags,
+            indel_count: slot.indel_count,
+            aligned_count: slot.aligned_count,
+            counts,
+        }
+    }
+
+    /// A position that no later read of this partition can reach: its counts are added by key, or, next to a
+    /// partition boundary, set aside until the reads of the other partition are in (R16).
+    #[inline]
+    fn finalise_slot(&mut self, slot_index: usize) {
+        if self.boundary_zone {
+            let position = self.ref_seq.as_ref().unwrap().start + slot_index as i32;
+            if position >= self.tail_from {
+                let raw = self.raw_position(slot_index);
+                self.tail.push(raw);
                 return;
             }
-            let Some(alt_index) = dna_index(BAM_BASE_LETTERS[code]) else { return };
-            let read_type = (key >> 16) as usize;
-            let quality = (key & 0xff) as usize;
-            if quality >= QUAL_SLOTS {
-                return; // not reached: negative Java qualities are never counted
+            if position < self.hold_until {
+                let raw = self.raw_position(slot_index);
+                self.held.push(raw);
+                return;
             }
-            if pos > 0 {
-                let c = &mut counts[key_index(tnc_index, alt_index, read_type, quality)];
-                *c = c.wrapping_add(pos);
+        }
+        self.convert_to_key_counts(slot_index);
+    }
+
+    /// R16: hands the positions next to a boundary to the shared stash, or, when the other partition has left its
+    /// own there, counts both together.
+    fn exchange_boundary(&mut self, key: (String, i32), mut mine: Vec<RawPosition>) {
+        let other = {
+            let mut stash = self.shared.boundary_stash.lock().unwrap();
+            match stash.remove(&key) {
+                Some(other) => other,
+                None => {
+                    stash.insert(key, mine);
+                    return;
+                }
             }
-            if neg > 0 {
-                let c = &mut counts[key_index(tnc_index_reversed, 3 - alt_index, read_type, quality)];
-                *c = c.wrapping_add(neg);
+        };
+        mine.extend(other);
+        mine.sort_by_key(|r| r.position);
+        let mut i = 0;
+        while i < mine.len() {
+            let mut merged = mine[i].clone();
+            let mut j = i + 1;
+            while j < mine.len() && mine[j].position == merged.position {
+                merged.flags |= mine[j].flags;
+                merged.indel_count = merged.indel_count.wrapping_add(mine[j].indel_count);
+                merged.aligned_count = merged.aligned_count.wrapping_add(mine[j].aligned_count);
+                merged.counts.extend_from_slice(&mine[j].counts);
+                j += 1;
             }
-        });
+            let filtered =
+                convert_position(merged.tnc, merged.flags, merged.indel_count, merged.aligned_count, true, &mut self.counts, &merged);
+            self.total_alts_filtered = self.total_alts_filtered.wrapping_add(filtered);
+            i = j;
+        }
+        if self.fix_totals {
+            self.pending_alts_filtered = self.pending_alts_filtered.wrapping_add(self.total_alts_filtered);
+            self.total_alts_filtered = 0;
+        }
+        self.pending = true;
     }
 
     /// BqrRegionReader.processRecord. The caller (BamWriter.captureReadInfo) has excluded unmapped, duplicate, secondary
     /// and supplementary reads.
     pub fn process_record(&mut self, rec: &bam::Record) {
         let alignment_start = rec.pos() as i32 + 1;
-        self.check_local_region(alignment_start);
+        if self.window {
+            let mut alignment_end = alignment_start - 1;
+            for &c in rec.raw_cigar() {
+                if matches!(c & 0xf, 0 | 2 | 3 | 7 | 8) {
+                    alignment_end += (c >> 4) as i32;
+                }
+            }
+            if !self.check_window(alignment_start, alignment_end) {
+                return;
+            }
+        } else {
+            self.check_local_region(alignment_start);
+        }
 
         if !self.has_active_region || self.ref_seq.is_none() {
             return;
@@ -996,6 +1373,22 @@ impl<'a> BqrRegionReader<'a> {
             Some(other) => panic!("invalid consensus type: {}", String::from_utf8_lossy(other)),
         };
 
+        if self.sequencing_type == SequencingType::Ultima && self.check_t0 {
+            // R27: Java fails with a NullPointerException or an index error; one line and status 1 instead
+            let t0_length = tags.t0.map(|t| t.len());
+            if t0_length.is_none_or(|n| n < rec.seq_len()) {
+                error!(
+                    "Ultima read({}) {}: the base quality recalibration needs it; run with -bqr_disable if the input was written with -ultima_drop_qual_tags",
+                    String::from_utf8_lossy(rec.qname()),
+                    match t0_length {
+                        None => "without the t0 attribute".to_string(),
+                        Some(n) => format!("with a t0 attribute of {n} values for {} bases", rec.seq_len()),
+                    }
+                );
+                std::process::exit(1);
+            }
+        }
+
         self.traverse_cigar(rec, alignment_start, &tags);
 
         if alignment_start >= self.next_purge_position {
@@ -1008,6 +1401,11 @@ impl<'a> BqrRegionReader<'a> {
     /// previous paired read.
     fn set_short_fragment_boundaries(&mut self, rec: &bam::Record, alignment_start: i32, mate_cigar: Option<&[u8]>) {
         if !rec.is_paired() {
+            if self.fix_unpaired_boundaries {
+                // R3: Java leaves the boundaries of the last paired read in place
+                self.min_read_start_position = SHORT_FRAG_BOUNDARY_NONE;
+                self.max_read_end_position = SHORT_FRAG_BOUNDARY_NONE;
+            }
             return;
         }
         self.min_read_start_position = SHORT_FRAG_BOUNDARY_NONE;
@@ -1024,7 +1422,12 @@ impl<'a> BqrRegionReader<'a> {
         if rec.is_reverse() {
             self.min_read_start_position = mate_start;
         } else if let Some(mate_cigar) = mate_cigar {
-            self.max_read_end_position = alignment_end_from_cigar(mate_start, mate_cigar);
+            self.max_read_end_position = if self.fix_mate_end {
+                // R4: Java does not count the = and X elements of the mate cigar
+                alignment_end_from_cigar_corrected(mate_start, mate_cigar)
+            } else {
+                alignment_end_from_cigar(mate_start, mate_cigar)
+            };
         } else {
             self.max_read_end_position = alignment_start + insert_size.wrapping_abs() - 1;
         }
@@ -1081,6 +1484,14 @@ impl<'a> BqrRegionReader<'a> {
         }
     }
 
+    /// The first position that can still take a base. In the window (R2 corrected) the positions before the purge
+    /// index are complete; a late read is not counted there. (Java makes such a position again and never counts it.)
+    #[inline]
+    fn first_open_position(&self) -> i32 {
+        let rs = self.ref_seq.as_ref().unwrap();
+        if self.window { rs.start + REF_SEQ_BUFFER.max(self.purge_index) } else { rs.start + REF_SEQ_BUFFER }
+    }
+
     /// BqrRegionReader.getOrCreateBaseQualData with the context taken from the ref sequence.
     #[inline(always)]
     fn get_or_create(&mut self, position: i32) -> usize {
@@ -1099,7 +1510,8 @@ impl<'a> BqrRegionReader<'a> {
     fn create_slot(&mut self, index: usize, tnc: [u8; 3]) {
         let flags = FLAG_PRESENT | (ref_base_code(tnc[1]) << REF_CODE_SHIFT);
         self.slots[index] = PosData { tnc, flags, ..EMPTY_POS_DATA };
-        self.max_index = index as i32;
+        // R1: Java sets the max index to the newest position, also when that is lower than the highest so far
+        self.max_index = if self.fix_max_index { self.max_index.max(index as i32) } else { index as i32 };
         self.created_min = self.created_min.min(index);
         self.created_max = self.created_max.max(index);
     }
@@ -1126,7 +1538,7 @@ impl<'a> BqrRegionReader<'a> {
 
     /// BqrRegionReader.markIndelPosition: `position` is the last ref base before the indel.
     fn mark_indel_position(&mut self, position: i32, min_qual: i8) {
-        if !self.ref_seq.as_ref().unwrap().position_within_bounds(position) {
+        if !self.ref_seq.as_ref().unwrap().position_within_bounds(position) || position < self.first_open_position() {
             return;
         }
         let index = self.get_or_create(position);
@@ -1165,11 +1577,8 @@ impl<'a> BqrRegionReader<'a> {
         }
         let t0 = if is_ultima { tags.t0.expect("Ultima read without t0 tag") } else { &[][..] };
 
-        let (seq_start, seq_end) = {
-            let rs = self.ref_seq.as_ref().unwrap();
-            (rs.start, rs.end)
-        };
-        let first_valid = seq_start + REF_SEQ_BUFFER;
+        let seq_end = self.ref_seq.as_ref().unwrap().end;
+        let first_valid = self.first_open_position();
         let last_valid = seq_end - REF_SEQ_BUFFER;
         let (min_start, max_end) = (self.min_read_start_position, self.max_read_end_position);
         let seq = rec.seq().encoded;
@@ -1232,7 +1641,7 @@ impl<'a> BqrRegionReader<'a> {
         let read_type = self.current_read_type;
         let ref_seq = self.ref_seq.as_ref().unwrap();
         let seq_start = ref_seq.start;
-        let first_valid = seq_start + REF_SEQ_BUFFER;
+        let first_valid = self.first_open_position();
         let last_valid = ref_seq.end - REF_SEQ_BUFFER;
         let (min_start, max_end) = (self.min_read_start_position, self.max_read_end_position);
 
@@ -1268,6 +1677,7 @@ impl<'a> BqrRegionReader<'a> {
         let type_bits = (read_type as usize) << 8;
         let mut read_used = false;
         let mut max_index = self.max_index;
+        let fix_max_index = self.fix_max_index;
         let (mut created_min, mut created_max) = (self.created_min, self.created_max);
 
         for k in 0..count {
@@ -1285,7 +1695,7 @@ impl<'a> BqrRegionReader<'a> {
                 let tnc = [ref_bases[k], ref_bases[k + 1], ref_bases[k + 2]];
                 *slot = PosData { tnc, flags: FLAG_PRESENT | (ref_base_code(tnc[1]) << REF_CODE_SHIFT), ..EMPTY_POS_DATA };
                 let index = first_index + k;
-                max_index = index as i32;
+                max_index = if fix_max_index { max_index.max(index as i32) } else { index as i32 };
                 created_min = created_min.min(index);
                 created_max = created_max.max(index);
             }
@@ -1338,7 +1748,7 @@ impl<'a> BqrRegionReader<'a> {
             }
             let index = self.purge_index as usize;
             if self.slots[index].flags & FLAG_PRESENT != 0 {
-                self.convert_to_key_counts(index);
+                self.finalise_slot(index);
                 self.clear_slot(index);
             }
             self.purge_index += 1;
@@ -1370,7 +1780,7 @@ fn below_max_ultima_qual(quals: &[u8], read_index: usize, t0: &[u8]) -> bool {
 
 #[cfg(test)]
 impl BaseQualRecalibration {
-    fn for_test(sequencing_type: SequencingType) -> Self {
+    pub(crate) fn for_test(sequencing_type: SequencingType) -> Self {
         BaseQualRecalibration {
             enabled: true,
             write_plot: false,
@@ -1380,7 +1790,17 @@ impl BaseQualRecalibration {
             sample_id: String::new(),
             regions: Vec::new(),
             results: Mutex::new(BaseQualityResults { counts: vec![0; KEY_TABLE_SIZE], total_reads_used: 0, total_alts_filtered: 0 }),
+            boundaries: HashSet::new(),
+            boundary_stash: Mutex::new(HashMap::new()),
         }
+    }
+}
+
+#[cfg(test)]
+impl BaseQualRecalibration {
+    /// Nothing may be left at a boundary once both of its partitions are complete.
+    fn finalise_boundaries_for_test(&self) {
+        assert!(self.boundary_stash.lock().unwrap().is_empty());
     }
 }
 
@@ -1655,6 +2075,7 @@ mod tests {
                     'I' => Cigar::Ins(n),
                     'D' => Cigar::Del(n),
                     'S' => Cigar::SoftClip(n),
+                    'N' => Cigar::RefSkip(n),
                     _ => panic!("unsupported"),
                 })
                 .collect(),
@@ -1800,6 +2221,267 @@ mod tests {
         assert_eq!(alignment_end_from_cigar(100, b"20M5D20M10S"), 144);
         assert_eq!(alignment_end_from_cigar(100, b"20M5I20M"), 139);
         assert_eq!(alignment_end_from_cigar(100, b"*"), 99);
+    }
+
+    // ---- the corrections (REPORT.md section 3) ----
+
+    use crate::compat::with_java;
+
+    fn total(r: &BqrRegionReader) -> i64 {
+        r.counts.iter().map(|c| *c as i64).sum()
+    }
+
+    #[test]
+    fn max_index_is_the_highest_position_created() {
+        // R1: a read with a gap makes positions 211-220, a later read makes 111-124. Java's max index is then
+        // that of 124 and the counts of 211-220 are never formed
+        let chromosome = test_chromosome();
+        let run = |java: bool| {
+            with_java(java, || {
+                let shared = BaseQualRecalibration::for_test(SequencingType::Illumina);
+                let mut r = reader_over(&shared, &chromosome, 20, 280);
+                let mut bases = chromosome[100..110].to_vec();
+                bases.extend_from_slice(&chromosome[210..220]);
+                r.process_record(&read(101, &[('M', 10), ('N', 100), ('M', 10)], &bases, &[37; 20], false));
+                r.process_record(&read(105, &[('M', 20)], &chromosome[104..124], &[37; 20], false));
+                r.build_quality_counts();
+                total(&r)
+            })
+        };
+        assert_eq!(run(true), 30);
+        assert_eq!(run(false), 40);
+    }
+
+    #[test]
+    fn unpaired_read_has_no_short_fragment_boundaries() {
+        // R3
+        let chromosome = test_chromosome();
+        let run = |java: bool| {
+            with_java(java, || {
+                let shared = BaseQualRecalibration::for_test(SequencingType::Illumina);
+                let mut r = reader_over(&shared, &chromosome, 20, 280);
+                let mut rec = read(101, &[('M', 20)], &chromosome[100..120], &[37; 20], false);
+                rec.set_flags(0x1 | 0x20);
+                rec.set_mpos(100);
+                rec.set_insert_size(12);
+                rec.push_aux(b"MC", Aux::String("3S12M5S")).unwrap();
+                r.process_record(&rec);
+                // an unpaired read over the same positions
+                r.process_record(&read(101, &[('M', 20)], &chromosome[100..120], &[37; 20], false));
+                r.build_quality_counts();
+                total(&r)
+            })
+        };
+        assert_eq!(run(true), 24);
+        assert_eq!(run(false), 32);
+    }
+
+    #[test]
+    fn mate_end_counts_match_and_mismatch_elements() {
+        // R4
+        assert_eq!(alignment_end_from_cigar(100, b"20=1X29="), 99);
+        assert_eq!(alignment_end_from_cigar_corrected(100, b"20=1X29="), 149);
+        for cigar in [&b"50M"[..], b"10S40M", b"20M5D20M10S", b"20M5I20M", b"5H20M100N20M", b"*"] {
+            assert_eq!(alignment_end_from_cigar_corrected(100, cigar), alignment_end_from_cigar(100, cigar));
+        }
+    }
+
+    #[test]
+    fn block_does_not_outlive_its_region() {
+        // R5
+        let chromosome = test_chromosome();
+        let run = |java: bool| {
+            with_java(java, || {
+                let shared = BaseQualRecalibration::for_test(SequencingType::Illumina);
+                let mut r = reader_over(&shared, &chromosome, 20, 280);
+                r.process_record(&read(101, &[('M', 20)], &chromosome[100..120], &[37; 20], false));
+                r.on_region_complete();
+                r.ref_seq.is_some()
+            })
+        };
+        assert!(run(true));
+        assert!(!run(false));
+    }
+
+    #[test]
+    fn probability_of_one_is_not_negative_zero() {
+        // R31
+        let mut counts: HashMap<BqrKey, i32> = HashMap::new();
+        counts.insert(BqrKey::new(b'A', b'G', *b"CAT", 30, ConsensusType::None), 10);
+        counts.insert(BqrKey::new(b'G', b'A', *b"CGT", 30, ConsensusType::None), 10);
+        let quality = |java: bool| {
+            let records = with_java(java, || convert_to_records(&counts));
+            records.iter().find(|r| r.key.ref_base == b'A' && r.key.alt == b'G').unwrap().recalibrated_quality
+        };
+        assert_eq!(java_fixed(quality(true), 2), "-0.00");
+        assert_eq!(java_fixed(quality(false), 2), "0.00");
+    }
+
+    /// A reference of 120,000 bases as chromosome 1 in a FASTA file, and its bases.
+    fn long_reference(name: &str) -> (String, Vec<u8>) {
+        let mut state: u32 = 987654321;
+        let bases: Vec<u8> = (0..120_000)
+            .map(|_| {
+                state = state.wrapping_mul(1103515245).wrapping_add(12345);
+                DNA_BASE_BYTES[((state >> 16) & 3) as usize]
+            })
+            .collect();
+        let dir = std::env::temp_dir().join(format!("redux_rs_bqr_tests_{}_{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ref.fasta");
+        let mut text = b">1\n".to_vec();
+        text.extend_from_slice(&bases);
+        text.push(b'\n');
+        std::fs::write(&path, text).unwrap();
+        std::fs::write(dir.join("ref.fasta.fai"), format!("1\t{}\t3\t{}\t{}\n", bases.len(), bases.len(), bases.len() + 1)).unwrap();
+        (path.to_string_lossy().to_string(), bases)
+    }
+
+    fn shared_over(ref_file: &str, partitions: &[Vec<ChrBaseRegion>]) -> BaseQualRecalibration {
+        let mut shared = BaseQualRecalibration::for_test(SequencingType::Illumina);
+        shared.ref_genome_file = ref_file.to_string();
+        shared.regions = vec![ChrBaseRegion::new("1", 1000, 119_000)];
+        shared.set_partitions(partitions);
+        shared
+    }
+
+    fn ref_read(bases: &[u8], start: i32, length: usize) -> bam::Record {
+        let from = (start - 1) as usize;
+        read(start, &[('M', length as u32)], &bases[from..from + length], &vec![37; length], false)
+    }
+
+    fn shared_total(shared: &BaseQualRecalibration) -> i64 {
+        shared.results.lock().unwrap().counts.iter().map(|c| *c as i64).sum()
+    }
+
+    #[test]
+    fn read_is_not_cut_off_at_the_block_end() {
+        // R2: Java's block starts at the first read (1,001) and ends 100,000 bases on; a read over that end loses
+        // the bases after it
+        let (ref_file, bases) = long_reference("block");
+        let run = |java: bool| {
+            with_java(java, || {
+                let shared = shared_over(&ref_file, &[vec![ChrBaseRegion::new("1", 1, 120_000)]]);
+                let mut r = shared.region_reader();
+                r.initialise(&ChrBaseRegion::new("1", 1, 120_000));
+                r.process_record(&ref_read(&bases, 1001, 20));
+                r.process_record(&ref_read(&bases, 100_995, 20));
+                r.on_region_complete();
+                drop(r);
+                shared_total(&shared)
+            })
+        };
+        assert_eq!(run(true), 27);
+        assert_eq!(run(false), 40);
+    }
+
+    #[test]
+    fn window_takes_reads_slightly_out_of_order_and_many_blocks() {
+        // R2: reads every 50 bases over the whole region, each pair given in reverse order; every base is counted
+        let (ref_file, bases) = long_reference("window");
+        let shared = shared_over(&ref_file, &[vec![ChrBaseRegion::new("1", 1, 120_000)]]);
+        let mut r = shared.region_reader();
+        r.initialise(&ChrBaseRegion::new("1", 1, 120_000));
+        let mut expected = 0i64;
+        let mut start = 900;
+        while start + 200 < 120_000 {
+            for s in [start + 50, start] {
+                r.process_record(&ref_read(&bases, s, 100));
+                let (from, to) = (s.max(1000), (s + 99).min(119_000));
+                expected += (to - from + 1).max(0) as i64;
+            }
+            start += 100;
+        }
+        r.on_region_complete();
+        drop(r);
+        assert_eq!(shared_total(&shared), expected);
+    }
+
+    #[test]
+    fn positions_at_a_partition_boundary_are_counted_with_the_reads_of_both() {
+        // R16: position 60,005 has one alt read that starts before the boundary at 60,000/60,001 and 40 ref reads
+        // that start after it. Alone, the reads of the first partition give the alt a frequency of 1 in 3, which
+        // filters it; with all reads it is 1 in 43 and is counted
+        let (ref_file, bases) = long_reference("boundary");
+        let alt_position = 60_005usize;
+        let alt_base = if bases[alt_position - 1] == b'A' { b'C' } else { b'A' };
+        let first_reads = |r: &mut BqrRegionReader| {
+            let mut alt = ref_read(&bases, 59_990, 30);
+            let mut alt_bases = bases[59_989..60_019].to_vec();
+            alt_bases[alt_position - 59_990] = alt_base;
+            alt.set(b"alt", Some(&cigar(&[('M', 30)])), &alt_bases, &[37; 30]);
+            alt.set_pos(59_989);
+            alt.set_mapq(60);
+            r.process_record(&alt);
+            r.process_record(&ref_read(&bases, 59_995, 30));
+            r.process_record(&ref_read(&bases, 59_999, 30));
+        };
+        let second_reads = |r: &mut BqrRegionReader| {
+            for i in 0..40 {
+                r.process_record(&ref_read(&bases, 60_001 + i / 10, 30));
+            }
+        };
+        let whole = ChrBaseRegion::new("1", 1, 120_000);
+        let (left, right) = (ChrBaseRegion::new("1", 1, 60_000), ChrBaseRegion::new("1", 60_001, 120_000));
+        let tnc = [bases[alt_position - 2], bases[alt_position - 1], bases[alt_position]];
+        let alt_key = BqrKey::new(tnc[1], alt_base, tnc, 37, ConsensusType::None);
+        let alt_count = |shared: &BaseQualRecalibration| {
+            let index = key_index(
+                dna_index(tnc[0]).unwrap() * 16 + dna_index(tnc[1]).unwrap() * 4 + dna_index(tnc[2]).unwrap(),
+                dna_index(alt_key.alt).unwrap(), 0, 37,
+            );
+            shared.results.lock().unwrap().counts[index]
+        };
+
+        // one partition
+        let shared = shared_over(&ref_file, &[vec![whole.clone()]]);
+        let mut r = shared.region_reader();
+        r.initialise(&whole);
+        first_reads(&mut r);
+        second_reads(&mut r);
+        r.on_region_complete();
+        drop(r);
+        let one_partition: Vec<i32> = shared.results.lock().unwrap().counts.clone();
+        assert_eq!(alt_count(&shared), 1);
+
+        // two partitions, completed in either order
+        for second_first in [false, true] {
+            let shared = shared_over(&ref_file, &[vec![left.clone()], vec![right.clone()]]);
+            let mut a = shared.region_reader();
+            a.initialise(&left);
+            first_reads(&mut a);
+            let mut b = shared.region_reader();
+            b.initialise(&right);
+            second_reads(&mut b);
+            if second_first {
+                b.on_region_complete();
+                a.on_region_complete();
+            } else {
+                a.on_region_complete();
+                b.on_region_complete();
+            }
+            drop(a);
+            drop(b);
+            shared.finalise_boundaries_for_test();
+            assert_eq!(*shared.results.lock().unwrap().counts, one_partition, "second partition first: {second_first}");
+        }
+
+        // Java: the alt is filtered where the first partition counts the position alone
+        let java = with_java(true, || {
+            let shared = shared_over(&ref_file, &[vec![left.clone()], vec![right.clone()]]);
+            let mut a = shared.region_reader();
+            a.initialise(&left);
+            first_reads(&mut a);
+            a.on_region_complete();
+            let mut b = shared.region_reader();
+            b.initialise(&right);
+            second_reads(&mut b);
+            b.on_region_complete();
+            drop(a);
+            drop(b);
+            alt_count(&shared)
+        });
+        assert_eq!(java, 0);
     }
 
     #[test]

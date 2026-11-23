@@ -302,6 +302,14 @@ pub fn calc_umi_id_diff(first: &[u8], second: &[u8]) -> usize {
 /// UmiGroupBuilder.hasDuplexUmiMatch: the first half of one against the second half of the other, both ways.
 /// Java's substring throws on a UMI without the delimiter, which ends the run; so does the error here.
 pub fn has_duplex_umi_match(first: &str, second: &str, duplex_delim: &str, permitted_diff: i32) -> Result<bool> {
+    if !crate::compat::java("R25") && (!first.contains(duplex_delim) || !second.contains(duplex_delim)) {
+        // R25 corrected: a UMI without the delimiter has no two halves, so it is no duplex match
+        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !WARNED.swap(true, Ordering::Relaxed) {
+            crate::warn!("duplex UMI without the delimiter({duplex_delim}): such fragments are not collapsed as duplex; check -umi_duplex_delim");
+        }
+        return Ok(false);
+    }
     let (a1, a2) = split_umi(first, duplex_delim)?;
     let (b1, b2) = split_umi(second, duplex_delim)?;
     Ok(!exceeds_umi_id_diff(a1, b2, permitted_diff) && !exceeds_umi_id_diff(a2, b1, permitted_diff))
@@ -314,7 +322,9 @@ fn split_umi<'a>(duplex_umi: &'a str, duplex_delim: &str) -> Result<(&'a [u8], &
         bail!("duplex UMI({duplex_umi}) has no delimiter({duplex_delim})");
     };
     let bytes = duplex_umi.as_bytes();
-    Ok((&bytes[..i], &bytes[(i + 1).min(bytes.len())..]))
+    // R10: Java starts the second half one character after the start of the delimiter
+    let delim_length = if crate::compat::java("R10") { 1 } else { duplex_delim.len() };
+    Ok((&bytes[..i], &bytes[(i + delim_length).min(bytes.len())..]))
 }
 
 /// PositionFragmentCounts
@@ -971,6 +981,30 @@ pub fn process_umi_groups(
 /// the single fragments held there (they are ReadInfo objects) and ends the run; the same is an error here.
 fn capture_umi_group_stats(arena: &Arena, frag_groups: Option<&[Frag]>, stats: &mut UmiStatistics) -> Result<()> {
     let Some(frag_groups) = frag_groups else { return Ok(()) };
+    if !crate::compat::java("R24") {
+        // R24 corrected: a fragment without duplicates counts as a group of its one read, as the Java code intends
+        // (`new DuplicateGroup(umi, read, null)`)
+        let singles: Vec<Option<DuplicateGroup>> = frag_groups
+            .iter()
+            .map(|f| match f {
+                Frag::Group(_) => None,
+                Frag::Single(s) => arena.singles[*s].info.as_ref().map(|info| {
+                    let umi = String::from_utf8_lossy(arena.config.extract_umi_id(info.read.qname())).into_owned();
+                    new_group(Some(umi), vec![info.read.clone()], info.coords.clone())
+                }),
+            })
+            .collect();
+        let groups: Vec<&DuplicateGroup> = frag_groups
+            .iter()
+            .zip(&singles)
+            .filter_map(|(f, single)| match f {
+                Frag::Group(g) => Some(arena.group(*g)),
+                Frag::Single(_) => single.as_ref(),
+            })
+            .collect();
+        stats.record_umi_base_stats(arena.config, &groups);
+        return Ok(());
+    }
     let mut groups: Vec<&DuplicateGroup> = Vec::with_capacity(frag_groups.len());
     for f in frag_groups {
         match f {

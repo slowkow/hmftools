@@ -244,8 +244,22 @@ fn test_duplex_umis() {
     // too many different bases
     assert!(!matches(umi_id1, "AAGCCC_TATCGC"));
 
-    // a UMI without the delimiter is an error, as in Java
-    assert!(has_duplex_umi_match(umi_id1, "AAGTCCTATCGG", "_", 1).is_err());
+    // a UMI without the delimiter is an error in Java (R25)
+    assert!(crate::compat::with_java(true, || has_duplex_umi_match(umi_id1, "AAGTCCTATCGG", "_", 1)).is_err());
+}
+
+#[test]
+fn duplex_umi_without_delimiter_is_no_match() {
+    // R25 corrected
+    assert!(!has_duplex_umi_match("TATCGC_AAGTCG", "AAGTCCTATCGG", "_", 1).unwrap());
+    assert!(!has_duplex_umi_match("AAGTCCTATCGG", "TATCGC_AAGTCG", "_", 1).unwrap());
+}
+
+#[test]
+fn duplex_umi_delimiter_of_two_characters() {
+    // R10: Java starts the second half one character after the start of the delimiter
+    assert!(has_duplex_umi_match("TATCGC--AAGTCG", "AAGTCG--TATCGC", "--", 0).unwrap());
+    assert!(!crate::compat::with_java(true, || has_duplex_umi_match("TATCGC--AAGTCG", "AAGTCG--TATCGC", "--", 0)).unwrap());
 }
 
 /// UmiGroupsTest.testUmiGroupAssignment
@@ -620,4 +634,28 @@ fn test_umi_statistics_merge() {
     assert!(w.umi_group_details.starts_with("1:300_"));
     assert!(m.umi_group_details.starts_with("1:300_") && m.umi_group_details.ends_with(":CCCCCC"));
     assert_eq!(whole.umi_group_frequencies.len(), first.umi_group_frequencies.len());
+}
+
+/// R24: with -umi_base_diff_stats a fragment without duplicates is counted as a group of one read. Java casts it
+/// to the wrong class and the run ends.
+#[test]
+fn base_stats_take_a_fragment_without_duplicates() {
+    let bases = test_read_bases();
+    let read = create_sam_record(&next_read_id("AAAAA_CCCCC"), CHR_1, 100, &bases, TEST_READ_CIGAR, CHR_1, 1000, false, false, None, true, Some(TEST_READ_CIGAR));
+    let run = |java: bool| {
+        crate::compat::with_java(java, || {
+            let config = UmiConfig::new(true, true, "_", true, true);
+            let mut stats = UmiStatistics::default();
+            process_umi_groups(&config, true, Vec::new(), form_single_fragments(&[&read]), false, &mut stats).map(|(groups, singles)| {
+                (groups.len(), singles.len(), stats.umi_group_frequencies.clone())
+            })
+        })
+    };
+    assert!(run(true).is_err());
+    let (groups, singles, frequencies) = run(false).unwrap();
+    assert_eq!((groups, singles), (0, 1));
+    // one coordinate group of one read, whose UMI is at distance 0 from itself
+    assert_eq!(frequencies.len(), 1);
+    assert_eq!((frequencies[0].duplicate_group_count, frequencies[0].read_count, frequencies[0].group_count), (1, 1, 1));
+    assert_eq!(frequencies[0].edit_distance_frequency[0], 1);
 }

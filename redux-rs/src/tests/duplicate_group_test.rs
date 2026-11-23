@@ -90,3 +90,23 @@ fn test_collapse_to_key_without_coordinates_mate_has_same_five_prime_pos_coords_
         }
     }
 }
+
+/// R18: the label of a row of duplicate_freq.tsv is the rounded group size; Java writes the first size seen.
+#[test]
+fn duplicate_frequency_labels_are_the_rounded_sizes() {
+    let write = |sizes: &[usize], java: bool| {
+        let mut stats = crate::dup::Statistics::default();
+        for &size in sizes {
+            stats.add_duplicate_group(size);
+        }
+        let path = std::env::temp_dir().join(format!("redux_rs_dup_freq_{}_{}_{java}.tsv", std::process::id(), sizes[0]));
+        crate::compat::with_java(java, || stats.write_duplicate_stats(path.to_str().unwrap(), false)).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        text
+    };
+    assert_eq!(write(&[16, 23, 3], true), "DuplicateReadCount\tFrequency\n3\t1\n16\t2\n");
+    assert_eq!(write(&[23, 16, 3], true), "DuplicateReadCount\tFrequency\n3\t1\n23\t2\n");
+    assert_eq!(write(&[16, 23, 3], false), "DuplicateReadCount\tFrequency\n3\t1\n20\t2\n");
+    assert_eq!(write(&[23, 16, 3], false), write(&[16, 23, 3], false));
+}

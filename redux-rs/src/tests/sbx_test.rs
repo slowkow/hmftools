@@ -1084,6 +1084,38 @@ impl CollapsingReadCache {
 
 #[test]
 fn test_sbx_duplicate_group_collapsing() {
+    // the last block of the Java test passes only when a forward read joins reverse reads (R7)
+    crate::compat::with_java(true, sbx_duplicate_group_collapsing_java);
+}
+
+#[test]
+fn sbx_forward_and_reverse_reads_are_collapsed_separately() {
+    // R7 corrected
+    let max_dup_distance = 2;
+    let mut read_cache = CollapsingReadCache::new(max_dup_distance);
+    read_cache.process_unpaired(100, 200, true);
+    read_cache.process_unpaired(100, 200, true);
+    read_cache.process_unpaired(100, 200, false);
+    let fragments = read_cache.evict_all();
+    assert_eq!(1, fragments.duplicate_groups.len());
+    assert_eq!(2, fragments.duplicate_groups[0].total_read_count());
+    assert_eq!(1, fragments.single_reads.len());
+
+    // reverse reads within the distance of each other still collapse, and so do forward reads
+    read_cache.process_unpaired(100, 200, true);
+    read_cache.process_unpaired(101, 201, true);
+    read_cache.process_unpaired(100, 200, false);
+    read_cache.process_unpaired(99, 199, false);
+    let fragments = read_cache.evict_all();
+    assert_eq!(2, fragments.duplicate_groups.len());
+    assert_eq!(0, fragments.single_reads.len());
+    for group in &fragments.duplicate_groups {
+        assert_eq!(2, group.total_read_count());
+        assert_eq!(group.reads[0].is_reverse(), group.reads[1].is_reverse());
+    }
+}
+
+fn sbx_duplicate_group_collapsing_java() {
     // UnpairedReadDuplicateTest.testSbxDuplicateGroupCollapsing
     let max_dup_distance = 2;
     let mut read_cache = CollapsingReadCache::new(max_dup_distance);
@@ -1439,4 +1471,41 @@ fn test_mirrored_qualities_of_undecoded_read() {
     assert_eq!(SBX_DUPLEX_MISMATCH_QUAL, read.qual()[6]);
     assert_eq!(SBX_DUPLEX_ADJACENT_1_QUAL_REF_MATCH, read.qual()[4]);
     assert_eq!(0, int_attribute(&read, b"NM"));
+}
+
+/// R8: when X elements become M and neighbours are merged, Java removes the first element equal to the merged one,
+/// which can be an earlier element of the cigar.
+#[test]
+fn merging_match_elements_removes_the_merged_one() {
+    let ref_bases = "ACGTACGTACGTACGTACGT";
+    let run = |java: bool| {
+        crate::compat::with_java(java, || {
+            let mut refs = RefBases::open(&ref_fasta(CHR_1, ref_bases)).unwrap();
+            // 5M over ACGTA, 2D, 3M over TAC, a mismatch, 5M over TACGT: the last 5M equals the first
+            let mut read = create_sbx_sam_record(TEST_READ_ID, 1, "ACGTATACTTACGT", "5M2D3M1X5M");
+            finalise_read(&mut refs, &names(), &mut read);
+            cigar_str(&read)
+        })
+    };
+    assert_eq!("2D9M5M", run(true));
+    assert_eq!("5M2D9M", run(false));
+}
+
+/// R9: a read with supplementary data and no soft clip. Java replaces the last cigar element by the supplementary
+/// cigar; corrected, the read is treated as one without supplementary data.
+#[test]
+fn supplementary_data_without_soft_clip_leaves_the_cigar() {
+    let _setting = with_homopolymer_5_prime_low_base_qual(false);
+    let read_bases = format!("GATCGTACTGA{}", "A".repeat(10));
+    let strip = |supp: Option<&str>| -> Option<(String, usize)> {
+        let mut read = create_sam_record_unpaired(TEST_READ_ID, CHR_1, 25, &read_bases, "10M1I10M", false, false, supp);
+        set_string_attribute(&mut read, b"YC", "0+10Z10+");
+        quals_mut(&mut read)[10] = RAW_DUPLEX_MISMATCH_QUAL;
+        strip_duplex_indels(&mut read).ok().map(|_| (cigar_str(&read), read.seq_len()))
+    };
+    let plain = strip(None);
+    assert_eq!(plain, Some(("20M".to_string(), 20)));
+    let supp = supp_data(CHR_2, 25, '+', "21M", 60);
+    assert_eq!(strip(Some(&supp)), plain);
+    assert_ne!(crate::compat::with_java(true, || strip(Some(&supp))), plain);
 }

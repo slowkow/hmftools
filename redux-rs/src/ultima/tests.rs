@@ -380,3 +380,34 @@ fn test_ultima_stats_order_as_java() {
     assert_eq!(4, rows.iter().find(|r| r.0 == 383).unwrap().1);
     assert_eq!(3, rows.iter().find(|r| r.0 == 1085).unwrap().1);
 }
+
+/// R26: with -ultima_drop_qual_tags and the base quality recalibration on, the raw quality attributes stay until
+/// the read has been counted and are taken off as it is written; the written read is the one Java writes.
+#[test]
+fn raw_quals_are_dropped_after_the_recalibration() {
+    let n = 16;
+    let build = || {
+        let mut r = strip_read(0, "CAATGTCTGGAATCTA", &vec![35u8; n]);
+        r.push_aux(b"NM", Aux::I32(0)).unwrap();
+        push_t0(&mut r, &vec![40u8; n]);
+        push_tp(&mut r, 0, n);
+        r
+    };
+    // Java: gone before the recalibration, which then fails
+    let mut java = build();
+    let (java_attributes, _) = strip(&mut java, true);
+    assert!(!java_attributes.contains("t0"));
+    assert!(crate::compat::with_java(true, || !UltimaRoutines::for_partition(true, true).drop_after_capture));
+
+    let mut routines = UltimaRoutines::for_partition(true, true);
+    assert!(routines.drop_after_capture);
+    let mut read = build();
+    routines.strip_attributes(&mut read, Some(&mut UltimaStats::default())).unwrap();
+    assert!(attributes(&read).contains("t0") && attributes(&read).contains("tp"));
+    UltimaRoutines::drop_raw_quals(&mut read);
+    assert_eq!(attributes(&read), java_attributes);
+
+    // nothing is held back without the recalibration, or without the option
+    assert!(!UltimaRoutines::for_partition(true, false).drop_after_capture);
+    assert!(!UltimaRoutines::for_partition(false, true).drop_after_capture);
+}

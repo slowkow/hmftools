@@ -79,6 +79,8 @@ pub struct PartitionReader<'a> {
     #[cfg(test)]
     pub test_written: Vec<bam::Record>,
     ultima: crate::ultima::UltimaRoutines,
+    /// R6 as in Java: a consensus read copied from one read shares that read's bases and qualities
+    java_shared_arrays: bool,
 }
 
 impl<'a> PartitionReader<'a> {
@@ -134,7 +136,8 @@ impl<'a> PartitionReader<'a> {
             processed_reads: 0,
             #[cfg(test)]
             test_written: Vec::new(),
-            ultima: crate::ultima::UltimaRoutines::new(config.ultima_drop_qual_tags),
+            java_shared_arrays: crate::compat::java("R6"),
+            ultima: crate::ultima::UltimaRoutines::for_partition(config.ultima_drop_qual_tags, !config.args.has_flag("bqr_disable")),
         })
     }
 
@@ -399,6 +402,9 @@ impl<'a> PartitionReader<'a> {
         if rec.tid() >= 0 {
             self.capture.capture(&rec, &self.names[rec.tid() as usize]);
         }
+        if self.ultima.drop_after_capture {
+            crate::ultima::UltimaRoutines::drop_raw_quals(&mut rec);
+        }
         #[cfg(test)]
         if self.out.is_none() {
             self.test_written.push(rec);
@@ -474,7 +480,9 @@ impl<'a> PartitionReader<'a> {
             if let Some(consensus) = group.consensus_read.as_mut() {
                 self.post_process_read(consensus);
                 if self.config.is_sbx() && self.config.form_consensus && !group.poly_g_unmapped {
-                    if let Some(i) = self.consensus.built_from_read {
+                    // R6: in Java the consensus read made by buildFromRead shares its base and quality arrays with
+                    // the read it copies, so finalising it changes that duplicate too. Corrected: it has its own.
+                    if let (Some(i), true) = (self.consensus.built_from_read, self.java_shared_arrays) {
                         crate::sbx::share_finalised_bases(consensus, &mut group.reads[i]);
                     }
                 }

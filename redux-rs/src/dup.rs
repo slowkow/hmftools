@@ -382,6 +382,8 @@ pub struct ReadCache {
     processed: u64,
     sync: Option<(std::sync::Arc<CacheSync>, usize)>,
     synced: bool,
+    /// R14 as in Java: the pop distance never leaves its default
+    java_fixed_pop_distance: bool,
 }
 
 /// Java keeps one ReadCache per thread and never resets its size-check counter between partitions, so
@@ -433,7 +435,8 @@ const SYNC_CHECK_READS: u64 = 512;
 impl ReadCache {
     /// Ties this cache to its partition's place in the run (see CacheSync)
     pub fn set_sync(&mut self, sync: std::sync::Arc<CacheSync>, index: usize) {
-        self.synced = index == 0;
+        // R21 corrected: the counters start again with each region (see evict_all), so there is nothing to wait for
+        self.synced = index == 0 || !crate::compat::java("R21");
         self.sync = Some((sync, index));
     }
 
@@ -483,6 +486,7 @@ impl ReadCache {
             processed: 0,
             sync: None,
             synced: true,
+            java_fixed_pop_distance: crate::compat::java("R14"),
         }
     }
 
@@ -638,6 +642,15 @@ impl ReadCache {
             }
         }
         self.groups.clear();
+        if !crate::compat::java("R21") {
+            // R21: Java leaves the size-check counter and the last counted size as they are when a region ends (its
+            // clear(), which resets them, is never called), so the purges of a deep region depend on the reads of
+            // every region the thread took before. Corrected: each region starts as a new cache does.
+            self.check_size_read_count = 0;
+            self.last_cache_read_count = 0;
+            self.check_read_count_reduction = false;
+            self.pop_distance_check = self.default_distance_check;
+        }
         self.pop_position_check = (self.current_read_min_position / self.pop_distance_check) * self.pop_distance_check;
         Self::collect(popped)
     }
@@ -731,7 +744,11 @@ impl ReadCache {
     }
 
     fn check_pos_check_adjust(&mut self, cached_read_count: i32) {
-        if self.pop_distance_check == self.default_distance_check {
+        // R14: Java returns whenever the distance is the default, and nothing else changes it, so the distance is
+        // never shortened. Corrected (intent uncertain): it returns only when there is also nothing to shorten.
+        if self.pop_distance_check == self.default_distance_check
+            && (self.java_fixed_pop_distance || cached_read_count < self.read_count_reduction_threshold)
+        {
             return;
         }
         if cached_read_count < self.read_count_reduction_threshold {
@@ -741,6 +758,12 @@ impl ReadCache {
             let adjust_fraction = (10 - multiple) as f64 / 10.0;
             self.pop_distance_check = (self.default_distance_check as f64 * adjust_fraction).round() as i32;
         }
+    }
+
+    /// For tests: the pop distance, the size-check counter and the last counted size.
+    #[cfg(test)]
+    pub fn check_state(&self) -> (i32, i32, i32) {
+        (self.pop_distance_check, self.check_size_read_count, self.last_cache_read_count)
     }
 
     #[cfg(test)]
@@ -830,8 +853,12 @@ impl Statistics {
         out.push('\n');
         let mut f = self.frequencies.clone();
         f.sort_by_key(|x| x.0);
-        for (_, first, count, dual) in f {
-            out.push_str(&format!("{first}\t{count}"));
+        // R18: Java labels a row of sizes above 10 with the first size it saw for the row, which depends on the
+        // order of the groups (and, with threads, on which thread took which partition). Corrected: the rounded size.
+        let java_label = crate::compat::java("R18");
+        for (rounded, first, count, dual) in f {
+            let label = if java_label { first } else { rounded };
+            out.push_str(&format!("{label}\t{count}"));
             if include_dual_strand {
                 out.push_str(&format!("\t{dual}"));
             }

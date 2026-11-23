@@ -212,10 +212,21 @@ impl MsModelCalculator {
     /// so a unit and count without an error rate is a NullPointerException there and an error here.
     pub fn calc_ms_indel_per_mb_values(&self, data: &mut [RepeatUnitData]) -> Result<Vec<f64>> {
         let mut values = Vec::new();
+        let mut missing_reported = false;
         for d in data.iter_mut() {
             d.compute_error_rates();
             let Some(&combined_error_rate) = self.error_rates.get(&d.ruc_key) else {
-                bail!("java.lang.NullPointerException: no MSI model error rate for {}", d.ruc_key);
+                if crate::compat::java("R28") {
+                    bail!("java.lang.NullPointerException: no MSI model error rate for {}", d.ruc_key);
+                }
+                // R28 corrected: a unit and count that the model files do not cover is left out of the prediction,
+                // as Java does when the coefficients are missing
+                if !missing_reported {
+                    crate::warn!("no MSI model error rate for {} (and possibly others): left out of the MSI prediction", d.ruc_key);
+                    missing_reported = true;
+                }
+                values.push(INVALID_VALUE);
+                continue;
             };
             let coefficients = match self.coefficients.get(&d.ruc_key) {
                 Some(c) if c[0] != 0.0 && c[1] != 0.0 => c,
@@ -321,7 +332,14 @@ mod tests {
         assert_eq!(calc.calc_predicted_msi_rate(&tables).unwrap(), INVALID_VALUE);
         // a row in range without an error rate fails as Java does
         let tables = vec![table("A/T", ConsensusType::None, &[(13, &[(0, 900)])])];
-        assert!(calc.calc_predicted_msi_rate(&tables).is_err());
+        assert!(crate::compat::with_java(true, || calc.calc_predicted_msi_rate(&tables)).is_err());
+        // R28 corrected: left out, like a row without coefficients
+        assert_eq!(calc.calc_predicted_msi_rate(&tables).unwrap(), INVALID_VALUE);
+        calc.add_coefficients("A/T", 11, 110.0, 2000.0);
+        let tables = vec![table("A/T", ConsensusType::None, &[(11, &[(0, 900), (-1, 100)]), (13, &[(0, 900)])])];
+        let with_missing = calc.calc_predicted_msi_rate(&tables).unwrap();
+        assert_eq!(with_missing, calc.calc_predicted_msi_rate(&tables[..1]).unwrap());
+        assert!(with_missing > 0.0);
     }
 
     #[test]

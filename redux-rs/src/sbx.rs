@@ -772,6 +772,12 @@ impl<'a> DuplexIndelBuilder<'a> {
         let left_soft_clip_length = left_soft_clip(cigar);
         let last_element = cigar.len() - 1;
         let right_soft_clip_length = right_soft_clip(cigar);
+        if left_soft_clip_length == 0 && right_soft_clip_length == 0 && !crate::compat::java("R9") {
+            // R9: without a soft clip Java still replaces the read's last element by the supplementary cigar.
+            // Corrected: there is nothing for the supplementary alignment to describe, the cigar stays as it is.
+            self.adjusted_cigar.extend_from_slice(cigar);
+            return Ok(());
+        }
         let mut supp_elements = cigar_from_str(supp_cigar)?;
         if supp_forward == self.negative_strand {
             supp_elements.reverse();
@@ -1921,6 +1927,7 @@ fn finalise_read_with(refs: &mut RefBases, names: &[String], rec: &mut bam::Reco
         }
         if requires_cigar_update {
             let mut cigar: Vec<u32> = rec.raw_cigar().iter().map(|e| if op(*e) == OP_X { el(oplen(*e), OP_M) } else { *e }).collect();
+            let java_remove = crate::compat::java("R8");
             let mut index = 0;
             while index + 1 < cigar.len() {
                 let mut element = cigar[index];
@@ -1930,10 +1937,10 @@ fn finalise_read_with(refs: &mut RefBases, names: &[String], rec: &mut bam::Reco
                     if op(element) == OP_M && op(next_element) == OP_M {
                         element = el(oplen(element) + oplen(next_element), OP_M);
                         cigar[index] = element;
-                        // List.remove(Object): the first element equal to the next one goes, which is an
-                        // earlier element when one has the same length and operator
-                        let first_equal = cigar.iter().position(|c| *c == next_element).unwrap();
-                        cigar.remove(first_equal);
+                        // R8: List.remove(Object) takes out the first element equal to the next one, which is an
+                        // earlier element when one has the same length and operator. Corrected: the next one.
+                        let remove_at = if java_remove { cigar.iter().position(|c| *c == next_element).unwrap() } else { next_index };
+                        cigar.remove(remove_at);
                     } else {
                         break;
                     }

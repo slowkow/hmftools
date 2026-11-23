@@ -106,15 +106,21 @@ pub fn cigar_string(cigar: &[u32]) -> String {
     s
 }
 
-/// SamRecordUtils.getReadBoundaryPosition over a cigar string
+/// SamRecordUtils.getReadBoundaryPosition over a cigar string.
+/// R4: Java counts D, M, S and N and so leaves out the = and X elements of a cigar string (also in
+/// `calc_cigar_aligned_length`). Corrected: they count as M does.
 pub fn read_boundary_position(read_start: i32, cigar: &[u8], get_read_start: bool, include_soft_clipped: bool) -> i32 {
+    read_boundary_position_with(read_start, cigar, get_read_start, include_soft_clipped, !crate::compat::java("R4"))
+}
+
+fn read_boundary_position_with(read_start: i32, cigar: &[u8], get_read_start: bool, include_soft_clipped: bool, match_ops: bool) -> i32 {
     if get_read_start && !include_soft_clipped {
         return read_start;
     }
     let mut current = read_start;
     let mut len: i32 = 0;
     for &c in cigar {
-        if matches!(c, b'D' | b'M' | b'S' | b'N') {
+        if matches!(c, b'D' | b'M' | b'S' | b'N') || (match_ops && matches!(c, b'=' | b'X')) {
             if get_read_start {
                 return if c == b'S' { read_start - len } else { read_start };
             }
@@ -153,10 +159,11 @@ pub fn three_prime_unclipped(rec: &bam::Record) -> i32 {
 
 /// CigarUtils.calcCigarAlignedLength over a cigar string
 pub fn calc_cigar_aligned_length(cigar: &[u8]) -> i32 {
+    let match_ops = !crate::compat::java("R4");
     let mut total = 0;
     let mut len: i32 = 0;
     for &c in cigar {
-        if matches!(c, b'D' | b'M' | b'N') {
+        if matches!(c, b'D' | b'M' | b'N') || (match_ops && matches!(c, b'=' | b'X')) {
             total += len;
             len = 0;
             continue;
@@ -505,6 +512,26 @@ mod tests {
         assert_eq!(five_prime_unclipped_str(100, b"5H10S50M", true), 90);
         assert_eq!(three_prime_unclipped_str(100, b"10S90M", true), 189);
         assert_eq!(read_boundary_position(100, b"10S50M5D40M3S", false, false), 194);
+    }
+
+    #[test]
+    fn match_and_mismatch_elements_of_a_cigar_string() {
+        // R4: the mate's end, and with it the fragment coordinate of a reverse mate
+        let java = |cigar: &[u8], forward: bool| crate::compat::with_java(true, || five_prime_unclipped_str(100, cigar, forward));
+        assert_eq!(java(b"30=1X19=", false), 99);
+        assert_eq!(five_prime_unclipped_str(100, b"30=1X19=", false), 149);
+        assert_eq!(five_prime_unclipped_str(100, b"30=1X19=5S", false), 154);
+        assert_eq!(five_prime_unclipped_str(100, b"10S30=1X19=", true), 90);
+        assert_eq!(five_prime_unclipped_str(100, b"30=1X19=", true), 100);
+        assert_eq!(java(b"30=1X19=", true), 99);
+        assert_eq!(crate::compat::with_java(true, || calc_cigar_aligned_length(b"30=1X19=")), 0);
+        assert_eq!(calc_cigar_aligned_length(b"30=1X2D19="), 52);
+        // cigars of M, I, D, N, S and H are read as before
+        for cigar in [&b"50M"[..], b"10S40M", b"20M5D20M10S", b"20M5I20M", b"5H20M100N20M"] {
+            for forward in [true, false] {
+                assert_eq!(five_prime_unclipped_str(100, cigar, forward), java(cigar, forward));
+            }
+        }
     }
 
     #[test]
