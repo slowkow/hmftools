@@ -2,7 +2,11 @@
 //! members of AssemblyConfig and the non-final members of AssemblyConstants).
 
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicU8, Ordering::Relaxed};
+use std::sync::RwLock;
+#[cfg(test)]
 use std::sync::Mutex;
+
+use crate::common::compat;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SequencingType {
@@ -121,12 +125,22 @@ pub fn max_concordant_fragment_length(observed_max_fragment_length: i32) -> i32 
 }
 
 /// ReadIdTrimmer: removes the leading part of read names that all reads share (up to the third ':').
-/// The trim index comes from the first read name seen, and trimming switches itself off at the first name
-/// that does not fit.
+///
+/// Java (finding A5): the prefix comes from the first read name that any thread asks for, and trimming
+/// switches itself off at the first name whose third ':' is elsewhere; a name with its third ':' in the
+/// same place is cut there whatever comes before it. When tumor and normal, or the lanes of one sample,
+/// come from different sequencing runs, ids then depend on processing order (and so on the thread count),
+/// and reads of different runs can be given the same id.
+///
+/// Corrected: the prefix is set once before any read is processed (`set_prefix_from`, from the first
+/// record of the tumor BAM), only names that start with that prefix are trimmed, every other name is kept
+/// whole, and trimming never switches off. Where all reads share one prefix the ids are Java's.
 pub struct ReadIdTrimmer {
     enabled: AtomicBool,
     read_id_trim_index: AtomicI32,
-    trimmed_bases: Mutex<String>,
+    trimmed_bases: RwLock<String>,
+    /// corrected: the number of ':' in a trimmed id (that of the prefix-setting name less three)
+    trimmed_delims: AtomicI32,
 }
 
 const READ_ID_DELIM: u8 = b':';
@@ -134,23 +148,52 @@ const READ_ID_DELIM_COUNT: i32 = 3;
 
 impl ReadIdTrimmer {
     pub const fn new(enabled: bool) -> Self {
-        ReadIdTrimmer { enabled: AtomicBool::new(enabled), read_id_trim_index: AtomicI32::new(-1), trimmed_bases: Mutex::new(String::new()) }
+        ReadIdTrimmer {
+            enabled: AtomicBool::new(enabled),
+            read_id_trim_index: AtomicI32::new(-1),
+            trimmed_bases: RwLock::new(String::new()),
+            trimmed_delims: AtomicI32::new(-1),
+        }
     }
     pub fn reset(&self, enabled: bool) {
         self.enabled.store(enabled, Relaxed);
         self.read_id_trim_index.store(-1, Relaxed);
-        self.trimmed_bases.lock().unwrap().clear();
+        self.trimmed_bases.write().unwrap().clear();
+        self.trimmed_delims.store(-1, Relaxed);
     }
     pub fn enabled(&self) -> bool {
         self.enabled.load(Relaxed)
+    }
+    /// Corrected (finding A5): fixes the prefix from a read name before any read is processed; a name
+    /// without three ':' turns trimming off, as the first name does in Java.
+    pub fn set_prefix_from(&self, read_name: &str) {
+        if !self.enabled() {
+            return;
+        }
+        let index = find_read_id_trim_index(read_name);
+        if index < 0 || index as usize >= read_name.len() {
+            self.enabled.store(false, Relaxed);
+            return;
+        }
+        *self.trimmed_bases.write().unwrap() = read_name[..index as usize].to_string();
+        let delims = read_name.bytes().filter(|&b| b == READ_ID_DELIM).count() as i32 - READ_ID_DELIM_COUNT;
+        self.trimmed_delims.store(delims, Relaxed);
+        self.read_id_trim_index.store(index, Relaxed);
     }
     pub fn trim(&self, read_id: &str) -> String {
         if !self.enabled() {
             return read_id.to_string();
         }
+        if !compat::java("A5") {
+            let prefix = self.trimmed_bases.read().unwrap();
+            return match read_id.strip_prefix(prefix.as_str()) {
+                Some(rest) if !prefix.is_empty() && !rest.is_empty() => rest.to_string(),
+                _ => read_id.to_string(),
+            };
+        }
         let mut index = self.read_id_trim_index.load(Relaxed);
         if index < 0 {
-            let mut prefix = self.trimmed_bases.lock().unwrap();
+            let mut prefix = self.trimmed_bases.write().unwrap();
             index = self.read_id_trim_index.load(Relaxed);
             if index < 0 {
                 index = find_read_id_trim_index(read_id);
@@ -170,7 +213,83 @@ impl ReadIdTrimmer {
         read_id[i..].to_string()
     }
     pub fn restore(&self, trimmed_read_id: &str) -> String {
-        if self.enabled() { format!("{}{}", self.trimmed_bases.lock().unwrap(), trimmed_read_id) } else { trimmed_read_id.to_string() }
+        if !self.enabled() {
+            return trimmed_read_id.to_string();
+        }
+        let prefix = self.trimmed_bases.read().unwrap();
+        if !compat::java("A5") {
+            // only a trimmed id gets the prefix back: names of other runs were kept whole (exact where the
+            // names have one format, as Illumina names do)
+            let delims = trimmed_read_id.bytes().filter(|&b| b == READ_ID_DELIM).count() as i32;
+            if prefix.is_empty() || delims != self.trimmed_delims.load(Relaxed) {
+                return trimmed_read_id.to_string();
+            }
+        }
+        format!("{}{}", prefix, trimmed_read_id)
+    }
+}
+
+#[cfg(test)]
+mod read_id_trimmer_tests {
+    use super::ReadIdTrimmer;
+    use crate::common::compat::with_java;
+
+    const RUN_A: &str = "A00260:251:HLYGFDSXY:1:1673:32280:4946";
+    const RUN_A_MATE_LANE: &str = "A00260:251:HLYGFDSXY:2:1101:1000:2000";
+    // another run, prefix of the same length: Java cuts it at the same place
+    const RUN_B: &str = "A00260:252:HLYGFDSXZ:1:1673:32280:4946";
+    // another run, prefix one character shorter: Java switches trimming off here
+    const RUN_C: &str = "A0026:251:HLYGFDSXY:1:1673:32280:4946";
+
+    #[test]
+    fn corrected_trims_only_the_prefix_of_the_first_record() {
+        with_java(false, || {
+            let t = ReadIdTrimmer::new(true);
+            t.set_prefix_from(RUN_A);
+            assert_eq!(t.trim(RUN_A), "1:1673:32280:4946");
+            assert_eq!(t.trim(RUN_A_MATE_LANE), "2:1101:1000:2000");
+            assert_eq!(t.trim(RUN_B), RUN_B);
+            assert_eq!(t.trim(RUN_C), RUN_C);
+            // still on after names of other runs, and in any order
+            assert!(t.enabled());
+            assert_eq!(t.trim(RUN_A), "1:1673:32280:4946");
+            assert_ne!(t.trim(RUN_A), t.trim(RUN_B));
+            assert_eq!(t.restore("1:1673:32280:4946"), RUN_A);
+            assert_eq!(t.restore(RUN_B), RUN_B);
+            assert_eq!(t.restore(RUN_C), RUN_C);
+            assert_eq!(t.restore("null"), "null");
+        });
+    }
+
+    #[test]
+    fn corrected_without_a_prefix_trims_nothing() {
+        with_java(false, || {
+            let t = ReadIdTrimmer::new(true);
+            assert_eq!(t.trim(RUN_A), RUN_A);
+            assert_eq!(t.restore(RUN_A), RUN_A);
+            let t = ReadIdTrimmer::new(true);
+            t.set_prefix_from("SRR123.1");
+            assert!(!t.enabled());
+            assert_eq!(t.trim(RUN_A), RUN_A);
+        });
+    }
+
+    #[test]
+    fn java_ids_depend_on_order() {
+        with_java(true, || {
+            // the run of the first name seen decides; a name of the same length from another run is cut
+            let t = ReadIdTrimmer::new(true);
+            assert_eq!(t.trim(RUN_A), "1:1673:32280:4946");
+            assert_eq!(t.trim(RUN_B), "1:1673:32280:4946");
+            // a name with its third ':' elsewhere switches trimming off for every later name
+            assert_eq!(t.trim(RUN_C), RUN_C);
+            assert!(!t.enabled());
+            assert_eq!(t.trim(RUN_A), RUN_A);
+            // the same names in another order give other ids
+            let t = ReadIdTrimmer::new(true);
+            assert_eq!(t.trim(RUN_C), "1:1673:32280:4946");
+            assert_eq!(t.trim(RUN_A), RUN_A);
+        });
     }
 }
 

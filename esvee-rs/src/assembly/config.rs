@@ -187,6 +187,17 @@ pub fn form_prep_input_filename(output_dir: &str, sample_id: &str, file_id: &str
     form_output_file(output_dir, sample_id, "esvee.prep", file_id, None)
 }
 
+/// The read name of the first record of a BAM, if it can be read.
+fn first_read_name(bam_file: &str) -> Option<String> {
+    use rust_htslib::bam::Read as _;
+    let mut reader = rust_htslib::bam::Reader::from_path(bam_file).ok()?;
+    let mut record = rust_htslib::bam::Record::new();
+    match reader.read(&mut record) {
+        Some(Ok(())) => Some(String::from_utf8_lossy(record.qname()).into_owned()),
+        _ => None,
+    }
+}
+
 fn form_prep_bam_filenames(output_dir: &str, sample_ids: &[String], output_id: Option<&str>) -> Vec<String> {
     let mut bam_files = Vec::with_capacity(sample_ids.len());
     for sample_id in sample_ids {
@@ -339,6 +350,14 @@ impl AssemblyConfig {
 
         let assembly_ref_base_write_max = if has_filters { 0 } else { args.integer("asm_ref_base_write_max", DEFAULT_ASSEMBLY_REF_BASE_WRITE_MAX)? };
         READ_ID_TRIMMER.reset(!has_filters && tumor_bams.len() == 1);
+        if READ_ID_TRIMMER.enabled() && !compat::java("A5") {
+            // corrected (finding A5): the prefix is that of the first record of the tumor BAM, set before any
+            // thread reads, instead of that of the first read name any thread asks for
+            match first_read_name(&tumor_bams[0]) {
+                Some(name) => READ_ID_TRIMMER.set_prefix_from(&name),
+                None => READ_ID_TRIMMER.reset(false),
+            }
+        }
 
         Ok(AssemblyConfig {
             tumor_ids,

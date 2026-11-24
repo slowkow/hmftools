@@ -554,10 +554,24 @@ the port run with `-java_compat`.
   `resetCounts()` zeroes the "total" counters for every phase group, so the log line "remote reads
   extracted(N)" is the count of each task's last group. Observed: 0 at one thread, 629 and 635 at 8
   threads. Reproduced (the one-thread value). **Corrected by default** (4.5).
-- **A5. `hmf-common` `ReadIdTrimmer`** (the static `READ_ID_TRIMMER`, `assembly/AssemblyConfig.java:157`)
-  is shared between threads without synchronisation. The first read name that does not fit the first
-  read's prefix switches trimming off from then on, so read ids depend on processing order and on the
-  thread count. Reproduced as written.
+- **A5. `esvee/common/ReadIdTrimmer.java`** (the static `READ_ID_TRIMMER`, `assembly/AssemblyConfig.java:157,353`)
+  cuts every read name after its third ':' (instrument, run and flowcell) to save memory. It is enabled
+  whenever there is one tumor BAM, which is always so for the prep BAMs, and is shared by the tumor and
+  normal reads and by all threads without synchronisation. The prefix is that of the first name any
+  thread asks for, and only the position of the third ':' is checked after that, so:
+  - Reads of two sequencing runs whose prefixes have different lengths: trimming switches itself off at
+    the first name of the other run, and the reads trimmed before that keep their short ids. Which reads
+    those are depends on thread timing. Observed (2026-11-24) on a whole-genome pair whose tumor and
+    normal come from two runs (prefixes of 22 and 21 characters): the port, Java-like here, gave
+    different `assembly.tsv` on two 16-thread runs from the same prep output, and at 1, 4 and 16
+    threads different phase groups, links and raw VCF records.
+  - Reads of several runs whose prefixes have the same length (the local test pair: five runs in two
+    samples): trimming stays on, and every name is cut to `lane:tile:x:y` whatever its run, so reads of
+    different flowcells can get the same id (patterned flowcells reuse well positions).
+
+  Reproduced as written. **Corrected by default** (4.5). Prep has a trimmer of its own per partition
+  (`prep/JunctionTracker.java:130`), enabled only when prep is given one BAM, with the same collision
+  of names from runs with prefixes of one length; not corrected (oncoanalyser gives prep both BAMs).
 - **A30. Decoy rows in completion order.** Decoy matches (`AlignmentChecker`, called at
   `assembly/JunctionGroupAssembler.java:219`) are written by each task as it goes, so `decoy_match.tsv`
   and the decoy rows of `assembly.tsv` are in task completion order with more than one thread. Not
@@ -783,7 +797,7 @@ the port run with `-java_compat`.
 
 ### 4.5 Corrections
 
-61 of the findings above are corrected by default. Each corrected place in the code asks
+62 of the findings above are corrected by default. Each corrected place in the code asks
 `compat::java("<id>")` (`src/common/compat.rs`) and keeps the Java path beside the corrected one.
 
 - `-java_compat`, or `ESVEE_JAVA_COMPAT=1` in the environment: Java behaviour for every finding.
@@ -815,6 +829,7 @@ still differ in the order of records that tie on position and strand.
 | Id | Corrected behaviour | Effect, small pair (raw VCF gone / new / changed) |
 |---|---|---|
 | A3 | the log line shows the total over all phase groups | log only |
+| A5 | the prefix is that of the first record of the tumor BAM, set before any thread reads; only names with that prefix are trimmed, others are kept whole, and trimming never switches off | none (every output identical). Whole genome, local pair (five runs, prefixes of one length): raw VCF 9 / 10 / 2,216 (values other than ids), somatic VCF unchanged (3,140 records), germline 3 gone, 4 new. A pair from two runs with prefixes of different lengths: before the correction the outputs differed between two 16-thread runs and between 1, 4 and 16 threads (A5) |
 | A4 | junction groups with equal bounds on different chromosomes stay distinct | none on four inputs |
 | A6 | the null test is on the column that is read | none (prep writes both columns) |
 | A9 | the merged region gets the other region's soft-clip total once (intent uncertain on the weight, kept at 1) | none on four inputs |
@@ -911,7 +926,7 @@ On the standard runs (small pair, whole genome) no caller correction changes a l
 
 **Tests of the corrections**
 
-Unit tests cover 46 of the 61 corrections. Without one: P2, A3, A7, A14, A16,
+Unit tests cover 47 of the 62 corrections. Without one: P2, A3, A7, A14, A16,
 A20, A21, A23, A24, A25, A26, A27, A34 (each needs a built assembly, a drawing or a run), C9, C10
 (log text). Those are covered by the runs only.
 
@@ -1114,6 +1129,15 @@ BAMs took 20 seconds. Since then, when the image is on a FUSE or NFS mount, it i
 (`ESVEE_IMAGE_PRELOAD=1` or `0` forces this on or off). Output unchanged: the small pair's `esvee/`
 folder is identical with the read-through forced on.
 
+The reference FASTA is read the same way, by many small positioned reads, and on the first whole-genome
+Batch run (2026-11-24, 35x tumor and normal, 16 threads, n2-standard-16) assembly took 47 minutes at
+about 2 cores: junction assembly 32 minutes, phase sets 13. The same assembly from the same prep output
+took 2.1 minutes (about 14 cores) with the FASTA and image copied to the local disk first, and 2.5
+minutes with them read through the mount with the gcsfuse file cache on
+(`--cache-dir`, `--file-cache-max-size-mb`, `--file-cache-cache-file-for-range-read`; in Nextflow
+`google.batch.gcsfuseOptions`). Java reads the FASTA through htsjdk in the same way, so the setting
+helps it too; it is a pipeline setting, not a change to the port.
+
 ## 6. Not ported, not tested
 
 Not ported:
@@ -1131,8 +1155,9 @@ Not tested, or tested only in part:
   only. Prep and assembly were run on public SBX and Ultima reads; depth has no sequencing-type option.
 - **Caller filters** `strandBias`, `lineSource`, `sbxInvZeroMotif`, `invShortFragLowVaf`, SAGA-matched
   variants, and contigs outside chr1-22/X/Y: unit tests and synthetic data only.
-- **A real decoy genome image** in assembly; **sambamba** as prep's `-bamtool`; **`ReadIdTrimmer`**
-  switching itself off part-way through a run.
+- **A real decoy genome image** in assembly; **sambamba** as prep's `-bamtool`; prep's
+  `ReadIdTrimmer` switching itself off part-way through a partition. (Assembly's, under `-java_compat`,
+  is reached by whole-genome data from two runs, finding A5, and by a unit test.)
 - **SAGA** was tested with synthetic resources only, in prep and assembly.
 - **Platforms.** Every run was on one macOS ARM machine. The visualiser's text positions use that
   machine's font metrics; Java on another system may place text differently.

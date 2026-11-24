@@ -4,7 +4,7 @@ A Rust port of [ESVEE](../esvee/README.md) 2.1, the structural variant caller. O
 steps of the Java tool (prep, assembly, depth annotation, calling); each step takes the command line of
 the Java application of that name and writes the same files.
 
-By default the port corrects 61 faults found in the Java code while porting, so its output differs
+By default the port corrects 62 faults found in the Java code while porting, so its output differs
 from Java's where those faults matter. With `-java_compat` it behaves as Java does and its output is
 identical to Java's; that is how the port was verified. See "Corrections and `-java_compat`" below.
 
@@ -143,7 +143,7 @@ run to run); reference genome 37 has not been run on real data in any step.
 
 ## Corrections and `-java_compat`
 
-The faults found in Java ESVEE are numbered in REPORT.md, section 4. For 61 of them the port takes a
+The faults found in Java ESVEE are numbered in REPORT.md, section 4. For 62 of them the port takes a
 corrected path by default; section 4.5 says what each correction does and what it changes.
 
 - `-java_compat` on any step (or `ESVEE_JAVA_COMPAT=1` in the environment) gives Java's behaviour for
@@ -178,7 +178,11 @@ All of this section is about the port run with `-java_compat`.
 - **VCF:** byte-identical after decompression, header included.
 - **Compressed bytes and index files** (`.bai`, `.tbi`) differ from Java's, since the compressor and
   the index writer differ. The indexes were checked by querying through them.
-- **Thread count:** the port writes the same output at any thread count. Java does not:
+- **Thread count:** the port writes the same output at any thread count, and from run to run. (Until
+  2026-11-24 this failed on reads from sequencing runs with read-name prefixes of different lengths, as
+  when tumor and normal were sequenced separately: assembly cut read names as Java's `ReadIdTrimmer`
+  does, finding A5, which is now corrected by default. With `-java_compat` that fault is kept, and on
+  such data assembly output then depends on thread timing, as Java's does.) Java does not:
   - Java's prep output depends on the thread count (the partitions share a cache of spanning reads).
     The port gives Java's one-thread result.
   - Java's assembly output depends on the thread count and also changes from run to run at one thread,
