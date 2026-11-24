@@ -292,6 +292,12 @@ impl VcfWriter {
             lines.push(format!("##contig=<ID={name},length={len}>"));
         }
         lines.push(format!("##sageVersion={SAGE_VERSION}"));
+        // not a Java header line: written only when -low/-high_base_qual_threshold moved a band, so that the
+        // VCF records it (and a run at the defaults keeps Java's header)
+        let bands = (crate::constants::low_base_qual_threshold(), crate::constants::illumina_high_base_qual());
+        if bands != (crate::constants::LOW_BASE_QUAL_THRESHOLD, crate::constants::ILLUMINA_HIGH_BASE_QUAL) {
+            lines.push(format!("##sageBaseQualThresholds=low:{},high:{}", bands.0, bands.1));
+        }
         let mut h = sorted_header_lines(lines).join("\n");
         h.push('\n');
         h.push_str("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");

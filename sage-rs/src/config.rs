@@ -176,6 +176,12 @@ impl Config {
                 crate::ultima::set_candidate_min_high_bq_threshold(v.parse()?);
             }
         }
+        // not Java options: see constants::set_base_qual_thresholds
+        let (low_qual, high_qual) = base_qual_thresholds(get("low_base_qual_threshold"), get("high_base_qual_threshold"))?;
+        set_base_qual_thresholds(low_qual, high_qual);
+        if (low_qual, high_qual) != (LOW_BASE_QUAL_THRESHOLD, ILLUMINA_HIGH_BASE_QUAL) {
+            eprintln!("base-quality bands: low at or below Q{low_qual}, high at or above Q{high_qual} (defaults Q{LOW_BASE_QUAL_THRESHOLD}, Q{ILLUMINA_HIGH_BASE_QUAL})");
+        }
         // not a Java option: see bamio::FILE_BUFFER_KB
         crate::bamio::FILE_BUFFER_KB.store(
             int("file_buffer_kb", crate::bamio::DEFAULT_FILE_BUFFER_KB)?.clamp(0, 1 << 20),
@@ -316,6 +322,51 @@ impl Config {
             return true;
         }
         self.include_mt && crate::types::is_mito(chr)
+    }
+}
+
+/// -low_base_qual_threshold and -high_base_qual_threshold (not Java options; Java's constants are the
+/// defaults). Qualities are Phred scores 0 to 93, and a base cannot be both low and high quality.
+pub fn base_qual_thresholds(low: Option<&String>, high: Option<&String>) -> Result<(u8, u8)> {
+    let parse = |name: &str, v: Option<&String>, default: u8| -> Result<u8> {
+        match v {
+            None => Ok(default),
+            Some(s) => match s.parse::<u8>() {
+                Ok(q) if q <= 93 => Ok(q),
+                _ => bail!("-{name} must be a base quality from 0 to 93, not {s}"),
+            },
+        }
+    };
+    let low = parse("low_base_qual_threshold", low, LOW_BASE_QUAL_THRESHOLD)?;
+    let high = parse("high_base_qual_threshold", high, ILLUMINA_HIGH_BASE_QUAL)?;
+    if low >= high {
+        bail!("-low_base_qual_threshold ({low}) must be below -high_base_qual_threshold ({high})");
+    }
+    Ok((low, high))
+}
+
+#[cfg(test)]
+mod base_qual_option_tests {
+    use super::base_qual_thresholds;
+
+    fn s(v: &str) -> String {
+        v.to_string()
+    }
+
+    #[test]
+    fn defaults_are_java_constants() {
+        assert_eq!(base_qual_thresholds(None, None).unwrap(), (26, 30));
+        assert_eq!(base_qual_thresholds(Some(&s("20")), Some(&s("24"))).unwrap(), (20, 24));
+        assert_eq!(base_qual_thresholds(None, Some(&s("27"))).unwrap(), (26, 27));
+    }
+
+    #[test]
+    fn rejects_bad_values() {
+        assert!(base_qual_thresholds(Some(&s("26")), Some(&s("26"))).is_err());
+        assert!(base_qual_thresholds(None, Some(&s("20"))).is_err());
+        assert!(base_qual_thresholds(Some(&s("-1")), None).is_err());
+        assert!(base_qual_thresholds(None, Some(&s("94"))).is_err());
+        assert!(base_qual_thresholds(Some(&s("Q20")), None).is_err());
     }
 }
 

@@ -29,12 +29,63 @@ pub const DEFAULT_MAP_QUAL_FIXED_PENALTY: i32 = 0;
 pub const DEFAULT_MAP_QUAL_IMPROPER_PAIR_PENALTY: i32 = 15;
 pub const DEFAULT_MAP_QUAL_READ_EVENTS_PENALTY: f64 = 7.0 * DEFAULT_READ_LENGTH as f64;
 
+/// BaseQualAdjustment.LOW_BASE_QUAL_THRESHOLD: the default of -low_base_qual_threshold
 pub const LOW_BASE_QUAL_THRESHOLD: u8 = 26;
 pub const BASE_QUAL_MINIMUM: u8 = 1;
+/// IlluminaBamUtils.ILLUMINA_HIGH_BASE_QUAL: the default of -high_base_qual_threshold
 pub const ILLUMINA_HIGH_BASE_QUAL: u8 = 30;
 
+// --- base-quality bands (constants in Java; options here, not in Java) ---
+//
+// Java fixes the bands for Illumina data at "low" = Q26 or below (a read with a low-quality base at the
+// variant cannot alone create a candidate) and "high" = Q30 or above (only high-quality bases count
+// towards minTumorSupport and, in high-depth mode, as evidence). Data whose qualities were rewritten by
+// BQSR can stop below Q30 altogether, and then no SNV passes. -low_base_qual_threshold and
+// -high_base_qual_threshold move the two bands; the defaults are Java's, so output is unchanged when
+// they are not given, with or without -java_compat.
+
+static LOW_BASE_QUAL: AtomicU8 = AtomicU8::new(LOW_BASE_QUAL_THRESHOLD);
+static HIGH_BASE_QUAL: AtomicU8 = AtomicU8::new(ILLUMINA_HIGH_BASE_QUAL);
+
+/// Sets the two bands for the run (from the command line, before any read is processed).
+pub fn set_base_qual_thresholds(low: u8, high: u8) {
+    LOW_BASE_QUAL.store(low, Ordering::Relaxed);
+    HIGH_BASE_QUAL.store(high, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests run in parallel threads, so a test sets the bands for its own thread only.
+    static TEST_BASE_QUAL: std::cell::Cell<Option<(u8, u8)>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub fn set_test_base_qual_thresholds(t: Option<(u8, u8)>) {
+    TEST_BASE_QUAL.with(|c| c.set(t));
+}
+
+/// Bases at or below this quality are low quality (Java: LOW_BASE_QUAL_THRESHOLD).
+#[inline]
+pub fn low_base_qual_threshold() -> u8 {
+    #[cfg(test)]
+    if let Some((low, _)) = TEST_BASE_QUAL.with(|c| c.get()) {
+        return low;
+    }
+    LOW_BASE_QUAL.load(Ordering::Relaxed)
+}
+
+/// Illumina bases at or above this quality are high quality (Java: ILLUMINA_HIGH_BASE_QUAL).
+#[inline]
+pub fn illumina_high_base_qual() -> u8 {
+    #[cfg(test)]
+    if let Some((_, high)) = TEST_BASE_QUAL.with(|c| c.get()) {
+        return high;
+    }
+    HIGH_BASE_QUAL.load(Ordering::Relaxed)
+}
+
 pub fn is_low_base_qual(q: u8) -> bool {
-    q <= LOW_BASE_QUAL_THRESHOLD
+    q <= low_base_qual_threshold()
 }
 pub fn is_uncertain_base_qual(q: u8) -> bool {
     q <= BASE_QUAL_MINIMUM
@@ -192,7 +243,7 @@ pub fn is_high_base_qual_byte(q: i8) -> bool {
     } else if is_ultima() {
         q >= crate::ultima::ULTIMA_MAX_QUAL
     } else {
-        q >= ILLUMINA_HIGH_BASE_QUAL as i8
+        q >= illumina_high_base_qual() as i8
     }
 }
 

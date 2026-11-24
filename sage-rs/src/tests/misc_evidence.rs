@@ -524,3 +524,35 @@ fn test_near_by_indels() {
     assert!(sage_variants[0].near_indel); // var1
     assert!(sage_variants[2].near_indel); // var2
 }
+
+// not in Java: -high_base_qual_threshold moves the band of bases that count towards minTumorSupport
+#[test]
+fn test_high_base_qual_threshold_option() {
+    let fixture = Fixture::new();
+    let qc = fixture.qc();
+
+    let position = 100;
+    let read_context = create_read_context(position, "A", "T");
+    let alt_read_bases = format!("{}{}{}", sub(REF_BASES_200, 0, 10), read_bases_str(&read_context), sub(REF_BASES_200, 0, 10));
+    let read_cigar = build_cigar_string(alt_read_bases.len());
+    let read_var_index = 10 + read_context.var_index;
+    let read_pos_start = position - read_var_index;
+
+    let mut alt_read = create_sam_record(&next_read_id(), read_pos_start, &alt_read_bases, &read_cigar);
+    alt_read.quals.iter_mut().for_each(|q| *q = 27);
+
+    // Java's band (Q30 and above): a Q27 read is strong support but not high quality
+    let mut read_context_counter = create_read_counter(&read_context, &fixture);
+    read_context_counter.process_read(&alt_read, 1, None, &qc);
+    assert_eq!(1, read_context_counter.counts.full);
+    assert_eq!(0, read_context_counter.high_qual_strong_support);
+
+    // with the band at Q27 the same read counts
+    set_test_base_qual_thresholds(Some((20, 27)));
+    let mut read_context_counter = create_read_counter(&read_context, &fixture);
+    alt_read.name = next_read_id();
+    read_context_counter.process_read(&alt_read, 1, None, &qc);
+    set_test_base_qual_thresholds(None);
+    assert_eq!(1, read_context_counter.counts.full);
+    assert_eq!(1, read_context_counter.high_qual_strong_support);
+}

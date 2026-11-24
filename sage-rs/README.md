@@ -59,6 +59,18 @@ and 15% more time); `-file_buffer_kb N` sets the buffer each alignment file hand
 (default 1024; 0 leaves htslib's default, which is about half as fast on a whole genome);
 `-perf_summary` reports where the wall-clock time went.
 
+**Base-quality bands** (options of the port, not of Java SAGE). Java fixes two quality bands for
+Illumina data: a base at Q26 or below is low quality (a read with such a base at the variant cannot
+create a candidate by itself), and only a base at Q30 or above is high quality (`minTumorSupport` needs
+3 strong-support reads of high quality, 2 at a hotspot; high-depth mode drops the others as evidence).
+On data whose base qualities were rewritten by recalibration and stop below Q30, no SNV passes.
+`-low_base_qual_threshold N` and `-high_base_qual_threshold N` move the bands (defaults 26 and 30; the
+low band must end below the high one). Not given, the output is unchanged, with or without
+`-java_compat`; given, the VCF header records the bands (`##sageBaseQualThresholds=low:N,high:N`) and
+the log says so. The `minAvgRawBaseQual` filter has its own Java options (`-min_avg_base_qual`, 25, and
+`-min_avg_base_qual_hotspot`, 18). Hartwig tuned its filters on data with the usual qualities, so calls
+made with moved bands need checking, for example against another sample of the same tumor.
+
 `cargo build --release --features mimalloc` links the mimalloc allocator: the same output for about 16%
 less CPU time, at several times the memory (11.6 GB against 1.7 GB on a whole genome). It only pays
 when storage is fast enough to keep every thread busy.

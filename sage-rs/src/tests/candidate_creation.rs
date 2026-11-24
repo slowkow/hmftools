@@ -5,7 +5,7 @@
 
 use super::util::*;
 use crate::candidate::{soft_clip_insert, CandidateFinder, ReadContextCandidate};
-use crate::constants::LOW_BASE_QUAL_THRESHOLD;
+use crate::constants::{set_test_base_qual_thresholds, LOW_BASE_QUAL_THRESHOLD};
 use crate::refseq::RefSequence;
 use crate::types::*;
 
@@ -183,4 +183,40 @@ fn test_illumina_low_qual_core_variants() {
     alt_contexts = ref_context_consumer.finish();
     assert_eq!(1, alt_contexts.len());
     assert_eq!(30, alt_contexts[0].ctx.variant.pos);
+}
+
+// not in Java: -low_base_qual_threshold moves the band of bases too low to create a candidate on their own
+#[test]
+fn test_low_base_qual_threshold_option() {
+    let ref_buffer = "A".repeat(10);
+    let ref_bases = format!("{}{}{}{}{}", ref_buffer, TEST_LEFT_FLANK, "ACGTACGCAGCTGTCA", TEST_RIGHT_FLANK, ref_buffer);
+    let ref_sequence = RefSequence::from_bases(0, ref_bases.as_bytes().to_vec());
+    let variant1 = SimpleVariant::new(25, b"C", b"A");
+    let variant2 = SimpleVariant::new(30, b"C", b"A");
+    let region = BaseRegion::new(0, 200);
+    let cfg = test_config();
+    let ref_data = empty_ref_data();
+    let read_bases =
+        format!("{}{}{}{}{}", &ref_bases[1..25], variant1.alt_str(), &ref_bases[26..30], variant2.alt_str(), &ref_bases[31..]);
+    let cigar = build_cigar_string(read_bases.len());
+    let mut read = build_sam_record(1, &cigar, &read_bases);
+    read.quals[24] = LOW_BASE_QUAL_THRESHOLD;
+    let mut read2 = build_sam_record(1, &cigar, &read_bases);
+    read2.quals[24] = LOW_BASE_QUAL_THRESHOLD;
+
+    let candidates_at = |low_high: Option<(u8, u8)>| -> Vec<i32> {
+        set_test_base_qual_thresholds(low_high);
+        let mut finder = CandidateFinder::new(&cfg, CHR_1, region, &ref_sequence, &[], &[], &ref_data);
+        finder.process_read(&read);
+        finder.process_read(&read2);
+        let mut positions: Vec<i32> = finder.finish().iter().map(|x| x.ctx.variant.pos).collect();
+        set_test_base_qual_thresholds(None);
+        positions.sort();
+        positions
+    };
+    // Java's band (Q26 and below): only the second SNV, whose base is not low quality, is a candidate
+    assert_eq!(candidates_at(None), [30]);
+    assert_eq!(candidates_at(Some((LOW_BASE_QUAL_THRESHOLD, 30))), [30]);
+    // with the band at Q20 and below the Q26 base no longer counts as low quality
+    assert_eq!(candidates_at(Some((20, 30))), [25, 30]);
 }

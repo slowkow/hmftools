@@ -547,6 +547,19 @@ runs above).
   metrics, SVG for base sequences, fragments, coordinates and gene tracks, 45 protein changes, and the
   amino acid track for 864 combinations of transcript, variant, protein change and view.
 
+- **Base-quality bands** (2026-11-24; options of the port, not of Java): `-low_base_qual_threshold`
+  and `-high_base_qual_threshold` replace the constants `LOW_BASE_QUAL_THRESHOLD` (26, candidate
+  creation: `IlluminaUtils.lowQualInVariantCore`) and `ILLUMINA_HIGH_BASE_QUAL` (30, the strong
+  high-quality support of `minTumorSupport` and the high-depth evidence test). Made for a whole-genome
+  tumor whose recalibrated qualities stop below Q30, where every SNV candidate failed
+  `minTumorSupport`. Checks, chr21 of the test pair: at the defaults,
+  corrected mode is identical to the previous build; Java mode is identical to Java for the somatic,
+  high-depth and germline runs; giving the defaults explicitly changes nothing; the same work
+  (706.3 against 706.9 billion instructions). With the high band at Q60, which no base reaches, 10
+  records pass instead of 245. Unit tests: both bands at candidate creation and in the support counts,
+  and the option checks (0 to 93, low below high). The VCF header gains `##sageBaseQualThresholds`
+  only when a band moves.
+
 ## 7. Not done
 
 Untested, with what each test needs. None of these is known to fail; they have not been run.
