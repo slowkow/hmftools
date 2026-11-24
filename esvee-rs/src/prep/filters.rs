@@ -41,7 +41,6 @@ pub const DEFAULT_READ_LENGTH: i32 = 151;
 pub const LINE_REF_BASE_REPEAT_FACTOR: f64 = 1.5;
 pub const LINE_REF_BASE_MAX_LENGTH: i32 = 20;
 pub const POLY_G_LENGTH: i32 = 16;
-pub const LOW_BASE_QUAL_THRESHOLD: u8 = 26;
 pub const REPEAT_MIN_COUNT: usize = 4;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -77,16 +76,20 @@ pub fn max_concordant_fragment_length(observed_max: i32) -> i32 {
     observed_max.max(MIN_UPPER_FRAGMENT_LENGTH)
 }
 
+/// BaseQualAdjustment.belowMinQual at the run's low band: the caller reads the threshold once
+/// (`common::base_qual::low_base_qual_threshold()`), outside its loop over a read's bases.
 #[inline]
-pub fn below_min_qual(q: u8) -> bool {
+pub fn below_qual_threshold(q: u8, threshold: u8) -> bool {
     // Java bytes are signed: a quality above 127 is negative there and so low. One comparison covers both
-    // ranges: 0..=26 wraps to 229..=255 and 128..=255 becomes 101..=228.
-    q.wrapping_sub(LOW_BASE_QUAL_THRESHOLD + 1) > 100
+    // ranges: at the default threshold 26, 0..=26 wraps to 229..=255 and 128..=255 becomes 101..=228.
+    // (The threshold is at most 93, see common::base_qual.)
+    q.wrapping_sub(threshold + 1) > 126 - threshold
 }
 
-#[inline]
-pub fn above_min_qual(q: u8) -> bool {
-    !below_min_qual(q)
+/// The bases of a read below the low band, in chunks that a byte count cannot overflow (vectorised).
+#[inline(always)]
+fn count_below_qual(quals: &[u8], t: u8) -> usize {
+    quals.chunks(128).map(|c| c.iter().map(|&q| below_qual_threshold(q, t) as u8).sum::<u8>() as usize).sum()
 }
 
 /// ReadFilterConfig
@@ -193,7 +196,14 @@ pub fn filter_low_qual_read_perc(rec: &mut bam::Record, config: &ReadFilterConfi
         // With the threshold above half the read only one of the two counts can reach it, so the answer is
         // whether the low-quality bases do, and without bases to rewrite the order of the bases is of no
         // account. This is the path of nearly every read.
-        let low_qual_count: usize = rec.qual().chunks(128).map(|c| c.iter().map(|&q| below_min_qual(q) as u8).sum::<u8>() as usize).sum();
+        // the default gets its own copy with the threshold known when compiling: 0.5% fewer instructions
+        // in prep (small pair, one thread) than with the threshold in a register
+        let t = crate::common::base_qual::low_base_qual_threshold();
+        let low_qual_count = if t == crate::common::base_qual::DEFAULT_LOW_BASE_QUAL_THRESHOLD {
+            count_below_qual(rec.qual(), crate::common::base_qual::DEFAULT_LOW_BASE_QUAL_THRESHOLD)
+        } else {
+            count_below_qual(rec.qual(), t)
+        };
         return low_qual_count >= threshold;
     }
     let mut low_qual_count = 0usize;
@@ -201,8 +211,9 @@ pub fn filter_low_qual_read_perc(rec: &mut bam::Record, config: &ReadFilterConfi
     let mut checked = base_length;
     {
         let quals = rec.qual();
+        let t = crate::common::base_qual::low_base_qual_threshold();
         for (i, &q) in quals.iter().enumerate().take(base_length) {
-            if below_min_qual(q) {
+            if below_qual_threshold(q, t) {
                 low_qual_count += 1;
                 if low_qual_count >= threshold {
                     result = true;
@@ -497,7 +508,8 @@ pub fn check_filters(read: &mut PrepRead, config: &ReadFilterConfig) {
         let sc_range_start = if use_left_clip { 0 } else { n - sc_right };
         let sc_range_end = if use_left_clip { sc_left } else { n };
         let sc_length = if use_left_clip { sc_left } else { sc_right };
-        let above_qual = quals[sc_range_start as usize..sc_range_end as usize].iter().filter(|q| above_min_qual(**q)).count() as i32;
+        let t = crate::common::base_qual::low_base_qual_threshold();
+        let above_qual = quals[sc_range_start as usize..sc_range_end as usize].iter().filter(|&&q| !below_qual_threshold(q, t)).count() as i32;
         let mut add = 0;
         if !read.has_line_tail && (above_qual as f64 / sc_length as f64) < config.min_soft_clip_high_qual_perc {
             add |= F_SOFT_CLIP_BASE_QUAL;

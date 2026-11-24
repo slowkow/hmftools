@@ -14,7 +14,12 @@ pub const DNA_BASE_BYTES: [u8; 5] = [65, 67, 71, 84, 78];
 pub const DNA_BASE_COUNT: usize = 5;
 pub const NO_BASE: u8 = 0;
 pub const DNA_N_BYTE: u8 = b'N';
-pub const ABOVE_LOW_BASE_QUAL_THRESHOLD: u8 = LOW_BASE_QUAL_THRESHOLD + 1;
+/// The quality given to bases that must count as not low quality (reference bases, for one): one above
+/// the low band (Java: LOW_BASE_QUAL_THRESHOLD + 1).
+#[inline]
+pub fn above_low_base_qual_threshold() -> u8 {
+    crate::common::base_qual::low_base_qual_threshold() + 1
+}
 
 /// Nucleotides.swapDnaBase
 #[inline]
@@ -144,7 +149,7 @@ pub fn is_supplementary_only(assembly: &JunctionAssembly) -> bool {
 }
 
 pub fn create_base_quals_above_min_threshold(length: usize) -> Vec<u8> {
-    vec![ABOVE_LOW_BASE_QUAL_THRESHOLD; length]
+    vec![above_low_base_qual_threshold(); length]
 }
 
 pub fn extract_insert_sequence(first: &JunctionAssembly, first_reversed: bool, second: &JunctionAssembly, second_reversed: bool, insert_length: i32) -> String {

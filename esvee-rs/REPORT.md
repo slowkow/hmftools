@@ -317,6 +317,28 @@ normal 96 GB).
   (11 not in the reference, 12 missing). Java's somatic call set thus depends on the identity hashes,
   which differ in every JVM run (section 3). Only one such run was made on this input.
 
+### 2.7 Base-quality bands (options of the port, 2026-11-24)
+
+`-low_base_qual_threshold` and `-high_base_qual_threshold` replace the constants
+`BaseQualAdjustment.LOW_BASE_QUAL_THRESHOLD` (26; prep's low-quality read and soft-clip filters and
+junction support, assembly's mismatch and consensus tests and the qualities it gives reference bases)
+and `ILLUMINA_HIGH_BASE_QUAL` (30), for data whose recalibrated qualities stop below Q30: on such a
+whole-genome tumor the tumor supported about a tenth of the candidate SVs and the somatic VCF was empty.
+The values are kept in `common::base_qual`, set once from the command line. Checks on the small pair:
+
+- Java mode (`ESVEE_JAVA_COMPAT=1`) at the defaults: every output identical to the Java reference
+  (`small_ref`).
+- Corrected mode at the defaults: every output identical to the previous build; giving the defaults
+  explicitly changes nothing.
+- With the low band at Q50, above every base: tumor junctions fall from 18,064 to 382, and no SV is
+  called.
+- Work: prep at one thread 576.2 against 575.7 billion instructions. The low-quality count of every
+  read keeps a copy with the default threshold fixed at compile time; without it prep ran 0.5% more
+  instructions.
+- Unit tests: prep's signed-byte quality test at any threshold, a read of Q24 bases dropped at the
+  default and kept with the low band at Q20, the assembly bands and reference-base qualities, the
+  option checks (0 to 93, low below high) and the one-call command lines.
+
 ## 3. Determinism of Java
 
 A comparison needs a Java output that is the same on every run. Measured on the small pair:

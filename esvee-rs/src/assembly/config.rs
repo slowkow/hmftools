@@ -134,6 +134,8 @@ const ITEMS: &[&str] = &[
     "tumor", "tumor_bam", "reference", "reference_bam", "junction_file", "esvee_prep_dir", "sequencing_type", "write_types", "ref_genome", "ref_genome_version",
     "decoy_genome", "saga_fasta", "bwa_lib", "log_read_ids", "specific_junctions", "perf_log_time", "asm_ref_base_write_max", "phase_process_limit",
     "asm_map_qual_threshold", "disc_rate_increment", "purple_dir", "bamtool", "specific_chr", "specific_regions", "output_dir", "output_id", "log_level", "threads",
+    // not Java options: see common::base_qual
+    "low_base_qual_threshold", "high_base_qual_threshold",
 ];
 
 /// The options of the step and whether each is a flag (for the tests of the combined mode).
@@ -218,6 +220,7 @@ fn load_chromosome_lengths(v38: bool) -> Vec<(String, i32)> {
 impl AssemblyConfig {
     pub fn from_args(argv: &[String]) -> Result<AssemblyConfig> {
         let args = Args::parse(argv, FLAGS, ITEMS)?;
+        crate::common::base_qual::set_from_args(&args)?;
         if args.has_flag("log_debug") || matches!(args.value("log_level"), Some("DEBUG") | Some("TRACE")) {
             crate::common::log::DEBUG.store(true, std::sync::atomic::Ordering::Relaxed);
         }

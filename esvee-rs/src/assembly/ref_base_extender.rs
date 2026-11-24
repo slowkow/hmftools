@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use crate::assembly::assembly_utils::{bases_match_qual, ABOVE_LOW_BASE_QUAL_THRESHOLD};
+use crate::assembly::assembly_utils::{above_low_base_qual_threshold, bases_match_qual};
 use crate::assembly::common_utils::{above_min_qual, is_duplication_fragment};
 use crate::assembly::constants::*;
 use crate::assembly::globals::has_paired_reads;
@@ -390,7 +390,11 @@ fn can_add_ref_base_read(
         }
         let mut ref_base_qual = assembly_base_quals[ai];
         if ref_base_qual == 0 {
-            ref_base_qual = if require_qual_matches { ABOVE_LOW_BASE_QUAL_THRESHOLD } else { LOW_BASE_QUAL_THRESHOLD };
+            ref_base_qual = if require_qual_matches {
+                above_low_base_qual_threshold()
+            } else {
+                crate::common::base_qual::low_base_qual_threshold()
+            };
         }
         if !bases_match_qual(read_bases[i as usize], assembly_bases[ai], read_quals[i as usize], ref_base_qual) {
             mismatch_count += 1;

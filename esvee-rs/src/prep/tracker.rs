@@ -244,11 +244,12 @@ fn bases_meet_exact_support(junc_read: &PrepRead, read: &PrepRead, mut junc_read
     let junc_read_index_max = junc_read.bases.len() as i32 - 1;
     let (read_quals, junc_quals) = (read.base_qualities(), junc_read.base_qualities());
     let step = if search_down { -1 } else { 1 };
+    let t = crate::common::base_qual::low_base_qual_threshold();
     while junc_read_index >= 0 && read_index >= 0 && junc_read_index <= junc_read_index_max && read_index <= read_index_max {
         bases_compared += 1;
         if read.bases[read_index as usize] == junc_read.bases[junc_read_index as usize] {
             base_matches += 1;
-        } else if !below_min_qual(read_quals[read_index as usize]) && !below_min_qual(junc_quals[junc_read_index as usize]) {
+        } else if !below_qual_threshold(read_quals[read_index as usize], t) && !below_qual_threshold(junc_quals[junc_read_index as usize], t) {
             high_qual_mismatches += 1;
             if high_qual_mismatches > MAX_HIGH_QUAL_BASE_MISMATCHES {
                 return false;
@@ -825,7 +826,8 @@ impl JunctionTracker {
             if range_end - range_start + 1 < max_high_qual_bases {
                 continue;
             }
-            let above = quals[range_start as usize..range_end as usize].iter().filter(|q| above_min_qual(**q)).count() as i32;
+            let t = crate::common::base_qual::low_base_qual_threshold();
+            let above = quals[range_start as usize..range_end as usize].iter().filter(|&&q| !below_qual_threshold(q, t)).count() as i32;
             if above > max_high_qual_bases {
                 top = Some(rid);
                 max_high_qual_bases = above;

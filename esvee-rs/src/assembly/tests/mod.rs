@@ -26,6 +26,7 @@ use crate::assembly::types::{LinkType, SupportType};
 mod alignment_test;
 mod assembly_links_test;
 mod assembly_stats_test;
+mod base_qual_bands_test;
 mod breakend_builder_saga_test;
 mod homology_test;
 mod indels_test;

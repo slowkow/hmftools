@@ -25,6 +25,9 @@ const ITEMS: &[&str] = &[
     "bam_validation",
     "min_align_bases",
     "min_junction_frags",
+    // not Java options: see common::base_qual
+    "low_base_qual_threshold",
+    "high_base_qual_threshold",
     "bamtool",
     "threads",
     "output_dir",
@@ -207,6 +210,7 @@ pub fn chromosome_length(v38: bool, index: usize) -> i32 {
 impl PrepConfig {
     pub fn parse(argv: &[String]) -> Result<PrepConfig> {
         let args = Args::parse(argv, FLAGS, ITEMS)?;
+        crate::common::base_qual::set_from_args(&args)?;
         if args.has_flag("log_debug") || args.value("log_level") == Some("DEBUG") || args.value("log_level") == Some("TRACE") {
             crate::common::log::DEBUG.store(true, std::sync::atomic::Ordering::Relaxed);
         }

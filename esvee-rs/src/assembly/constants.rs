@@ -10,7 +10,8 @@ pub const LINE_BASE_T: u8 = b'T';
 
 // BaseQualAdjustment
 pub const BASE_QUAL_MINIMUM: u8 = 1;
-pub const LOW_BASE_QUAL_THRESHOLD: u8 = 26;
+/// the default; a run reads its own value from common::base_qual (-low_base_qual_threshold)
+pub const LOW_BASE_QUAL_THRESHOLD: u8 = crate::common::base_qual::DEFAULT_LOW_BASE_QUAL_THRESHOLD;
 
 // SvConstants
 pub const ASSEMBLY_INFO_DELIM: &str = "_";

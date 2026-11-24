@@ -16,13 +16,12 @@ pub const SBX_PRIME_POSITION_RANGE_THRESHOLD: i32 = 6;
 pub const SBX_MEDIUM_QUAL_DESYNC_COUNT: i32 = 150;
 pub const UNPAIRED_READ_PROXIMATE_JUNCTION_DISTANCE: i32 = 100;
 
-const ILLUMINA_HIGH_BASE_QUAL: u8 = 30;
 const ULTIMA_MAX_QUAL: u8 = 35;
 const SBX_MEDIUM_QUAL_LOWER: u8 = 27;
 const SBX_MEDIUM_QUAL_UPPER: u8 = 29;
 
 pub fn illumina_is_high_base_qual(qual: u8) -> bool {
-    qual >= ILLUMINA_HIGH_BASE_QUAL
+    qual >= crate::common::base_qual::high_base_qual_threshold()
 }
 pub fn ultima_is_high_base_qual(qual: u8) -> bool {
     qual >= ULTIMA_MAX_QUAL

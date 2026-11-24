@@ -89,11 +89,11 @@ impl std::fmt::Display for IndelCoords {
 // BaseQualAdjustment and the per-technology high / medium quality tests
 #[inline]
 pub fn above_min_qual(qual: u8) -> bool {
-    qual > LOW_BASE_QUAL_THRESHOLD
+    qual > crate::common::base_qual::low_base_qual_threshold()
 }
 #[inline]
 pub fn below_min_qual(qual: u8) -> bool {
-    qual <= LOW_BASE_QUAL_THRESHOLD
+    qual <= crate::common::base_qual::low_base_qual_threshold()
 }
 #[inline]
 pub fn is_uncertain_base_qual(qual: u8) -> bool {

@@ -62,14 +62,21 @@ struct Opt {
     default: Option<&'static str>,
     desc: &'static str,
     steps: u8,
+    /// an option of EsveeApplication (false: added by this port)
+    java: bool,
 }
 
 const fn opt(name: &'static str, kind: Kind, default: Option<&'static str>, desc: &'static str, steps: u8) -> Opt {
-    Opt { name, kind, required: false, default, desc, steps }
+    Opt { name, kind, required: false, default, desc, steps, java: true }
 }
 
 const fn required(name: &'static str, kind: Kind, desc: &'static str, steps: u8) -> Opt {
-    Opt { name, kind, required: true, default: None, desc, steps }
+    Opt { name, kind, required: true, default: None, desc, steps, java: true }
+}
+
+/// an option that Java does not have
+const fn port_opt(name: &'static str, kind: Kind, default: Option<&'static str>, desc: &'static str, steps: u8) -> Opt {
+    Opt { name, kind, required: false, default, desc, steps, java: false }
 }
 
 use Kind::*;
@@ -130,6 +137,9 @@ static OPTIONS: &[Opt] = &[
     opt("disc_rate_increment", Decimal, Some("0.01"), "Discordant rate increment", ASSEMBLY),
     opt("purple_dir", Path, None, "Purple data directory for event visualisation", ASSEMBLY),
     opt("run_assembly_vis", Flag, None, "Run visualiser on specific junctions", ASSEMBLY),
+    // not Java options (see common::base_qual)
+    port_opt("low_base_qual_threshold", Integer, Some("26"), "Bases at or below this quality are low quality", PREP | ASSEMBLY),
+    port_opt("high_base_qual_threshold", Integer, Some("30"), "Illumina bases at or above this quality are high quality", PREP | ASSEMBLY),
     // DepthConfig
     opt("input_vcf", Path, None, "Input VCF", DEPTH | CALLER),
     opt("vcf_tag_prefix", Str, None, "VCF tag prefix for testing & comparison", DEPTH),
@@ -339,28 +349,39 @@ impl Options {
     }
 }
 
-/// ConfigBuilder.printItems: the options, one line each, sorted
+/// ConfigBuilder.printItems: the options, one line each, sorted; then those that Java does not have
 fn item_lines() -> Vec<String> {
-    let mut lines: Vec<String> = OPTIONS
-        .iter()
-        .map(|o| {
-            let mut s = format!(" -{}:", o.name);
-            if o.kind != Kind::Str {
-                s.push_str(&format!(" type({})", o.kind.name()));
-            }
-            if let Some(d) = o.default.filter(|_| o.kind != Kind::Flag) {
-                s.push_str(&format!(" default({d})"));
-            }
-            if o.required {
-                s.push_str(" REQUIRED");
-            }
-            s.push_str(&format!(" desc({})", o.desc));
-            s
-        })
-        .collect();
+    let mut lines = java_item_lines();
+    let mut port: Vec<String> = OPTIONS.iter().filter(|o| !o.java).map(item_line).collect();
+    if !port.is_empty() {
+        port.sort();
+        lines.push("options of this port, not of Java ESVEE:".to_string());
+        lines.extend(port);
+    }
+    lines
+}
+
+/// ConfigBuilder.printItems for the options of EsveeApplication
+fn java_item_lines() -> Vec<String> {
+    let mut lines: Vec<String> = OPTIONS.iter().filter(|o| o.java).map(item_line).collect();
     lines.sort();
     lines.insert(0, "registered config items:".to_string());
     lines
+}
+
+fn item_line(o: &Opt) -> String {
+    let mut s = format!(" -{}:", o.name);
+    if o.kind != Kind::Str {
+        s.push_str(&format!(" type({})", o.kind.name()));
+    }
+    if let Some(d) = o.default.filter(|_| o.kind != Kind::Flag) {
+        s.push_str(&format!(" default({d})"));
+    }
+    if o.required {
+        s.push_str(" REQUIRED");
+    }
+    s.push_str(&format!(" desc({})", o.desc));
+    s
 }
 
 /// What Java prints for `-version`; `-help` adds the options.
@@ -499,11 +520,35 @@ mod tests {
         let expected = include_str!("testdata/esvee_application_help.txt");
         let mut text = version_line();
         text.push('\n');
-        for line in item_lines() {
+        for line in java_item_lines() {
             text.push_str(&line);
             text.push('\n');
         }
         assert_eq!(text, expected);
+    }
+
+    #[test]
+    fn port_options_are_listed_after_java_options() {
+        let lines = item_lines();
+        let at = lines.iter().position(|l| l == "options of this port, not of Java ESVEE:").unwrap();
+        assert_eq!(lines[..at], java_item_lines()[..]);
+        assert_eq!(
+            lines[at + 1..],
+            [
+                " -high_base_qual_threshold: type(INTEGER) default(30) desc(Illumina bases at or above this quality are high quality)",
+                " -low_base_qual_threshold: type(INTEGER) default(26) desc(Bases at or below this quality are low quality)",
+            ]
+        );
+        // given only when set, and then to prep and assembly
+        let mut a = oncoanalyser_args(true);
+        assert!(arg(&parse(&a).step_args(PREP), "low_base_qual_threshold").is_none());
+        a.extend(strings(&["-low_base_qual_threshold", "20", "-high_base_qual_threshold", "24"]));
+        let o = parse(&a);
+        for step in [PREP, ASSEMBLY] {
+            assert_eq!(arg(&o.step_args(step), "low_base_qual_threshold"), Some("20"));
+            assert_eq!(arg(&o.step_args(step), "high_base_qual_threshold"), Some("24"));
+        }
+        assert!(arg(&o.step_args(CALLER), "low_base_qual_threshold").is_none());
     }
 
     #[test]

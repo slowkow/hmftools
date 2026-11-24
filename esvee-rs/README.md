@@ -155,6 +155,18 @@ corrected path by default; section 4.5 says what each correction does and what i
 - The corrected output cannot be checked against Java. It is checked by unit tests of the corrected
   paths, by being the same at any thread count, and by measuring what each correction changes.
 
+## Base-quality bands (options of the port, not of Java)
+
+Java ESVEE fixes two quality bands: a base at Q26 or below is low quality (prep drops a read with more
+than half its bases low, and marks a soft clip with 5 or more low bases; assembly lets low bases
+mismatch), and an Illumina base at Q30 or above is high quality. On data whose base qualities were
+rewritten by recalibration and stop below Q30, most of a tumor's bases can be low, and its junctions
+then lose their support. `-low_base_qual_threshold N` and `-high_base_qual_threshold N` move the bands
+for prep and assembly (defaults 26 and 30; the low band must end below the high one); in the one-call
+mode they are given to both steps, and `-help` lists them after Java's options. Not given, the output is
+unchanged, with or without `-java_compat`; given, the log says so. Hartwig tuned the later filters on
+data with the usual qualities, so calls made with moved bands need checking.
+
 ## What "the same" means
 
 All of this section is about the port run with `-java_compat`.

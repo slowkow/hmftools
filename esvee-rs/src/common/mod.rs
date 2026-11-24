@@ -1,6 +1,7 @@
 //! Code shared by the four steps.
 
 pub mod args;
+pub mod base_qual;
 #[allow(dead_code)]
 pub mod compat;
 pub mod faidx;
