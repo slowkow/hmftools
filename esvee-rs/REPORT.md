@@ -569,7 +569,8 @@ the port run with `-java_compat`.
     samples): trimming stays on, and every name is cut to `lane:tile:x:y` whatever its run, so reads of
     different flowcells can get the same id (patterned flowcells reuse well positions).
 
-  Reproduced as written. **Corrected by default** (4.5). Prep has a trimmer of its own per partition
+  Reproduced as written. **Corrected by default** (4.5); on that pair every assembly output is then
+  identical at 16, 16 and 1 threads (Linux). Prep has a trimmer of its own per partition
   (`prep/JunctionTracker.java:130`), enabled only when prep is given one BAM, with the same collision
   of names from runs with prefixes of one length; not corrected (oncoanalyser gives prep both BAMs).
 - **A30. Decoy rows in completion order.** Decoy matches (`AlignmentChecker`, called at
@@ -829,7 +830,7 @@ still differ in the order of records that tie on position and strand.
 | Id | Corrected behaviour | Effect, small pair (raw VCF gone / new / changed) |
 |---|---|---|
 | A3 | the log line shows the total over all phase groups | log only |
-| A5 | the prefix is that of the first record of the tumor BAM, set before any thread reads; only names with that prefix are trimmed, others are kept whole, and trimming never switches off | none (every output identical). Whole genome, local pair (five runs, prefixes of one length): raw VCF 9 / 10 / 2,216 (values other than ids), somatic VCF unchanged (3,140 records), germline 3 gone, 4 new. A pair from two runs with prefixes of different lengths: before the correction the outputs differed between two 16-thread runs and between 1, 4 and 16 threads (A5) |
+| A5 | the prefix is that of the first record of the tumor BAM, set before any thread reads; only names with that prefix are trimmed, others are kept whole, and trimming never switches off | none (every output identical). Whole genome, local pair (five runs, prefixes of one length): raw VCF 9 / 10 / 2,216 (values other than ids), somatic VCF unchanged (3,140 records), germline 3 gone, 4 new. A pair from two runs with prefixes of different lengths: the outputs, which differed between two 16-thread runs and between 1, 4 and 16 threads (A5), are identical at 16, 16 and 1 threads |
 | A4 | junction groups with equal bounds on different chromosomes stay distinct | none on four inputs |
 | A6 | the null test is on the column that is read | none (prep writes both columns) |
 | A9 | the merged region gets the other region's soft-clip total once (intent uncertain on the weight, kept at 1) | none on four inputs |
