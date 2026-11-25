@@ -4,7 +4,7 @@ A Rust port of [ESVEE](../esvee/README.md) 2.1, the structural variant caller. O
 steps of the Java tool (prep, assembly, depth annotation, calling); each step takes the command line of
 the Java application of that name and writes the same files.
 
-By default the port corrects 63 faults found in the Java code while porting, so its output differs
+By default the port corrects 64 faults found in the Java code while porting, so its output differs
 from Java's where those faults matter. With `-java_compat` it behaves as Java does and its output is
 identical to Java's; that is how the port was verified. See "Corrections and `-java_compat`" below.
 
@@ -143,7 +143,7 @@ run to run); reference genome 37 has not been run on real data in any step.
 
 ## Corrections and `-java_compat`
 
-The faults found in Java ESVEE are numbered in REPORT.md, section 4. For 63 of them the port takes a
+The faults found in Java ESVEE are numbered in REPORT.md, section 4. For 64 of them the port takes a
 corrected path by default; section 4.5 says what each correction does and what it changes.
 
 - `-java_compat` on any step (or `ESVEE_JAVA_COMPAT=1` in the environment) gives Java's behaviour for

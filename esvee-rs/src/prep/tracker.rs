@@ -474,7 +474,7 @@ impl JunctionTracker {
     pub fn assign_fragments(&mut self, depth: &DepthTracker) {
         self.assign_junction_fragments_and_support();
         self.filter_junctions(depth);
-        self.find_discordant_groups();
+        self.find_discordant_groups(depth);
         if self.saga.is_some() {
             self.match_junctions_to_saga();
         }
@@ -1165,13 +1165,31 @@ impl JunctionTracker {
         result
     }
 
-    pub fn find_discordant_groups(&mut self) {
+    /// findDiscordantGroups. Java (finding P13) makes the discordant junctions after `filter_junctions`, so
+    /// they never get a depth and the allele-fraction filter that the README and `junctionAboveMinAF` set for
+    /// them (1%) is never applied. Corrected: a group too small for the depth at its junction makes no
+    /// junction, and the junctions inside the partition get their depth.
+    pub fn find_discordant_groups(&mut self, depth: &DepthTracker) {
         if !self.cfg.filter.sequencing.has_paired_reads() {
             return;
         }
+        let java_p13 = compat::java("P13");
         let candidates = std::mem::take(&mut self.candidate_discordant_groups);
         let first = self.jstore.len();
-        self.discordant_finder.form_discordant_junctions(&candidates, &mut self.groups, &mut self.reads, &mut self.jstore);
+        self.discordant_finder.form_discordant_junctions(
+            &candidates,
+            &mut self.groups,
+            &mut self.reads,
+            &mut self.jstore,
+            (!java_p13).then_some(depth),
+        );
+        if !java_p13 {
+            for j in &mut self.jstore[first..] {
+                if j.outside_chr.is_none() && self.region.contains_position(j.position) {
+                    j.depth = depth.calc_depth(j.position) as i32;
+                }
+            }
+        }
         if candidates.len() > 2000 && self.jstore.len() > first {
             crate::debug!(
                 "region({}) found {} discordant group junctions from {} read groups",
@@ -1190,7 +1208,7 @@ impl JunctionTracker {
                 other_chr
             );
         }
-        let java_p8 = crate::common::compat::java("P8");
+        let java_p8 = compat::java("P8");
         for jid in first..self.jstore.len() {
             let j = &self.jstore[jid];
             if let (false, Some(chr)) = (java_p8, j.outside_chr) {

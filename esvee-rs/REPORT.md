@@ -24,7 +24,7 @@ port was made; they are outside this repository, because the outputs are derived
   count, and Java's assembly output changes from run to run even at one thread (section 3). The
   reference is Java at one thread with every identity hash made equal (`-XX:hashCode=2`). The port
   gives that result at any thread count.
-- 84 findings about the Java code are recorded in section 4: 12 in prep, 36 in assembly, 19 in depth,
+- 85 findings about the Java code are recorded in section 4: 13 in prep, 36 in assembly, 19 in depth,
   17 in the caller. The port reproduces those that change the output.
 - On the small input at 8 threads the Rust chain takes 24 s against Java's 95 s, with a peak of 1.9 GB
   against 44 GB (section 5).
@@ -461,6 +461,14 @@ the port run with `-java_compat`.
   partition that switched off also hands whole names to the spanning-read cache, whose own trimmer may
   still be cutting. Observed on the tumor of the small pair (four runs, prefixes of one length).
   Reproduced. **Corrected by default** (4.5).
+- **P13. `prep/JunctionTracker.java:228-234`** `assignFragments` sets each junction's depth and applies
+  the allele-fraction filter in `filterJunctions` (line 752), and only then makes the discordant-group
+  junctions (`findDiscordantGroups`). Those never get a depth (their `Depth` column is 0), and the
+  filter that the README sets for them ("Sites with an AF below 0.5% (1% for discordant ...) are
+  filtered") and that `junctionAboveMinAF` (line 842) writes out, with its own ratio and support count
+  for discordant junctions, never runs. The comment at line 380 ("no obvious need to re-check
+  support") is about the fragment counts, which the group's own rules have tested. Reproduced.
+  **Corrected by default** (4.5).
 - **P10. `prep/ReadFilters.java:107-113`** A supplementary read with fewer than 40 aligned bases is
   always dropped: the score function returns -1 for it, and the last line tests
   `-1 < MIN_SUPP_CALC_ALIGNMENT_SCORE`. The test at line 104 (`alignedLength < 40 && hasLowMapQual`)
@@ -809,7 +817,7 @@ the port run with `-java_compat`.
 
 ### 4.5 Corrections
 
-63 of the findings above are corrected by default. Each corrected place in the code asks
+64 of the findings above are corrected by default. Each corrected place in the code asks
 `compat::java("<id>")` (`src/common/compat.rs`) and keeps the Java path beside the corrected one.
 
 - `-java_compat`, or `ESVEE_JAVA_COMPAT=1` in the environment: Java behaviour for every finding.
@@ -831,6 +839,7 @@ the alternatives are given. These in particular should be confirmed with the ESV
 | P6 | unmapped candidate reads are claimed | 4 tumor and 1 normal record new |
 | P8 | a remote discordant junction outside the finding partition is written under its own chromosome, in position order | 8 junction rows move; the file is in order |
 | P12 | one prefix for the whole run, that of the BAM's first record, in every partition and in the spanning-read cache; only names with that prefix are cut, others are kept whole, and trimming never switches off | tumor/normal: none (prep is given two BAMs and does not trim). Tumor-only on the small pair's tumor (four runs, prefixes of one length): prep BAM 52 records gone, 22 new; 1 junction new and 398 changed (89 in `OtherSupportFrags`, 59 of them lower, 314 in `InitialReadId`); VCFs: 2 raw and unfiltered records and 1 somatic record change in segment values (`SEGRL`, `SEGSCO`, `SEGMAPQ`), no site gone or new, PASS counts unchanged (115 unfiltered, 83 somatic); output identical at 8 and 1 threads |
+| P13 | a discordant group whose supporting fragments are fewer than 1% of the depth at its junction (where the depth is 100 or more) makes no junction, at the group or at its remote regions; the support is counted as `junctionAboveMinAF` counts it for a discordant junction. The junctions of a group get the depth at their position when it lies in the partition | small pair: 7 junction rows gone, 252 get a depth (were 0); prep BAMs 8 tumor and 4 normal records gone; assembly and VCFs unchanged. Exome pair (deeper): 168 junction rows gone; unfiltered VCF 11 records gone, 5 new, 8 changed, PASS 83 to 77; germline PASS 720 to 718 (6 gone, 4 new); somatic unchanged (40 records, 9 PASS). Whole genome, local pair: 226 junction rows gone, prep BAMs 218 tumor and 315 normal records gone, unfiltered VCF one record gone (not PASS), somatic and germline VCFs unchanged; prep time and memory unchanged |
 | P10 | **intent uncertain.** The repeat-trimmed score is calculated for a supplementary of any aligned length, then Java's three rules apply as written. Alternatives: keep every supplementary under 40 aligned bases with mapping quality 10 or more (the README's wording; about 110 more records, the same new sites), or Java's behaviour is meant and the first rule is dead code | junction rows 17,951 to 18,064 (7 sites gone, 120 new); about 5,100 records new in each BAM; final VCFs: unfiltered 2,425 to 2,441 (33 gone, 49 new), somatic 31 to 33, germline 1,516 to 1,524 |
 | A17 (prep site) | every base that is not A, C, G, T or N becomes N, also past the early exit | none (no such base in a kept read) |
 
@@ -927,9 +936,8 @@ On the standard runs (small pair, whole genome) no caller correction changes a l
 
 **Found while correcting, not numbered, behaviour unchanged**
 
-- Prep: discordant junctions never get a depth (all 267 such rows of the small pair have depth 0,
-  because depth is set before they are made); partition names do not fit the partitions under
-  `-specific_regions`.
+- Prep: partition names do not fit the partitions under `-specific_regions`. (That discordant
+  junctions never get a depth, noted here before, is part of finding P13.)
 - Depth: the unmapped-region step treats an allele fraction of 0/0 as high.
 - Caller: the filters go over every genotype of the record, so a tumor-only run on a two-sample VCF
   also uses the normal's counts (from reading the code, not measured). Whether the PON readers lose
@@ -939,7 +947,7 @@ On the standard runs (small pair, whole genome) no caller correction changes a l
 
 **Tests of the corrections**
 
-Unit tests cover 48 of the 63 corrections. Without one: P2, A3, A7, A14, A16,
+Unit tests cover 49 of the 64 corrections. Without one: P2, A3, A7, A14, A16,
 A20, A21, A23, A24, A25, A26, A27, A34 (each needs a built assembly, a drawing or a run), C9, C10
 (log text). Those are covered by the runs only.
 

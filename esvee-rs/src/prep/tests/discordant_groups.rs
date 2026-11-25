@@ -35,7 +35,7 @@ impl Store {
     }
     fn form(&mut self, finder: &DiscordantGroups, candidates: &[GroupId]) -> Vec<JunctionData> {
         let mut junctions = Vec::new();
-        finder.form_discordant_junctions(candidates, &mut self.groups, &mut self.reads, &mut junctions);
+        finder.form_discordant_junctions(candidates, &mut self.groups, &mut self.reads, &mut junctions, None);
         junctions
     }
 }

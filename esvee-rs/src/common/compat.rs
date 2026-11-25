@@ -52,12 +52,12 @@ pub fn java_all() -> bool {
     MODE.load(Ordering::Relaxed) == JAVA
 }
 
-/// The findings per step: P1-P12, A1-A36, D1-D19, C1-C17.
+/// The findings per step: P1-P13, A1-A36, D1-D19, C1-C17.
 fn valid_id(id: &str) -> bool {
     let Some(step) = id.chars().next() else { return false };
     let Ok(n) = id[1..].parse::<u32>() else { return false };
     let max = match step {
-        'P' => 12,
+        'P' => 13,
         'A' => 36,
         'D' => 19,
         'C' => 17,

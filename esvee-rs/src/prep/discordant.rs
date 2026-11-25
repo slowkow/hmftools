@@ -1,6 +1,7 @@
 //! Discordant read groups (DiscordantGroups, DiscordantGroup, DiscordantRemoteRegion) and the counts of
 //! discordant fragment types (DiscordantStats).
 
+use super::depth::DepthTracker;
 use super::filters::*;
 use super::hotspot::KnownHotspot;
 use super::rec::*;
@@ -13,6 +14,10 @@ pub const DISCORDANT_GROUP_MAX_LOCAL_LENGTH: i32 = 1_000_000;
 pub const DISCORDANT_GROUP_MIN_MAP_QUAL: i32 = 40;
 pub const DISCORDANT_GROUP_MIN_ALIGN_SCORE: i32 = 75;
 pub const REMOTE_REGION_MERGE_MARGIN: i32 = 500;
+/// PrepConstants: the depth from which a site's support is tested against it, and the share of the depth a
+/// discordant group must have
+pub const DEPTH_MIN_CHECK: i32 = 100;
+pub const DEPTH_MIN_SUPPORT_RATIO_DISCORDANT: f64 = 0.01;
 
 pub const DISCORDANT_FRAG_TYPES: [&str; 11] =
     ["Translocation", "InvLt1K", "Inv1To5K", "Inv5To100K", "InvGt100K", "Del1To5K", "Del5To100K", "DelGt100K", "Dup1To5K", "Dup5To100K", "DupGt100K"];
@@ -415,10 +420,69 @@ impl DiscordantGroups {
         dg.remote_regions.iter().any(|r| self.has_remote_required_fragments(dg, r))
     }
 
+    /// Corrected (finding P13): whether the group's fragments reach the share of the depth at its junction
+    /// that the README and `junctionAboveMinAF` set for discordant sites, 1% where the depth is 100 or more.
+    /// The support counted is that of the junction `add_junctions` would make: its supporting groups.
+    fn above_min_af(&self, dg: &DiscordantGroup, groups: &[ReadGroup], reads: &[PrepRead], depth: &DepthTracker) -> bool {
+        let (_, inner_position) = Self::inner_read(dg, groups, reads);
+        let site_depth = depth.calc_depth(inner_position) as i32;
+        if site_depth < DEPTH_MIN_CHECK {
+            return true;
+        }
+        let range = self.supporting_read_range(dg.orient, inner_position);
+        let support = dg.read_groups.iter().filter(|&&gid| Self::in_supporting_range(dg.orient, range, &groups[gid as usize], reads)).count();
+        support as f64 >= site_depth as f64 * DEPTH_MIN_SUPPORT_RATIO_DISCORDANT
+    }
+
+    /// The innermost read of the remote region with the most support and its position, the junction's.
+    fn inner_read(dg: &DiscordantGroup, groups: &[ReadGroup], reads: &[PrepRead]) -> (Option<ReadId>, i32) {
+        let mut inner_read: Option<ReadId> = None;
+        let mut inner_position = 0;
+        for &gid in &dg.remote_regions[0].read_groups {
+            let rid = first_primary_read(&groups[gid as usize], reads).unwrap();
+            let read = &reads[rid as usize];
+            if dg.orient.is_forward() {
+                if inner_read.is_none_or(|r| read.end > reads[r as usize].end) {
+                    inner_read = Some(rid);
+                    inner_position = read.end;
+                }
+            } else if inner_read.is_none_or(|r| read.start < reads[r as usize].start) {
+                inner_read = Some(rid);
+                inner_position = read.start;
+            }
+        }
+        (inner_read, inner_position)
+    }
+
+    /// The positions within the concordant fragment length of the junction, on its side.
+    fn supporting_read_range(&self, orient: Orientation, inner_position: i32) -> (i32, i32) {
+        if orient.is_forward() {
+            (1.max(inner_position - self.max_concordant_fragment_length), inner_position)
+        } else {
+            (inner_position, inner_position + self.max_concordant_fragment_length)
+        }
+    }
+
+    /// Whether a read of the group starts (forward junction) or ends (reverse) within the range.
+    fn in_supporting_range(orient: Orientation, (start, end): (i32, i32), g: &ReadGroup, reads: &[PrepRead]) -> bool {
+        g.reads.iter().any(|&i| {
+            let r = &reads[i as usize];
+            position_within(if orient.is_forward() { r.start } else { r.end }, start, end)
+        })
+    }
+
     /// formDiscordantJunctions: groups of discordant fragments that start close together and share a remote
     /// region make a junction at their innermost read, and one at the remote region. New junctions are
-    /// appended to `jstore`.
-    pub fn form_discordant_junctions(&self, candidates: &[GroupId], groups: &mut [ReadGroup], reads: &mut [PrepRead], jstore: &mut Vec<JunctionData>) {
+    /// appended to `jstore`. With `depth` (finding P13 corrected) a group whose fragments are too few for the
+    /// depth at its junction makes none.
+    pub fn form_discordant_junctions(
+        &self,
+        candidates: &[GroupId],
+        groups: &mut [ReadGroup],
+        reads: &mut [PrepRead],
+        jstore: &mut Vec<JunctionData>,
+        depth: Option<&DepthTracker>,
+    ) {
         let contigs: &Contigs = &self.contigs;
         for orientation in [Orientation::Forward, Orientation::Reverse] {
             let mut read_groups: Vec<GroupId> = candidates
@@ -450,7 +514,7 @@ impl DiscordantGroups {
                     dg.try_add_read_group(next_group, next_read);
                     j += 1;
                 }
-                if self.is_valid_discordant_group(&mut dg, groups, reads, contigs) {
+                if self.is_valid_discordant_group(&mut dg, groups, reads, contigs) && depth.is_none_or(|d| self.above_min_af(&dg, groups, reads, d)) {
                     self.add_junctions(&mut dg, groups, reads, jstore);
                     for &g in &dg.read_groups {
                         assigned[g as usize] = true;
@@ -463,39 +527,16 @@ impl DiscordantGroups {
 
     fn add_junctions(&self, dg: &mut DiscordantGroup, groups: &mut [ReadGroup], reads: &mut [PrepRead], jstore: &mut Vec<JunctionData>) {
         // the junction is at the innermost read of the remote region with the most support
-        let mut inner_read: Option<ReadId> = None;
-        let mut inner_position = 0;
-        for &gid in &dg.remote_regions[0].read_groups {
-            let rid = first_primary_read(&groups[gid as usize], reads).unwrap();
-            let read = &reads[rid as usize];
-            if dg.orient.is_forward() {
-                if inner_read.is_none_or(|r| read.end > reads[r as usize].end) {
-                    inner_read = Some(rid);
-                    inner_position = read.end;
-                }
-            } else if inner_read.is_none_or(|r| read.start < reads[r as usize].start) {
-                inner_read = Some(rid);
-                inner_position = read.start;
-            }
-        }
+        let (inner_read, inner_position) = Self::inner_read(dg, groups, reads);
         let mut junction = JunctionData::new(inner_position, dg.orient, inner_read);
         dg.innermost_read = inner_read;
         junction.discordant_group = true;
 
-        let (min_read_pos_start, min_read_pos_end) = if dg.orient.is_forward() {
-            (1.max(inner_position - self.max_concordant_fragment_length), inner_position)
-        } else {
-            (inner_position, inner_position + self.max_concordant_fragment_length)
-        };
+        let range = self.supporting_read_range(dg.orient, inner_position);
         let mut excluded: Vec<GroupId> = Vec::new();
         for &gid in &dg.read_groups {
             // only reads within the concordant fragment length of the junction are of its group
-            let forward = dg.orient.is_forward();
-            let in_range = groups[gid as usize].reads.iter().any(|&i| {
-                let r = &reads[i as usize];
-                position_within(if forward { r.start } else { r.end }, min_read_pos_start, min_read_pos_end)
-            });
-            if !in_range {
+            if !Self::in_supporting_range(dg.orient, range, &groups[gid as usize], reads) {
                 if !excluded.contains(&gid) {
                     excluded.push(gid);
                 }

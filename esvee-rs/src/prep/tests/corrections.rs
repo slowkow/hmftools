@@ -213,6 +213,49 @@ fn p8_remote_junction_outside_partition_is_kept_apart() {
     }
 }
 
+// P13: the allele-fraction filter of discordant junctions
+
+/// The five fragments of `tracker_with_remote_discordant_group` (mates 3 kb on), with `depth` reads of 200
+/// bases over the 200-base window of their junction
+fn tracker_with_discordant_group_at_depth(depth: i32) -> JunctionTracker {
+    let region = Region::new(chr(CHR_1), 1, 5000);
+    let mut tracker = JunctionTracker::new(region.clone(), tracker_config(), Vec::new(), None);
+    for i in 0..5 {
+        let mut read = prep_read(sam_record_mate(&next_id(), CHR_1, 4401 + i, CHR_1, 7401 + i, true, false, None));
+        set_flag(&mut read.rec, FLAG_MATE_REVERSE, true);
+        read.rec.set_insert_size(3000);
+        let mut read = prep_read(std::mem::replace(&mut read.rec, bam::Record::new()));
+        read.set_read_type(ReadType::CandidateSupport);
+        tracker.process_read(read);
+    }
+    let mut depth_tracker = DepthTracker::new(region.start, region.end, DEPTH_WINDOW_SIZE);
+    for _ in 0..depth {
+        depth_tracker.process_range(4401, 4600);
+    }
+    tracker.assign_fragments(&depth_tracker);
+    tracker
+}
+
+#[test]
+fn p13_discordant_group_below_one_percent_of_depth_makes_no_junction() {
+    // five fragments are 1% of a depth of 500: kept, and the junction has its depth
+    let tracker = tracker_with_discordant_group_at_depth(500);
+    assert_eq!(1, tracker.junctions.len());
+    assert_eq!((4504, 500), (tracker.junction(0).position, tracker.junction(0).depth));
+    assert_eq!(5, tracker.junction(0).supporting_groups.len());
+    // below 1% of 501: no junction here, nor at the remote region
+    let tracker = tracker_with_discordant_group_at_depth(501);
+    assert!(tracker.junctions.is_empty());
+    assert!(tracker.outside_junctions.is_empty());
+
+    // Java (P13): the junction is made at any depth and its depth stays 0
+    compat::with_java(true, || {
+        let tracker = tracker_with_discordant_group_at_depth(5000);
+        assert_eq!(2, tracker.junctions.len());
+        assert_eq!((4504, 0), (tracker.junction(0).position, tracker.junction(0).depth));
+    });
+}
+
 #[test]
 fn p8_groups_of_outside_junctions_are_still_written() {
     let mut tracker = tracker_with_remote_discordant_group(CHR_2, 7401);
