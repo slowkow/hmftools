@@ -355,3 +355,47 @@ fn test_unmap_region_state() {
     assert!(!unmapper.check_transform_read(&mut read, &mut region_state, stats));
     assert_eq!(Some(3), region_state.last_matched_index);
 }
+
+// not in Java: finding R43, the mate of a supplementary is decided as the mate decides for itself
+
+#[test]
+fn corrected_supplementary_keeps_a_mate_that_stays_mapped() {
+    use crate::compat::with_java;
+    // primary R1 at 1:200 (+), its mate at 1:550 (-) inside the region 1:500-700 (not high depth): a concordant pair, so
+    // the mate stays mapped. A supplementary of R1 on chromosome 5 points at the same mate.
+    let mut mate = create(CHR_1, 550, TEST_READ_CIGAR, CHR_1, 200, true, false, None, false, Some(TEST_READ_CIGAR));
+    assert!(!check_transform_read(&mut mate, CHR_1));
+    assert!(!read_unmapped(&mate));
+    let primary = SuppData::new(CHR_1, 200, SUPP_POS_STRAND, TEST_READ_CIGAR, 60);
+    let supp = create(CHR_5, 10_000, TEST_READ_CIGAR, CHR_1, 550, false, true, Some(&primary), true, Some(TEST_READ_CIGAR));
+    let mut corrected = supp.clone();
+    with_java(false, || check_transform_read(&mut corrected, CHR_5));
+    assert!(!mate_unmapped(&corrected));
+    assert!(rec::has_aux(&corrected, b"MC"));
+    assert_eq!(550, rec::mate_start(&corrected));
+    // Java: the supplementary's own chromosome differs from its mate's, so it takes the pair as chimeric
+    let mut java = supp.clone();
+    with_java(true, || check_transform_read(&mut java, CHR_5));
+    assert!(mate_unmapped(&java));
+}
+
+#[test]
+fn corrected_supplementary_follows_a_mate_that_is_unmapped() {
+    use crate::compat::with_java;
+    // primary R1 on chromosome 2, its mate at 1:550 (-) inside the region: an inter-chromosomal pair, so the mate is
+    // unmapped. A supplementary of R1 at 1:300 (+) is near the mate, on the other strand.
+    let mut mate = create(CHR_1, 550, TEST_READ_CIGAR, CHR_2, 100, true, false, None, false, Some(TEST_READ_CIGAR));
+    with_java(false, || check_transform_read(&mut mate, CHR_1));
+    assert!(read_unmapped(&mate));
+    let primary = SuppData::new(CHR_2, 100, SUPP_POS_STRAND, TEST_READ_CIGAR, 60);
+    let supp = create(CHR_1, 300, TEST_READ_CIGAR, CHR_1, 550, false, true, Some(&primary), true, Some(TEST_READ_CIGAR));
+    let mut corrected = supp.clone();
+    with_java(false, || check_transform_read(&mut corrected, CHR_1));
+    assert!(!read_unmapped(&corrected));
+    assert!(mate_unmapped(&corrected));
+    // Java: the supplementary sees a short concordant pair and keeps the mate's old position
+    let mut java = supp.clone();
+    with_java(true, || check_transform_read(&mut java, CHR_1));
+    assert!(!mate_unmapped(&java));
+    assert_eq!(550, rec::mate_start(&java));
+}

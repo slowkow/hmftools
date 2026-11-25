@@ -24,6 +24,26 @@ pub struct FragmentCoords {
     non_oriented_len: usize,
 }
 
+/// The reference index of a chromosome name in `names`, from a map kept per thread (R42)
+fn tid_of(names: &[String], chr: &str) -> i32 {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    thread_local! {
+        static INDEX: RefCell<HashMap<String, i32>> = RefCell::new(HashMap::new());
+    }
+    INDEX.with(|m| {
+        let mut m = m.borrow_mut();
+        // the map is checked against the names given, so a map made from another list is never trusted
+        if let Some(&t) = m.get(chr) {
+            if names.get(t as usize).is_some_and(|n| n == chr) {
+                return t;
+            }
+        }
+        *m = names.iter().enumerate().map(|(i, n)| (n.clone(), i as i32)).collect();
+        m.get(chr).copied().unwrap_or(-1)
+    })
+}
+
 fn push_int(s: &mut String, v: i32) {
     let mut buf = [0u8; 12];
     let mut i = buf.len();
@@ -204,7 +224,12 @@ impl FragmentCoords {
         }
 
         let read_is_lower = if read_chr != mate_chr {
-            rec.tid() < rec.mtid()
+            // R42: Java compares the supplementary's own reference index with its mate's, while the fragment is placed
+            // at its primary (read_chr), so the supplementary can take the other read as the lower one and its group then
+            // picks another template (and consensus name) than the group of the primaries. Corrected: the index of the
+            // primary's chromosome, as the comment of FragmentCoords asks ("the same result from each of their perspectives").
+            let read_tid = if is_supplementary && !crate::compat::java("R42") { tid_of(names, read_chr) } else { rec.tid() };
+            read_tid < rec.mtid()
         } else if read_pos != mate_pos {
             read_pos < mate_pos
         } else {

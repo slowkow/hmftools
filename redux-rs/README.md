@@ -41,7 +41,7 @@ concatenation and indexing are done in the process.
 
 ## Corrections and `-java_compat`
 
-The faults found in Java REDUX 2.1 are numbered R1 to R41 in REPORT.md, section 3. For 25 of them the
+The faults found in Java REDUX 2.1 are numbered R1 to R47 in REPORT.md, section 3. For 29 of them the
 port takes a corrected path by default; section 3.5 says what each correction does and what it
 changes.
 

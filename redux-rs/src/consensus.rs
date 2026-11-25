@@ -119,6 +119,11 @@ impl RefBases {
         std::mem::swap(&mut self.block_start, &mut self.prev_start);
         if !(self.block_start == start && !self.block.is_empty() && self.chr == chr) {
             self.block = self.reader.fetch(chr, (start - 1) as usize, (end - 1) as usize).unwrap_or_default();
+            // R47: Java compares the reference as it is in the FASTA, so at soft-masked (lowercase) bases every read base
+            // differs from it: NM counts each one, and a tie is never given to the reference base. Corrected: upper case.
+            if !crate::compat::java("R47") {
+                self.block.make_ascii_uppercase();
+            }
             self.chr.clear();
             self.chr.push_str(chr);
             self.block_start = start;
@@ -135,7 +140,8 @@ impl RefBases {
         }
         #[cfg(test)]
         if let Some(m) = &self.mock {
-            return m.bases(chr, pos, pos)[0];
+            let b = m.bases(chr, pos, pos)[0];
+            return if crate::compat::java("R47") { b } else { b.to_ascii_uppercase() };
         }
         self.load(chr, pos);
         self.block[(pos - self.block_start) as usize]
@@ -147,7 +153,11 @@ impl RefBases {
         }
         #[cfg(test)]
         if let Some(m) = &self.mock {
-            return Some(m.bases(chr, start, end));
+            let mut b = m.bases(chr, start, end);
+            if !crate::compat::java("R47") {
+                b.make_ascii_uppercase();
+            }
+            return Some(b);
         }
         let mut out = Vec::with_capacity((end - start + 1) as usize);
         let mut pos = start;
@@ -233,7 +243,11 @@ pub struct ConsensusState {
     pub alignment_start: i32,
     pub alignment_end: i32,
     pub map_quality: u8,
+    /// R44: the highest MQ (mate mapping quality) of the group's reads, which is the mapping quality of the mate consensus
+    pub mate_map_quality: Option<i64>,
     pub num_mutations: i32,
+    /// R44: the MD string of the consensus bases against the reference, made with the NM count
+    pub md: Vec<u8>,
     pub outcome: ConsensusOutcome,
     current_len: i32,
     current_op: u32,
@@ -252,7 +266,9 @@ impl ConsensusState {
             alignment_start: 0,
             alignment_end: 0,
             map_quality: 0,
+            mate_map_quality: None,
             num_mutations: 0,
+            md: Vec::new(),
             outcome: ConsensusOutcome::Unset,
             current_len: 0,
             current_op: u32::MAX,
@@ -308,9 +324,13 @@ impl ConsensusState {
     /// ConsensusState.setNumMutations
     fn set_num_mutations(&mut self, refs: &mut RefBases) {
         self.num_mutations = 0;
+        self.md.clear();
         let Some(ref_bases) = refs.ref_bases(&self.chromosome, self.alignment_start, self.alignment_end) else { return };
         let mut base_index = 0usize;
         let mut ref_index = 0usize;
+        // the MD string as samtools calmd makes it: matched-base counts between mismatched and deleted reference bases
+        let mut matched = 0u32;
+        let mut md = Vec::new();
         for &c in &self.cigar {
             let (o, n) = (op(c), oplen(c) as usize);
             if matches!(o, OP_I | OP_D | OP_X) {
@@ -322,6 +342,23 @@ impl ConsensusState {
                     }
                 }
             }
+            if matches!(o, OP_M | OP_EQ | OP_X) {
+                for i in 0..n {
+                    let (r, b) = (ref_bases[ref_index + i], self.bases[base_index + i]);
+                    if r == b && r != b'N' {
+                        matched += 1;
+                    } else {
+                        md.extend_from_slice(matched.to_string().as_bytes());
+                        md.push(r);
+                        matched = 0;
+                    }
+                }
+            } else if o == OP_D {
+                md.extend_from_slice(matched.to_string().as_bytes());
+                md.push(b'^');
+                md.extend_from_slice(&ref_bases[ref_index..ref_index + n]);
+                matched = 0;
+            }
             if consumes_read(o) {
                 base_index += n;
             }
@@ -329,6 +366,8 @@ impl ConsensusState {
                 ref_index += n;
             }
         }
+        md.extend_from_slice(matched.to_string().as_bytes());
+        self.md = md;
     }
 }
 
@@ -586,6 +625,9 @@ impl ConsensusReads {
         for r in &views {
             has_indels |= r.cigar.iter().any(|c| matches!(op(*c), OP_I | OP_D));
             state.map_quality = state.map_quality.max(r.rec.mapq());
+            if let Some(mq) = aux_int(r.rec, b"MQ") {
+                state.mate_map_quality = Some(state.mate_map_quality.map_or(mq, |m| m.max(mq)));
+            }
         }
 
         if has_indels {
@@ -1246,6 +1288,18 @@ fn create_consensus_record(state: &ConsensusState, template: &bam::Record, read_
     }
     let mut aux = aux_sorted_copy(aux_bytes(template));
     aux_block_set(&mut aux, b"NM", Some(&encode_int(state.num_mutations as i64)));
+    // R44: Java copies the template's MD and MQ unchanged, so where the consensus takes another base than the template
+    // the MD string contradicts the bases and the NM count, and MQ gives the template's mate's mapping quality where the
+    // mate consensus has the highest of its group. Corrected: MD from the consensus bases, MQ the highest of the group's;
+    // a tag the template does not have is not added.
+    if !crate::compat::java("R44") && !has(template, FLAG_UNMAPPED) {
+        if has_aux(template, b"MD") && !state.md.is_empty() {
+            aux_block_set(&mut aux, b"MD", Some(&encode_z(&state.md)));
+        }
+        if let (true, Some(mq)) = (has_aux(template, b"MQ"), state.mate_map_quality) {
+            aux_block_set(&mut aux, b"MQ", Some(&encode_int(mq)));
+        }
+    }
     set_aux_bytes(&mut rec, &aux);
     fix_bin(&mut rec);
     rec

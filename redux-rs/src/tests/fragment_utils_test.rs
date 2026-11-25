@@ -210,3 +210,26 @@ fn test_fragment_coords_unpaired_supp_reverse_primary_forward() {
 fn test_fragment_coords_unpaired_supp_reverse_primary_reverse() {
     check_unpaired(true, Some((SUPP_NEG_STRAND, 2_000)), "1:1000_1099_R_S", CHR_1, 1000, 1099, false, Some((2_099, REVERSE)), 2_099, REVERSE);
 }
+
+// not in Java: finding R42, the lower read of a supplementary whose primary is on another chromosome
+
+#[test]
+fn corrected_supplementary_takes_the_lower_read_of_its_primary() {
+    use crate::compat::with_java;
+    let bases = test_read_bases();
+    // R1 on chromosome 1, its mate on chromosome 5, and a supplementary of R1 on chromosome 5
+    let primary =
+        create_sam_record(TEST_READ_ID, CHR_1, 1_000, &bases, TEST_READ_CIGAR, "5", 80_000, false, false, None, true, Some(TEST_READ_CIGAR));
+    let primary_alignment = SuppData::new(CHR_1, 1_000, SUPP_POS_STRAND, TEST_READ_CIGAR, 60);
+    let supp = create_sam_record(
+        TEST_READ_ID, "5", 50_000, &bases, TEST_READ_CIGAR, "5", 80_000, false, true, Some(&primary_alignment), true, Some(TEST_READ_CIGAR),
+    );
+    let (p, s) = with_java(false, || (create_fragment_coords(&primary), create_fragment_coords(&supp)));
+    assert!(p.read_is_lower);
+    assert_eq!(p.read_is_lower, s.read_is_lower);
+    assert_eq!((p.pos_lower, p.pos_upper), (s.pos_lower, s.pos_upper));
+    // Java: the supplementary compares its own chromosome (5) with its mate's (5), so its mate is the lower read
+    let s = with_java(true, || create_fragment_coords(&supp));
+    assert!(!s.read_is_lower);
+    assert_eq!((p.pos_lower, p.pos_upper), (s.pos_upper, s.pos_lower));
+}

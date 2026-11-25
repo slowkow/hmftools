@@ -335,7 +335,11 @@ impl ReadUnmapper {
         let mut mate_region_type = RegionMatch::None;
         if !mate_unmapped {
             mate_region_type = self.mate_max_depth_region_overlap(rec, state);
-            unmap_mate = Self::check_unmap_mate(rec, mate_region_type);
+            unmap_mate = if is_supplementary && !crate::compat::java("R43") {
+                self.check_unmap_mate_of_supplementary(rec, mate_region_type)
+            } else {
+                Self::check_unmap_mate(rec, mate_region_type)
+            };
         }
         // Java compares against a null region type for an unmapped read or mate; null != NONE is true there
         let read_type_not_none = read_unmapped || read_region_type != RegionMatch::None;
@@ -467,6 +471,50 @@ impl ReadUnmapper {
             return true;
         }
         exceeds_soft_clip_length(aux_str(rec, b"MC"))
+    }
+
+    /// R43: Java decides the mate of a supplementary with the supplementary's own fragment length, chromosome and strand
+    /// (isChimericRead(read, true)), so the supplementary can mark its mate unmapped while the mate, which checks
+    /// itself against the primary, stays mapped (or the other way round), against "must be identical to how the mate
+    /// checks itself". Corrected: the pair is taken as the mate sees it, from the primary's alignment (the first SA
+    /// entry) and the mate's fields, with bwa's fragment length; Java's check where the SA tag or mate cigar is missing.
+    fn check_unmap_mate_of_supplementary(&self, rec: &bam::Record, match_type: RegionMatch) -> bool {
+        match match_type {
+            RegionMatch::None => return false,
+            RegionMatch::HighDepth => return true,
+            RegionMatch::Other => {}
+        }
+        let chimeric = match self.pair_is_chimeric_for_mate(rec) {
+            Some(c) => c,
+            None => Self::is_chimeric(rec, true),
+        };
+        chimeric || exceeds_soft_clip_length(aux_str(rec, b"MC"))
+    }
+
+    /// isChimericRead(mate, false) for the mate of a supplementary's primary, or None without the data for it
+    fn pair_is_chimeric_for_mate(&self, rec: &bam::Record) -> Option<bool> {
+        if !has(rec, FLAG_PAIRED) || rec.mtid() < 0 {
+            return None;
+        }
+        let primary = extract_supp_alignment(aux_str(rec, b"SA"))?;
+        let mate_cigar = aux_str(rec, b"MC")?;
+        let mate_chr = self.names.get(rec.mtid() as usize)?;
+        if primary.chromosome != mate_chr.as_bytes() {
+            return Some(true);
+        }
+        let primary_reverse = primary.strand == b'-';
+        let mate_reverse = has(rec, FLAG_MATE_REVERSE);
+        if primary_reverse == mate_reverse {
+            return Some(true);
+        }
+        // bwa's fragment length: between the 5' ends of the aligned parts, plus one
+        let five_prime = |pos: i32, cigar: &[u8], reverse: bool| -> i64 {
+            if reverse { read_boundary_position(pos, cigar, false, false) as i64 } else { pos as i64 }
+        };
+        let p0 = five_prime(primary.position, primary.cigar, primary_reverse);
+        let p1 = five_prime(mate_start(rec), mate_cigar, mate_reverse);
+        let fragment_length = if p0 == p1 { 0 } else { (p0 - p1).abs() + 1 };
+        Some(fragment_length > UNMAP_CHIMERIC_FRAGMENT_LENGTH_MAX)
     }
 
     fn is_chimeric_read(&self, rec: &bam::Record, check_for_mate: bool) -> bool {

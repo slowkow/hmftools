@@ -662,3 +662,91 @@ fn test_different_unclipped_position_starts() {
     let net_bases = format!("AAAG{}ATTT", &ref_bases[20..30]);
     assert_eq!(net_bases, read_string(&read_consensus_info.consensus_read));
 }
+
+// not in Java: finding R44, the MD and MQ attributes of a consensus read
+
+#[test]
+fn corrected_consensus_md_and_mq_follow_the_consensus() {
+    use crate::compat::with_java;
+    use rust_htslib::bam::record::Aux;
+    let mut f = Fixture::new();
+    let ref_bases = f.ref_bases.clone();
+    let pos_start = 11;
+    let ref_read = &ref_bases[pos_start as usize..21];
+    // the template has a low-quality error at its 4th base; the other read matches the reference there
+    let wrong = next_base(char_at(ref_read, 3));
+    let mut template = f.input(pos_start, &set_char_at(ref_read, 3, wrong), "10M", false);
+    set_base_qualities(&mut template, DEFAULT_QUAL - 10);
+    set_string_attribute(&mut template, b"MD", &format!("3{}6", char_at(ref_read, 3)));
+    template.push_aux(b"MQ", Aux::I32(20)).unwrap();
+    let mut other = f.input(pos_start, ref_read, "10M", false);
+    set_string_attribute(&mut other, b"MD", "10");
+    other.push_aux(b"MQ", Aux::I32(40)).unwrap();
+    let reads = vec![template, other];
+
+    let consensus = with_java(false, || create_consensus_read(&mut f.consensus_reads, &reads, UMI_ID_1));
+    assert_eq!(read_name(&reads[0]), consensus.template_read);
+    assert_eq!(ref_read, read_string(&consensus.consensus_read));
+    assert_eq!(Some("10".to_string()), string_attribute(&consensus.consensus_read, b"MD"));
+    assert_eq!(Some(40), rec::aux_int(&consensus.consensus_read, b"MQ"));
+    assert_eq!(Some(0), rec::aux_int(&consensus.consensus_read, b"NM"));
+
+    // Java: the template's MD and MQ, against the consensus bases and NM
+    let consensus = with_java(true, || create_consensus_read(&mut f.consensus_reads, &reads, UMI_ID_1));
+    assert_eq!(ref_read, read_string(&consensus.consensus_read));
+    assert_eq!(Some(format!("3{}6", char_at(ref_read, 3))), string_attribute(&consensus.consensus_read, b"MD"));
+    assert_eq!(Some(20), rec::aux_int(&consensus.consensus_read, b"MQ"));
+
+    // no MD or MQ on the template: none added
+    let plain: Vec<bam::Record> = vec![f.input(pos_start, ref_read, "10M", false), f.input(pos_start, ref_read, "10M", false)];
+    let consensus = with_java(false, || create_consensus_read(&mut f.consensus_reads, &plain, UMI_ID_1));
+    assert!(!rec::has_aux(&consensus.consensus_read, b"MD") && !rec::has_aux(&consensus.consensus_read, b"MQ"));
+}
+
+#[test]
+fn consensus_md_marks_mismatches_and_deletions() {
+    use crate::compat::with_java;
+    let mut f = Fixture::new();
+    let ref_bases = f.ref_bases.clone();
+    // 4 matches, a mismatch, 2 matches, a 2-base deletion, then 3 matches
+    let start = 21usize;
+    let r = ref_bases.as_bytes();
+    let mut bases: Vec<u8> = r[start..start + 7].to_vec();
+    bases[4] = next_base(r[start + 4] as char) as u8;
+    bases.extend_from_slice(&r[start + 9..start + 12]);
+    let bases = String::from_utf8(bases).unwrap();
+    let mut read = f.input(start as i32, &bases, "7M2D3M", false);
+    set_string_attribute(&mut read, b"MD", "0");
+    let reads = vec![read.clone(), read];
+    let consensus = with_java(false, || create_consensus_read(&mut f.consensus_reads, &reads, UMI_ID_1));
+    let expected = format!("4{}2^{}3", r[start + 4] as char, &ref_bases[start + 7..start + 9]);
+    assert_eq!(Some(expected), string_attribute(&consensus.consensus_read, b"MD"));
+    assert_eq!(Some(3), rec::aux_int(&consensus.consensus_read, b"NM"));
+}
+
+// not in Java: finding R47, soft-masked (lowercase) reference bases
+
+#[test]
+fn corrected_consensus_compares_a_lowercase_reference_in_upper_case() {
+    use crate::compat::with_java;
+    let mut f = Fixture::new();
+    let upper = f.ref_bases.clone();
+    // the reference soft-masked (lowercase) from base 11 to 20; the reads match it
+    let mut masked = upper.clone();
+    masked.replace_range(11..21, &upper[11..21].to_ascii_lowercase());
+    let mut genome = MockRefGenome::new(false);
+    genome.ref_genome_map.insert(CHR_1.to_string(), masked);
+    genome.chromosome_lengths.insert(CHR_1.to_string(), upper.len() as i32);
+    f.consensus_reads = consensus_reads(&genome);
+    let bases = &upper[11..21];
+    let mut reads = vec![f.input(11, bases, "10M", false), f.input(11, bases, "10M", false)];
+    for r in reads.iter_mut() {
+        set_string_attribute(r, b"MD", "10");
+    }
+    let consensus = with_java(false, || create_consensus_read(&mut f.consensus_reads, &reads, UMI_ID_1));
+    assert_eq!(Some(0), rec::aux_int(&consensus.consensus_read, b"NM"));
+    assert_eq!(Some("10".to_string()), string_attribute(&consensus.consensus_read, b"MD"));
+    // Java: every base differs from the lowercase reference
+    let consensus = with_java(true, || create_consensus_read(&mut f.consensus_reads, &reads, UMI_ID_1));
+    assert_eq!(Some(10), rec::aux_int(&consensus.consensus_read, b"NM"));
+}

@@ -117,7 +117,7 @@ Java mode; the corrected mode at one partition was not run.
 
 ## 3. Java findings
 
-Numbered R1 to R41. "Reproduced" means the port behaves the same way under `-java_compat`, so that its
+Numbered R1 to R47. "Reproduced" means the port behaves the same way under `-java_compat`, so that its
 output equals Java's; where Java stops with an exception, "reproduced as a failure" means the port
 stops there too. "Not reproduced" means the port does not follow Java in either mode, because Java's
 result there depends on thread timing or is a failure with nothing to compare. Line numbers are those
@@ -206,6 +206,43 @@ and 4 about equality with Java is about the port run with `-java_compat`.
   order of the groups, and with several threads on which thread took which partition. Reproduced at
   one thread; with more threads the port gives the one-thread label. **Corrected by default.**
 
+R42 to R47 were found on 2026-11-25 by a review of the Java code made for this purpose, after the
+port was complete, and checked against the code before they were taken in.
+
+- **R42. `duplicate/FragmentCoords.java:248`** The lower read of an inter-chromosomal fragment is
+  decided by `read.getReferenceIndex() < read.getMateReferenceIndex()`. For a supplementary that is the
+  supplementary's own chromosome, while the fragment is placed at its primary (`readChromosome`, taken
+  from the SA tag at lines 202-205), against the comment above it ("must give the same result from each
+  of their perspectives"). A supplementary of R1 that lies on the chromosome of the mate takes the mate
+  as the lower read where its primary takes itself, so its group ranks the two cigars the other way
+  round when it picks the template (`TemplateReads.java:36-47`), and the supplementary consensus can be
+  named after another fragment than the primary consensus: a consensus supplementary without a primary
+  of its name, and an SA tag that points at a record of another name. Reproduced. **Corrected by
+  default.**
+- **R43. `unmap/ReadUnmapper.java:135-138, 354-370, 624-651`** Whether the mate of a supplementary is
+  unmapped is decided with `isChimericRead(read, true)` on the supplementary's own fragment length,
+  chromosome and strand. The mate decides for itself against the primary, so where the two differ (a
+  supplementary on another chromosome, or more than 1 kb from the mate) the supplementary marks a
+  mapped mate unmapped and drops its mate cigar, or keeps the old position of a mate that is unmapped;
+  the comment at line 473 asks for the check to be "identical to how the mate checks itself". Only
+  mates in an unmap region that is not high-depth are affected. Reproduced. **Corrected by default.**
+- **R44. `consensus/ConsensusReads.java:185-198`** A consensus read copies every attribute of its
+  template and sets NM again, but not MD and MQ. Where the consensus takes another base than the
+  template, its MD string contradicts its bases and its NM; and MQ (the mate's mapping quality) is that
+  of the template's mate, while the mate consensus has the highest mapping quality of its group (line
+  114). No HMF tool reads MD or MQ; other tools do. Reproduced. **Corrected by default.**
+- **R45. `duplicate/FragmentCoords.java:110-111`, `PartitionReader.java:471-472`** Supplementaries are
+  grouped among themselves, so the supplementary of a duplicate fragment whose duplicates have no
+  supplementary there (none, or one dropped by the alignment-score filter) is a single read and is
+  written without the duplicate flag, while its primary is a duplicate. README: "all supplementary and
+  secondary reads from the same fragment will also be marked duplicate". Java's tests of these cases
+  count records only. Reproduced. Left (3.6).
+- **R47. `consensus/ConsensusState.java` (`setNumMutations`), `consensus/IlluminaRoutines.java:238-255`**
+  Reference bases are compared with read bases as they are in the FASTA. In the HMF reference, the
+  decoy contigs are soft-masked in places (lower case), and there every base of a read differs from the
+  reference: the NM of a consensus read counts each one, and a tie between two bases is never given to
+  the reference base. The primary chromosomes have no lower case. Reproduced. **Corrected by default.**
+
 ### 3.2 Nondeterminism: output that depends on the thread count or the run
 
 Section 2 says for each of these what the corrected mode gives at different thread counts.
@@ -262,8 +299,9 @@ Section 2 says for each of these what the corrected mode gives at different thre
   32 unplaced reads. Reproduced. **Corrected by default** (2026-11-25): the inputs are taken in the order
   of their header text, which differs by read group, so every place where the order reaches the output
   (the merge of reads with one start, the unplaced reads, the output header) sees the same order however
-  the files are listed. The slowkow/oncoanalyser fork also lists the lane BAMs by file name, so that Java
-  REDUX gives one result there too.
+  the files are listed. Checked on Google Batch with the same three lane BAMs in the two orders of the
+  observation: BAM, index and all side files byte-identical. The slowkow/oncoanalyser fork also lists
+  the lane BAMs by file name, so that Java REDUX gives one result there too.
 
 ### 3.3 Crash
 
@@ -326,13 +364,16 @@ Section 2 says for each of these what the corrected mode gives at different thre
 - **R35. `SAMRecord.equals`** is reached through `List.remove` and `contains` in the SBX code; it
   decodes both records, which also changes how they are written. Reproduced in both modes, for the
   same reason.
+- **R46. `ReduxConstants.java:50-56`** The README gives the alt fractions above which a recalibration
+  site is left out as 0.05 for dual-strand reads and 0.075 for others; the constants are the other way
+  round, as the comment at `bqr/BaseQualityData.java:141` has them. Probably the README is wrong. Left.
 - **R36. `bqr/BaseQualityResults.java:38-39`** `addBaseQualityRegionCounter` adds the reader's running
   totals of reads used and alts filtered each time a block completes, so the two numbers of the debug
   line count the early blocks many times. Reproduced. **Corrected by default** (log only).
 
 ### 3.5 Corrections
 
-25 of the findings above are corrected by default. Each corrected place in the code asks
+29 of the findings above are corrected by default. Each corrected place in the code asks
 `compat::java("<id>")` (`src/compat.rs`) and keeps the Java path beside the corrected one.
 
 - `-java_compat`, or `REDUX_JAVA_COMPAT=1` in the environment: Java behaviour for every finding.
@@ -374,6 +415,10 @@ the REDUX authors.
 | R21 | the size-check counter and the last counted size start again with each region, as after `clear()`; no partition waits for the read counts of earlier ones | deep contig alone: none. With the reads on chr1: 400 records changed (171 duplicate flags), 68 gone, 77 new, and the records on the contig are then those of the contig alone (in Java 171 flags differ between the two inputs). Illumina, SBX: none |
 | R18 | the label of a row is the rounded size | Illumina 1 of 10 rows; SBX (10 Mb region) 19 of 28 rows; labels only, the counts are the same |
 | R41 | the input BAMs are read in the order of their header text (then of their paths, for inputs whose headers are the same), not in the order given | two-lane Illumina input: BAM, `bqr.tsv`, `duplicate_freq.tsv`, `jitter_params` and `ms_table` byte-identical for both orders (Java: the 32 unplaced reads in another order). Whole genome: see R41 |
+| R42 | a supplementary takes the reference index of its primary's chromosome to decide the lower read, so it and its primary agree on it and their groups pick the same template | two-lane Illumina input: none (no such group with differing cigars). Unit test |
+| R43 | the mate of a supplementary is unmapped when the mate's own check would unmap it: the fragment length (bwa's, between the 5' ends of the aligned parts), chromosome and strand of the primary in the first SA entry against the mate's; Java's check where the SA tag or mate cigar is missing | two-lane Illumina input: 36 records gone, 33 new (supplementaries whose mate fields change), 1 duplicate flag; `duplicate_freq.tsv` 1 row |
+| R44 | a consensus read's MD is made from its bases with its NM, and its MQ is the highest MQ of its group; neither is added where the template has none | two-lane Illumina input: of 1,921,361 consensus records, MD changes on 136,066 and MQ on 3,568. `samtools calmd` disagrees with the MD of 136,038 of them in Java mode and of none in the corrected mode (29 before R47) |
+| R47 | reference bases are compared in upper case | two-lane Illumina input: 29 consensus records on decoy contigs (NM and MD; 2 in bases, 1 in qualities) |
 
 **UMIs**
 
@@ -403,7 +448,7 @@ All corrections together, default against `-java_compat`:
 
 | Input | BAM | Side files |
 |---|---|---|
-| Illumina, one BAM and two lane BAMs | identical | `bqr.tsv` 1,365 of 2,816 rows; `duplicate_freq.tsv` 1 label; `jitter_params` 4 of 7 rows; `ms_table` 52 of 89 rows |
+| Illumina, one BAM and two lane BAMs | identical before R42 to R47. Two lane BAMs with them: 138,363 of 27.7 million records changed (attributes 138,362: R44, R47), 36 gone, 33 new (R43) | `bqr.tsv` 1,365 of 2,816 rows; `duplicate_freq.tsv` 1 label (4 of 10 rows with R43); `jitter_params` 4 of 7 rows; `ms_table` 52 of 89 rows |
 | Illumina with duplex UMIs | identical | `bqr.tsv` 1,945 of 4,608 rows; `duplicate_freq.tsv` 1 label; `jitter_params` 6 of 21; `ms_table` 147 of 267; UMI statistics identical |
 | SBX tumor | 4,611 of 23.8 million records changed (qualities 4,577, bases 1,272, duplicate flag 1,000), 399 gone, 297 new; unplaced reads the same | `bqr.tsv` 1,060 of 2,493 rows; `duplicate_freq.tsv` 30 of 30; `jitter_params` 7 of 14; `ms_table` 104 of 106 |
 | SBX normal | 1,003 of 11.0 million records changed (qualities 999, duplicate flag 226), 96 gone, 16 new | `bqr.tsv` 1,028 of 2,406 rows; `duplicate_freq.tsv` 25 of 29; `jitter_params` 7 of 14; `ms_table` 124 of 124 |
@@ -412,7 +457,7 @@ All corrections together, default against `-java_compat`:
 
 Unit tests: every correction that can be shown without real data has a test of the corrected path
 beside a check of the Java path (R1 to R5, R7 to R11, R13, R14, R16, R18, R21, R24, R25, R26, R28, R29,
-R31, R41). The Java tests that pass only with a fault run inside `compat::with_java(true, ...)`: the last
+R31, R41, R42, R43, R44, R47). The Java tests that pass only with a fault run inside `compat::with_java(true, ...)`: the last
 block of `testSbxDuplicateGroupCollapsing` (R7) and the ported checks of the failures. R6 and R27 have
 no unit test: R6 needs a duplicate group through the partition reader and is covered by the SBX runs,
 R27 ends the process.
@@ -451,6 +496,11 @@ R27 ends the process.
   start (from the first read of the input, say), which is not what one thread of Java does either
   (it takes the first read whose UMI is extracted). It matters only for inputs that should be run
   with `-umi_variable_length`.
+- **R45, supplementaries of duplicates.** A supplementary can be read before its primary (it lies on
+  another chromosome, in another partition), so marking it needs the names of the duplicate primaries
+  that carry an SA tag from every partition, and a second pass over the supplementaries written; or
+  the README is what should change. Java's tests do not say which is meant. ESVEE marks some of these
+  itself (`markSupplementaryDuplicates`).
 - **R17, R19, R20, R22, R38, R39, R40** are not reproduced in either mode (see each finding): the port
   already gives one result where Java depends on timing, or completes where Java fails.
 - **R32, R33** are a comment and a test. **R34, R35** are properties of htsjdk that the port follows
