@@ -1,6 +1,6 @@
 //! Switch between the corrected behaviour (the default) and that of Java SAGE 5.1.
 //!
-//! REPORT.md, section 5, numbers the faults found in the Java code (S1 to S48). Each place where the
+//! REPORT.md, section 5, numbers the faults found in the Java code (S1 to S53). Each place where the
 //! port corrects one asks `compat::java("S4")`: false, the default, takes the corrected path; true takes
 //! the Java path, so that the output can be compared with Java's.
 //!
@@ -52,8 +52,8 @@ pub fn java_all() -> bool {
     MODE.load(Ordering::Relaxed) == JAVA
 }
 
-/// The number of findings: S1 to S48.
-pub const FINDINGS: u32 = 48;
+/// The number of findings: S1 to S53.
+pub const FINDINGS: u32 = 53;
 
 fn valid_id(id: &str) -> bool {
     let Some(rest) = id.strip_prefix('S') else { return false };
@@ -138,8 +138,8 @@ mod tests {
 
     #[test]
     fn ids() {
-        assert!(valid_id("S1") && valid_id("S48"));
-        assert!(!valid_id("S49") && !valid_id("S0") && !valid_id("X1") && !valid_id("S") && !valid_id("") && !valid_id("S+1"));
+        assert!(valid_id("S1") && valid_id(&format!("S{FINDINGS}")));
+        assert!(!valid_id(&format!("S{}", FINDINGS + 1)) && !valid_id("S0") && !valid_id("X1") && !valid_id("S") && !valid_id("") && !valid_id("S+1"));
     }
 
     #[test]

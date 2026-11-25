@@ -29,9 +29,17 @@ pub(crate) fn dedup_mnv_overlaps(variants: &mut [SageVariant]) {
     let mnvs: Vec<usize> = (0..variants.len())
         .filter(|&i| variants[i].variant().is_mnv() && variants[i].is_passing() && variants[i].has_local_phase_sets())
         .collect();
+    // S50: Java takes the MNVs that pass before the loop, but an MNV that an earlier pair filtered is still compared, and
+    // can then filter a third one that nothing passing overlaps (README: "on PASS variants only"). Corrected: an MNV
+    // filtered on the way is skipped on both sides of a pair.
+    let skip_filtered = !crate::compat::java("S50");
     let mut index = 0;
     while index + 1 < mnvs.len() {
         let first = mnvs[index];
+        if skip_filtered && !variants[first].is_passing() {
+            index += 1;
+            continue;
+        }
         let max_pos = variants[first].position() + variants[first].variant().alt_len() - 1;
         let mut next_index = index + 1;
         while next_index < mnvs.len() {
@@ -39,7 +47,9 @@ pub(crate) fn dedup_mnv_overlaps(variants: &mut [SageVariant]) {
             if variants[next].position() > max_pos {
                 break;
             }
-            if !variants[next].has_matching_lps(variants[first].local_phase_sets()) {
+            if !variants[next].has_matching_lps(variants[first].local_phase_sets())
+                || (skip_filtered && !variants[next].is_passing())
+            {
                 next_index += 1;
                 continue;
             }

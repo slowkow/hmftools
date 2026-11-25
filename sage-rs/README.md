@@ -77,7 +77,7 @@ when storage is fast enough to keep every thread busy.
 
 ## Corrections and `-java_compat`
 
-The faults found in Java SAGE are numbered S1 to S48 in [REPORT.md](REPORT.md), section 5. For 29 of
+The faults found in Java SAGE are numbered S1 to S53 in [REPORT.md](REPORT.md), section 5. For 32 of
 them the port takes a corrected path by default; section 5.5 says what each correction does and what
 it changes on the test data.
 

@@ -233,7 +233,14 @@ impl VariantData {
         }
     }
     pub fn is_long_indel(&self) -> bool {
-        self.ref_.len().max(self.alt.len()) as i32 >= LONG_INSERT_LENGTH
+        // S51: Java takes the longer allele's length, so an indel of 10 bases (11 with the anchor base) is long here but
+        // not in the caller (ReadContextCounter.isLongIndel: the indel length), and TINC rechecks its germline filter
+        // with other jitter counts than the caller set it with. Corrected: the indel length, as the caller.
+        if crate::compat::java("S51") {
+            self.ref_.len().max(self.alt.len()) as i32 >= LONG_INSERT_LENGTH
+        } else {
+            (self.ref_.len() as i32 - self.alt.len() as i32).abs() >= LONG_INSERT_LENGTH
+        }
     }
     /// VariantTier.UNKNOWN is treated as the low confidence tier wherever TINC uses the tier
     pub fn tier(&self) -> Tier {
@@ -1142,6 +1149,26 @@ pub fn run_standalone(args: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// S51: a 10-base indel is not long, as in the caller; an 11-base one is
+    #[test]
+    fn corrected_long_indel_is_the_indel_length() {
+        use crate::compat::with_java;
+        let indel = |r: &str, a: &str| {
+            let geno = "./.:10,2:30,30:12:2,0,0,0,10,12:2,0,0,0,10,12";
+            let fields = ["chr1", "100", ".", r, a, ".", ".", "MQF=60", "GT:AD:ARCBQ:DP:RC_CNT:RC_QUAL", geno, geno];
+            VariantData::from_fields(&fields, 9, 10).unwrap()
+        };
+        let ins10 = indel("A", "ACCCCCCCCCC");
+        let ins11 = indel("A", "ACCCCCCCCCCC");
+        let del10 = indel("ACCCCCCCCCC", "A");
+        with_java(false, || {
+            assert!(!ins10.is_long_indel() && !del10.is_long_indel());
+            assert!(ins11.is_long_indel());
+        });
+        // Java: the longer allele, 11 bases with the anchor
+        with_java(true, || assert!(ins10.is_long_indel() && del10.is_long_indel()));
+    }
 
     // TincTest.createTincVariantFromContext
     fn variant_from_context(ref_depth: i32, ref_alt: i32, tumor_depth: i32, tumor_alt: i32, mqf: f64) -> VariantData {

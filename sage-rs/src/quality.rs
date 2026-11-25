@@ -339,7 +339,11 @@ impl MsiJitter {
     pub fn calc_error_rate(&self, variant: &SimpleVariant, repeat: &RepeatInfo) -> f64 {
         let alt_bases: &[u8] = if variant.is_insert() { &variant.alt[1..] } else { &variant.ref_[1..] };
         let change = implied_alt_change(variant.is_delete(), alt_bases, repeat);
-        if change > MSI_JITTER_MAX_REPEAT_CHANGE || change == 0 {
+        // S49: the change is negative for a deletion, so Java's cap of 5 repeat units applies to insertions only, and a
+        // deletion of 6 or more units gets the model's floor (1e-4, Q40) and the MSI quality path, against the README
+        // ("indels of no more than 5 repeat units") and the model's -5 to +5 range. Corrected: the size of the change.
+        let beyond_model = if crate::compat::java("S49") { change > MSI_JITTER_MAX_REPEAT_CHANGE } else { change.abs() > MSI_JITTER_MAX_REPEAT_CHANGE };
+        if beyond_model || change == 0 {
             return 0.0;
         }
         let Some(p) = find_applicable_params(&self.params, &repeat.bases) else { return 0.0 };

@@ -9,7 +9,7 @@ The Rust port runs the full tumor/normal Illumina somatic pipeline and writes a 
 VCF. With `-java_compat`, on every region tested so far the decompressed VCF is byte-identical to Java
 SAGE 5.1 run with `-threads 1`, at any Rust thread count.
 
-Since 2026-11-22 the default is the corrected mode: 29 of the 48 Java findings numbered in REPORT.md,
+Since 2026-11-22 the default is the corrected mode: 32 of the 53 Java findings numbered in REPORT.md,
 section 5, are corrected unless `-java_compat` (or `SAGE_JAVA_COMPAT=1`) is given. **Every statement
 below about equality with Java, and every record count given beside one, is about the port run with
 `-java_compat`.** What the corrections change is measured in REPORT.md 5.5; step 14 of the table is

@@ -172,3 +172,56 @@ fn overlap_of_mates_after_an_insert() {
     assert_eq!(overlapped(), vec![false, false, false, false, true, true, true, true]);
     assert_eq!(with_java(true, overlapped), vec![false, false, false, false, true, true, false, false]);
 }
+
+/// S49: a deletion of more than 5 repeat units is beyond the jitter model, as an insertion is
+#[test]
+fn msi_error_rate_is_zero_beyond_five_units_either_way() {
+    use crate::quality::{JitterParams, MsiJitter};
+    use crate::repeat::RepeatInfo;
+    let params = JitterParams {
+        repeat_unit: "A/T".to_string(), consensus: "NONE".to_string(), scale4: 0.05, scale5: 0.06, scale6: 0.07, gradient: 0.0444,
+        intercept: -0.1835, skew: 1.0164,
+    };
+    let msi = MsiJitter { params: vec![params], probable_msi: false };
+    let repeat = RepeatInfo::new(1, b"A".to_vec(), 12);
+    let del6 = SimpleVariant::new(100, b"GAAAAAA", b"G");
+    let ins6 = SimpleVariant::new(100, b"G", b"GAAAAAA");
+    let del5 = SimpleVariant::new(100, b"GAAAAA", b"G");
+    with_java(false, || {
+        assert_eq!(0.0, msi.calc_error_rate(&del6, &repeat));
+        assert_eq!(0.0, msi.calc_error_rate(&ins6, &repeat));
+        assert!(msi.calc_error_rate(&del5, &repeat) > 0.0);
+    });
+    // Java: the 6-unit deletion gets the model's floor, the 6-unit insertion none
+    with_java(true, || {
+        assert!(msi.calc_error_rate(&del6, &repeat) > 0.0);
+        assert_eq!(0.0, msi.calc_error_rate(&ins6, &repeat));
+    });
+}
+
+/// S50: an MNV filtered by an earlier pair does not filter another one
+#[test]
+fn filtered_mnv_does_not_filter_the_next() {
+    use super::variant_dedup::{add_local_phase_set, create_read_context, create_sage_variant_from_context, set_tumor_quality};
+    use crate::dedup::dedup_mnv_overlaps;
+    use crate::filters::SoftFilter;
+    let mnv = |pos: i32, r: &str, a: &str, count: i32, qual: i32| {
+        let v = SimpleVariant::new(pos, r.as_bytes(), a.as_bytes());
+        let mut s = create_sage_variant_from_context(create_read_context(v, "A", "A", "GGGGGG", "GGGGGG"));
+        set_tumor_quality(&mut s, count, qual);
+        add_local_phase_set(&mut s, 1, count);
+        s
+    };
+    // A covers 100-102, B 102-104 and C 103-104: A filters B (equal changes, higher quality); C overlaps only B
+    let make = || vec![mnv(100, "ACG", "CAT", 5, 1000), mnv(102, "GTA", "TGC", 4, 900), mnv(103, "TA", "GC", 3, 800)];
+    let mut corrected = make();
+    with_java(false, || dedup_mnv_overlaps(&mut corrected));
+    assert!(corrected[0].is_passing());
+    assert!(corrected[1].filters.contains(&SoftFilter::DedupMnv));
+    assert!(corrected[2].is_passing());
+    // Java: the filtered B still filters C (3 changed bases against 2)
+    let mut java = make();
+    with_java(true, || dedup_mnv_overlaps(&mut java));
+    assert!(java[0].is_passing());
+    assert!(!java[1].is_passing() && !java[2].is_passing());
+}

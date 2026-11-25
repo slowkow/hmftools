@@ -7,7 +7,7 @@ measurements) and [QUIRKS.md](QUIRKS.md) (the Java findings by subject).
 
 Baseline: Java SAGE 5.1 at upstream commit `a224a2c`.
 
-Two modes. By default the port corrects 29 of the 48 Java findings of section 5. With `-java_compat`
+Two modes. By default the port corrects 32 of the 53 Java findings of section 5. With `-java_compat`
 (or `SAGE_JAVA_COMPAT=1`) it behaves as Java does. **Sections 1, 2, 3 and 6 describe the port run with
 `-java_compat`**: every "identical", every record count and every timing there was measured in that
 mode, or before the corrections existed, when it was the only mode. Section 5.5 has what the corrected
@@ -137,7 +137,7 @@ few percent without faster storage.
 
 ## 5. Java findings
 
-Numbered S1 to S48 and grouped by kind. File references are to
+Numbered S1 to S53 and grouped by kind. File references are to
 `sage/src/main/java/com/hartwig/hmftools/sage/` unless they name `hmf-common`. "Reproduced" means the
 port behaves the same way under `-java_compat`, so that its output equals Java's.
 
@@ -236,6 +236,35 @@ the port run with `-java_compat`.
   the highly polymorphic (HLA) genes, which the caller applies, never applies to the appended
   samples. Reproduced. **Corrected by default** when `-ensembl_data_dir` is given to `append`.
 
+**Found by a review of the Java code (2026-11-25)**
+
+S49 to S53 were found after the port was complete, by a review made for this purpose, and checked
+against the code before they were taken in.
+
+- **S49. `quality/MsiJitterCalcs.java:259-262`** `calcErrorRate` leaves out a change of more than 5
+  repeat units with `impliedAltChange > MSI_JITTER_MAX_REPEAT_CHANGE`, but the change is negative for a
+  deletion, so only insertions are left out. A deletion of 6 or more units of a microsatellite gets the
+  model's floor (1e-4, Q40) and so the MSI quality path: no fixed indel penalty, the MSI quality used
+  directly, no `minAvgBaseQual`, while the insertion of the same units gets the ordinary indel quality.
+  The README ("indels of no more than 5 repeat units"), the model's range of -5 to +5
+  (`MsiModelParams.java:56-59`) and `ReadContextCounter.java:204` (which takes `abs()` of the same value)
+  all treat the two alike. Reproduced. **Corrected by default.**
+- **S50. `dedup/DedupSnvMnv.java:22-54`** `dedupMnvOverlaps` takes the passing MNVs before its loop, but
+  an MNV filtered by an earlier pair is still compared and can filter a third MNV that no passing MNV
+  overlaps (README: "on PASS variants only"). Five or more substituted bases in one phase set are
+  needed; the result is another representation (MNV against SNVs). Reproduced. **Corrected by default.**
+- **S51. `tinc/VariantData.java:120`** TINC's `isLongIndel` compares the longer allele's length with 11,
+  so an indel of 10 bases is long there, while the caller's test (`ReadContextCounter.java:255`) is the
+  indel length. TINC then rechecks the germline filter of such an indel with other jitter counts than
+  the caller set it with. Reproduced. **Corrected by default.**
+- **S52. `sync/CombinedSyncData.java:126-129`, `common/NumberEvents.java:23-42`** A merged fragment
+  copies every attribute of its first mate, NM included, and its event count is that NM less the
+  indels of the merged cigar: the second mate's mismatches are left out, an indel of the second mate
+  alone makes the count lower (even below zero), and the count depends on which mate starts first.
+  Java's own path for a record without NM (a CRAM without the tag) counts the events on the merged
+  read. Reproduced. Left: counting on the merged read is the obvious reading, but its effect is large
+  (5.5) and the thresholds were set with Java's BAM behaviour; to be confirmed with the SAGE authors.
+
 ### 5.2 Nondeterminism
 
 - **S22. `phase/PhaseSetCounter.java:12`** `LPS` ids come from a counter shared by all region threads,
@@ -303,6 +332,11 @@ the port run with `-java_compat`.
 
 ### 5.4 Oddity
 
+- **S53. `filter/VariantFilters.java:469-472`, `:293-299`** The "novel indel boost" of the VAF
+  probability test adds 12 to the alt base quality, which only enters the alt to all quality ratio (of
+  about 1 for indels), not the probability; and it applies to every Illumina tier. The README says that
+  p is boosted, and only in hotspot and panel regions. Boosting p as the README says would pass novel
+  indels at low VAF much more easily, so it is left as the code has it. Reproduced. Left.
 - **S40. `vcf/VariantVCF.java:259`** `RC_JIT` is declared with three values in the header
   ("Shortened, Lengthened, QualityPenalty") and written with two. Reproduced.
   **Corrected by default.**
@@ -335,7 +369,7 @@ consensus read with an empty base.
 
 ### 5.5 Corrections
 
-29 of the findings above are corrected by default. Each corrected place in the code asks
+32 of the findings above are corrected by default. Each corrected place in the code asks
 `compat::java("S<n>")` (`src/compat.rs`) and keeps the Java path beside the corrected one.
 
 - `-java_compat`, or `SAGE_JAVA_COMPAT=1` in the environment: Java behaviour for every finding.
@@ -370,6 +404,8 @@ particular should be confirmed with the SAGE authors.
 | S8 | with a split read, the index asked about is used, relative to the segment | not measured: no RNA input is on the local disk; the path is only reached by a split read that needs realignment |
 | S9 | the jitter check of a split read is made on the segment | not measured, as S8; unit test |
 | S24 | a contig is cut into the slices of one thread at any thread count | chrM at 3 threads: 2 of 128 records change in their read counts, and the output is byte for byte Java's at 1 thread; at 1 thread none |
+| S49 | a change of more than 5 repeat units, longer or shorter, is outside the jitter model | Illumina chr21: 18 indel records changed (quality and support values), `FILTER` on 3, 245 passing as before. `-germline`: 1 gone, 335 changed (330 indels), `FILTER` on 22, passing 72,902 to 72,897 |
+| S50 | an MNV filtered on the way is skipped on both sides of a pair | Illumina chr21 `-germline`: `FILTER` on 4 records (2 MNVs, 2 SNVs), passing the same; with soft filters none |
 
 **TINC**
 
@@ -382,6 +418,7 @@ rewritten VCF), and on the two-tumor SBX runs.
 | S10 | **intent uncertain.** The counter counts the levels since the lowest score and the search stops when five in a row have not improved on it. Alternatives: stop at the sixth (the test is `>=` on a counter the code never shows being incremented), or the full scan is what is wanted and the exit is dead code | none: the fitted level is the same at 2%, 10% and 50% (0.015, 0.100, 0.500) and on the SBX runs |
 | S11 | the levels from 0.15 are 0.15, 0.20, ..., 1.00 | 2% and 10% none; 50%: the level is 0.5 in place of 0.49999999999999994, which moves the recovery limit: 1 record new, 2 change FILTER |
 | S12 | an MNV is a variant whose ref and alt have the same length above 1: gnomAD is asked for each base and the lowest frequency taken (as `GnomadChrCache.getFrequency` does for an MNV), and the recheck of the germline alt support applies | simulations: 1, 12 and 71 records gone, 1,425, 957 and 275 changed (`GND_FREQ` on MNVs, FILTER), 2, 0 and 2 fewer recovered; SBX runs: 20 and 287 MNVs get `GND_FREQ` |
+| S51 | an indel is long from 11 bases of indel length, as in the caller | Illumina chr21 with `-run_tinc` and the oncoanalyser options: none (no such indel is rechecked); unit test |
 | S13 | records on contigs other than chr1-22, X and Y are written where the input has them; they take no part in the fit and have no gnomAD file; recovery and the germline alt support limit apply to them as they do in Java when the fit variants come from a file | simulations: 70, 75 and 93 mitochondrial records written, 2 of them passing; SBX runs none (chr21 only) |
 
 **Ultima**
@@ -429,6 +466,15 @@ rewritten VCF), and on the two-tumor SBX runs.
 | SBX chr21, unfiltered | 68,809 to 68,807 | 2 / 0 / 20,301 | 63,468 to 63,441 | 31,301 to 30,061 |
 | Ultima chr21 | 2,689 to 2,689 | 0 / 0 / 15 | 150 to 150 | 49 to 51 |
 | Ultima chr21, unfiltered | 87,238 to 87,234 | 4 / 0 / 16,816 | 83,344 to 83,343 | 35,387 to 33,470 |
+
+With S49 to S51 (2026-11-25), Illumina chr21: 6,023 records, 19 changed (`FILTER` on 4), 245 passing;
+`-germline`: 110,833 to 110,832 records, 358 changed (`FILTER` on 45), passing 72,902 to 72,895. The
+output is the same at 1, 3 and 6 threads.
+
+S52 is left as Java has it. Counting the events of a merged fragment on the merged read, its obvious
+correction, changes Illumina chr21 from 6,023 records to 5,908 (121 gone, 6 new, 2,904 changed), 245
+passing to 244, and with `-germline` from 110,833 records to 109,483 and 72,902 passing to 72,184: the
+same as Java gives from a CRAM without NM tags (S7).
 | SBX, two tumors | 92,402 to 92,402 | 0 / 0 / 15,111 | 68,212 to 68,211 | 22,826 to 22,179 |
 | Ultima, two tumors | 10,715 to 10,716 | 0 / 1 / 17 | 150 to 150 | 42 to 43 |
 
@@ -484,8 +530,8 @@ from its BAM in 121 + 6 records and 2,913 values, as Java does.
 In Java mode the same holds except for chrM (S24), where the port follows Java.
 
 **Unit tests** of the corrected behaviour, each beside the Java behaviour: `phase::tests` (S1, S2,
-S3), `tests::corrections` (S4, S5, S6, S15, S24, S38, S40, S41, S44), `tests::alignment_reading` (S7),
-`tests::realignment` (S9), `tinc::tests` (S10, S11, S12), `append::tests` (S19, S20). Without one: S8
+S3), `tests::corrections` (S4, S5, S6, S15, S24, S38, S40, S41, S44, S49, S50), `tests::alignment_reading` (S7),
+`tests::realignment` (S9), `tinc::tests` (S10, S11, S12, S51), `append::tests` (S19, S20). Without one: S8
 (the index of a split segment, covered through S9's test only for the jitter path), S13 and S21 (they
 need input files), S16 to S18 (no observable effect), S39, S45, S46 and S47 (covered by the visualiser
 runs above).
