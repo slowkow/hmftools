@@ -117,7 +117,7 @@ Java mode; the corrected mode at one partition was not run.
 
 ## 3. Java findings
 
-Numbered R1 to R40. "Reproduced" means the port behaves the same way under `-java_compat`, so that its
+Numbered R1 to R41. "Reproduced" means the port behaves the same way under `-java_compat`, so that its
 output equals Java's; where Java stops with an exception, "reproduced as a failure" means the port
 stops there too. "Not reproduced" means the port does not follow Java in either mode, because Java's
 result there depends on thread timing or is a failure with nothing to compare. Line numbers are those
@@ -246,6 +246,21 @@ Section 2 says for each of these what the corrected mode gives at different thre
   read name whose UMI is extracted. With several threads that is whichever partition gets there
   first. It matters only when the UMIs differ in length and `-umi_variable_length` is not given. The
   port has the same dependence in both modes. Left (3.6).
+
+- **R41. Results depend on the order of the input BAMs** (`BamReader.java`, `consensus/IlluminaRoutines.java:230-255`,
+  2026-11-25). Several input BAMs (`-input_bam a,b,c`, one per lane) are merged by alignment start, and
+  reads that start at the same position come in the order the files were given. That order reaches the
+  results where the code keeps the first of equals: the consensus base of a position at which two bases
+  have the same quality total and neither is the reference (always so in soft-clipped bases, which have
+  none) is that of the first read, and so are other choices between equals. Observed on Google Batch: a
+  35x tumor from three lanes, the same lane BAMs given in two orders (oncoanalyser listed them in the
+  order the alignment tasks finished), 16 threads, corrected mode: 7,751 of 1.59 billion records
+  differed (60 in the duplicate flag, 7,441 in bases and 273 in qualities: consensus reads, the only
+  records whose bases REDUX rewrites), 16 and 24 records only in one; `duplicate_freq.tsv` differed in 8
+  of its rows; the 4-lane normal, listed in the same order both times, was byte-identical. On the
+  two-lane test input of section 1 the two orders give the same records (Java mode) except the order of
+  32 unplaced reads. Reproduced. Not yet corrected; the slowkow/oncoanalyser fork now lists the lane
+  BAMs by file name, so a pipeline run gives one result.
 
 ### 3.3 Crash
 
