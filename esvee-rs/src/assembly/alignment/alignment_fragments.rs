@@ -1,6 +1,7 @@
 //! AlignmentFragments: assigns the reads of an assembly alignment's assemblies to its breakends as split or
 //! discordant support, and infers fragment lengths.
 
+use crate::common::compat;
 use crate::assembly::alignment::assembly_alignment::AsmAlignP;
 use crate::assembly::alignment::breakend::{Breakend, BreakendP, BreakendSupport};
 use crate::assembly::common_utils::{position_within, positions_within};
@@ -151,7 +152,10 @@ impl AlignmentFragments {
         if let Some(phase_set) = aa.phase_set() {
             let mut all = phase_set.all_assemblies();
             primary_assemblies = aa.assemblies();
-            for merged_phase_set in phase_set.merged_phase_sets() {
+            // Java (A39): only the sets merged straight into this one are counted, not those merged into
+            // them before. Corrected: every level (PhaseSetMerger moves all their reads into this frame).
+            let merged_phase_sets = if compat::java("A39") { phase_set.merged_phase_sets().clone() } else { phase_set.merged_phase_sets_deep() };
+            for merged_phase_set in merged_phase_sets {
                 all.extend(merged_phase_set.all_assemblies());
             }
             assemblies = all;

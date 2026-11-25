@@ -6,7 +6,7 @@ use crate::common::compat;
 use crate::assembly::alignment::align_data::AlignP;
 use crate::assembly::alignment::alternative_alignment::AlternativeAlignment;
 use crate::assembly::alignment::assembly_alignment::AsmAlignP;
-use crate::assembly::alignment::breakend_builder::{segment_orientation, segment_orientation_of};
+use crate::assembly::alignment::breakend_builder::{segment_orientation, segment_orientation_of, selected_alt_breakend};
 use crate::assembly::alignment::md_tag::MdTag;
 use crate::assembly::common_utils::positions_within;
 use crate::assembly::constants::*;
@@ -190,7 +190,9 @@ fn check_local_variants(candidate_alignments: &[AlignP], valid_alignments: &mut 
 
 fn collect_alignment_candidates(alignment: AlignP, links_at_end: bool) -> Vec<AlternativeAlignment> {
     if let Some(initial) = alignment.selected_alt_alignment() {
-        return vec![initial.clone()];
+        // a PMS2 alternative in breakend coordinates (A38; Java uses its leftmost base and strand)
+        let (chromosome, position, orientation) = selected_alt_breakend(&alignment, links_at_end).expect("selected alternative");
+        return vec![AlternativeAlignment::new(&chromosome, position, orientation, &initial.cigar, initial.num_mutations)];
     }
     let orientation = segment_orientation(&alignment, links_at_end);
     let use_end_position = alignment.is_forward() == links_at_end;
@@ -320,13 +322,21 @@ fn check_pms2_low_map_pairings(alignments: &[AlignP]) {
         if matches_pms2_region(pms2, alignment.chromosome(), alignment.position_start(), alignment.position_end()) {
             alignment.m().set_modified_map_qual(ALIGNMENT_MIN_MOD_MAP_QUAL);
         } else if matches_pms2_region(pms2cl, alignment.chromosome(), alignment.position_start(), alignment.position_end()) {
+            // Java (A38): the PMS2 alternative is stored as the aligner gives it, its leftmost base and its
+            // strand, and BreakendBuilder takes a selected alternative's position and orientation as the
+            // breakend's (the SSX2 swap and the alternatives of collectAlignmentCandidates are stored in
+            // those terms). At the end of a segment on the + strand the breakend is the alignment's last
+            // base, and at the start of a segment its orientation is the opposite of the strand, so three
+            // of the four cases get a wrong position or orientation. Corrected: the alternative is marked
+            // as the aligner's, and turned into breakend coordinates for the segment end at which a
+            // breakend is formed (selected_alt_breakend).
             for alt_alignment in alignment.m().raw_alt_alignments() {
                 if matches_pms2_region(pms2, &alt_alignment.chromosome, alt_alignment.position, alt_alignment.position_end()) {
                     if alignment.map_qual() >= ALIGNMENT_MIN_MOD_MAP_QUAL {
-                        alignment.m().set_selected_low_map_qual_alt_alignment(Some(alt_alignment.clone()));
+                        alignment.m().set_selected_raw_alt_alignment(alt_alignment.clone());
                     } else {
                         let min_qual_alt_alignment = AlternativeAlignment::new(&alt_alignment.chromosome, alt_alignment.position, alt_alignment.orient, &alt_alignment.cigar, ALIGNMENT_MIN_MOD_MAP_QUAL);
-                        alignment.m().set_selected_low_map_qual_alt_alignment(Some(min_qual_alt_alignment));
+                        alignment.m().set_selected_raw_alt_alignment(min_qual_alt_alignment);
                     }
                     break;
                 }

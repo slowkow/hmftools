@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use crate::common::compat;
 use crate::assembly::assembly_utils::{extract_insert_sequence, is_local_assembly_candidate};
 use crate::assembly::constants::*;
 use crate::assembly::line_utils::try_line_sequence_link;
@@ -319,8 +320,16 @@ pub fn find_local_sequence_match(first_seq: &JunctionSequence, second_seq: &Junc
             if first_ext_base_overlap < min_ref_overlap_length && second_ext_base_overlap < min_ref_overlap_length {
                 continue;
             }
+        } else if !compat::java("A37") {
+            // Java (A37): the three assignments below stand after the block above, not in it, so a later
+            // candidate that is not better (shorter, or as long with no lower penalty) replaces the top
+            // match without the checks that it covers ref and extension bases; the link is formed from
+            // the last candidate that passes the mismatch test. In a tandem repeat several offsets pass,
+            // and a later, shorter one makes the joined sequence gain or lose repeat units.
+            // Corrected: as in find_best_sequence_match, only a better candidate that passes the checks
+            // is taken.
+            continue;
         }
-        // as in Java, taken as the top match whether or not it beat the previous one
         top_match_length = overlap_length;
         top_match_indices = Some([first_index_start, second_index_start, 0]);
         top_match_mismatch_penalty = mismatch_penalty;

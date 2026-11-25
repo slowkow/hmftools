@@ -42,6 +42,20 @@ pub fn segment_orientation_of(segment_orientation: Orientation, links_end: bool)
     if links_end == segment_orientation.is_forward() { Orientation::Forward } else { Orientation::Reverse }
 }
 
+/// The chromosome, position and orientation of the breakend at a segment's end (`links_end`) or start
+/// when its selected alternative alignment stands in for it. The alternative is in breakend coordinates
+/// already, except one that the PMS2 swap took from the aligner as it is (leftmost base, strand), which is
+/// converted for that end as the segment's own alignment would be. Java (A38) uses that one unconverted.
+pub fn selected_alt_breakend(alignment: &AlignP, links_end: bool) -> Option<(String, i32, Orientation)> {
+    let alt = alignment.selected_alt_alignment()?;
+    if alignment.selected_alt_is_raw() && !compat::java("A38") {
+        let use_end_position = alt.orient.is_forward() == links_end;
+        let position = if use_end_position { alt.position_end() } else { alt.position };
+        return Some((alt.chromosome.clone(), position, segment_orientation_of(alt.orient, links_end)));
+    }
+    Some((alt.chromosome.clone(), alt.position, alt.orient))
+}
+
 fn is_line_insertion(inserted_bases: &str, orientation: Orientation) -> bool {
     find_line_sequence_count(inserted_bases.as_bytes(), 0, inserted_bases.len() as i32 - 1, if orientation.is_forward() { LINE_BASE_T } else { LINE_BASE_A }) > 0
 }
@@ -151,18 +165,49 @@ impl<'a> BreakendBuilder<'a> {
         let assembly_indel_start = alignment.sequence_start() + get_read_index_from_position_ext(alignment.position_start(), alignment.cigar_elements(), indel_coords.pos_start, true, false) + 1
             - left_soft_clip_length(alignment.cigar_elements());
         let assembly_indel_end = assembly_indel_start + if indel_coords.is_insert() { indel_coords.length } else { 0 };
+        // Java (A41): the two indices above are counted from the segment's start along the cigar, that is
+        // along the reference strand, and are positions in the whole assembly sequence; yet the anchor test
+        // takes the left one as a length from position 0 and the right one from the segment's length. When
+        // the segment does not start at 0 (a soft clip, or a later segment) the left anchor is overstated
+        // and the right understated by the segment's start, so an indel near a segment end is called or
+        // dropped by where the segment lies. And for an alignment to the reverse strand the cigar runs
+        // against the assembly sequence: the inserted bases and the indices used to count split reads
+        // are taken from the mirror-image place in the segment.
+        // Corrected: the anchors are the segment's bases on either side of the indel; for a reverse
+        // alignment the indices are mirrored within the segment and the inserted bases are
+        // reverse-complemented to the reference strand.
+        let java_a41 = compat::java("A41");
+        let (sequence_start, sequence_end) = (alignment.sequence_start(), alignment.sequence_end());
+        // an index that marks the boundary before a base, along the reference strand, to the same boundary
+        // in the assembly sequence's direction
+        let mirror = |index: i32| sequence_start + sequence_end + 1 - index;
+        let reverse_frame = alignment.is_reverse() && !java_a41;
         if !self.is_chained() {
-            let left_anchor_length = assembly_indel_start;
-            let right_anchor_length = alignment.segment_length() - assembly_indel_end;
+            let (left_anchor_length, right_anchor_length) = if java_a41 {
+                (assembly_indel_start, alignment.segment_length() - assembly_indel_end)
+            } else {
+                (assembly_indel_start - sequence_start, sequence_end - assembly_indel_end + 1)
+            };
             if left_anchor_length < ALIGNMENT_INDEL_MIN_ANCHOR_LENGTH || right_anchor_length < ALIGNMENT_INDEL_MIN_ANCHOR_LENGTH {
                 return false;
             }
         }
         let assembly_seq = self.full_sequence();
-        if indel_coords.is_insert() && assembly_indel_start >= 0 && assembly_indel_end <= assembly_seq.len() as i32 {
+        if reverse_frame {
+            let (insert_start, insert_end) = (mirror(assembly_indel_end), mirror(assembly_indel_start));
+            if indel_coords.is_insert() && insert_start >= 0 && insert_end <= assembly_seq.len() as i32 {
+                indel_coords.set_inserted_bases(reverse_complement_str(&assembly_seq[insert_start as usize..insert_end as usize]));
+            }
+        } else if indel_coords.is_insert() && assembly_indel_start >= 0 && assembly_indel_end <= assembly_seq.len() as i32 {
             indel_coords.set_inserted_bases(assembly_seq[assembly_indel_start as usize..assembly_indel_end as usize].to_string());
         }
-        let breakend_data = self.calc_indel_breakends_with_homology(alignment.chromosome(), &indel_coords, assembly_indel_start, assembly_indel_end);
+        let mut breakend_data = self.calc_indel_breakends_with_homology(alignment.chromosome(), &indel_coords, assembly_indel_start, assembly_indel_end);
+        if reverse_frame {
+            // after any shift for homology, which is along the reference strand
+            let (start, end) = (mirror(breakend_data.assembly_indel_end), mirror(breakend_data.assembly_indel_start));
+            breakend_data.assembly_indel_start = start;
+            breakend_data.assembly_indel_end = end;
+        }
         self.create_indel_breakends(alignment, breakend_data);
         true
     }
@@ -354,13 +399,13 @@ impl<'a> BreakendBuilder<'a> {
             if i == 0 {
                 self.check_alignment_indel(alignment);
             }
-            let (breakend_chr, mut breakend_position, breakend_orientation) = match alignment.selected_alt_alignment() {
-                Some(alt) => (alt.chromosome.clone(), alt.position, alt.orient),
+            let (breakend_chr, mut breakend_position, breakend_orientation) = match selected_alt_breakend(&alignment, true) {
+                Some(alt) => alt,
                 None => (alignment.chromosome().to_string(), if alignment.is_forward() { alignment.position_end() } else { alignment.position_start() }, segment_orientation(&alignment, true)),
             };
             let next_alignment = alignments[i + 1];
-            let (next_chr, mut next_position, next_orientation) = match next_alignment.selected_alt_alignment() {
-                Some(alt) => (alt.chromosome.clone(), alt.position, alt.orient),
+            let (next_chr, mut next_position, next_orientation) = match selected_alt_breakend(&next_alignment, false) {
+                Some(alt) => alt,
                 None => (
                     next_alignment.chromosome().to_string(),
                     if next_alignment.is_forward() { next_alignment.position_start() } else { next_alignment.position_end() },

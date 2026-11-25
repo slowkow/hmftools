@@ -111,6 +111,19 @@ impl PhaseSet {
     pub fn merge_phase_set(&mut self, phase_set: PhaseSetP) {
         self.merged_phase_sets.push(phase_set);
     }
+    /// the sets merged into this one and, in turn, into them, depth first (finding A39)
+    pub fn merged_phase_sets_deep(&self) -> Vec<PhaseSetP> {
+        let mut sets: Vec<PhaseSetP> = Vec::new();
+        let mut stack: Vec<PhaseSetP> = self.merged_phase_sets.iter().rev().copied().collect();
+        while let Some(phase_set) = stack.pop() {
+            if sets.contains(&phase_set) {
+                continue;
+            }
+            sets.push(phase_set);
+            stack.extend(phase_set.merged_phase_sets.iter().rev().copied());
+        }
+        sets
+    }
     pub fn merged(&self) -> bool {
         self.merged_phase_set_id.is_some()
     }

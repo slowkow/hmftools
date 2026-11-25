@@ -52,15 +52,15 @@ pub fn java_all() -> bool {
     MODE.load(Ordering::Relaxed) == JAVA
 }
 
-/// The findings per step: P1-P13, A1-A36, D1-D19, C1-C17.
+/// The findings per step: P1-P13, A1-A41, D1-D19, C1-C18.
 fn valid_id(id: &str) -> bool {
     let Some(step) = id.chars().next() else { return false };
     let Ok(n) = id[1..].parse::<u32>() else { return false };
     let max = match step {
         'P' => 13,
-        'A' => 36,
+        'A' => 41,
         'D' => 19,
-        'C' => 17,
+        'C' => 18,
         _ => return false,
     };
     (1..=max).contains(&n)
@@ -128,8 +128,8 @@ mod tests {
 
     #[test]
     fn ids() {
-        assert!(valid_id("P1") && valid_id("A36") && valid_id("D19") && valid_id("C17"));
-        assert!(!valid_id("A37") && !valid_id("P0") && !valid_id("X1") && !valid_id("A") && !valid_id(""));
+        assert!(valid_id("P1") && valid_id("A41") && valid_id("D19") && valid_id("C18"));
+        assert!(!valid_id("A42") && !valid_id("C19") && !valid_id("P0") && !valid_id("X1") && !valid_id("A") && !valid_id(""));
     }
 
     #[test]

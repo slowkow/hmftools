@@ -24,8 +24,8 @@ port was made; they are outside this repository, because the outputs are derived
   count, and Java's assembly output changes from run to run even at one thread (section 3). The
   reference is Java at one thread with every identity hash made equal (`-XX:hashCode=2`). The port
   gives that result at any thread count.
-- 85 findings about the Java code are recorded in section 4: 13 in prep, 36 in assembly, 19 in depth,
-  17 in the caller. The port reproduces those that change the output.
+- 91 findings about the Java code are recorded in section 4: 13 in prep, 41 in assembly, 19 in depth,
+  18 in the caller. The port reproduces those that change the output.
 - On the small input at 8 threads the Rust chain takes 24 s against Java's 95 s, with a peak of 1.9 GB
   against 44 GB (section 5).
 - On an Illumina whole-genome tumor/normal pair (4.2 billion reads) every output of the Rust chain
@@ -414,7 +414,8 @@ Numbered per step: P (prep), A (assembly), D (depth), C (caller). "Reproduced" m
 the same way under `-java_compat`, so that its output equals Java's; where Java stops with an exception, "reproduced as a
 failure" means the port stops with status 1 at the same point. Where no observed effect is given, the
 finding comes from reading the code while porting and its effect on output was not measured; findings
-the notes mark explicitly as not observed say so.
+the notes mark explicitly as not observed say so. A37 to A41 and C18 come from a later review of the Java
+code (2026-11-25); each was checked against the Java source before it was corrected.
 
 Since 2026-11-22 the port corrects most of these by default. A finding marked **Corrected by default**
 takes the corrected path unless `-java_compat` is given; what the corrected behaviour is and what it
@@ -556,6 +557,62 @@ the port run with `-java_compat`.
 - **A27. `assembly/alignment/AssemblyAlignment.java:371`**
   `currentSeqLength = nextAssembly.extensionLength()` is an assignment where the same variable is
   accumulated with `+=` elsewhere in the method. Reproduced. **Corrected by default** (4.5).
+- **A37. `assembly/phase/AssemblyLinker.java:451-472`** `findLocalSequenceMatch`, which links two
+  assemblies in a local DEL or DUP layout, checks that a candidate overlap covers at least 16 ref bases
+  and 16 extension bases of one assembly or the other only when the candidate is better than the top
+  match so far, and the three assignments
+  that make it the top match stand after that block instead of in it (`findBestSequenceMatch`, lines
+  554-559, has them inside). Every later candidate that passes the mismatch test therefore replaces the
+  top match without the checks, even a shorter one; the link is formed from the last one. In a tandem
+  repeat several offsets pass, and a later, shorter one makes the joined sequence gain or lose repeat
+  units. Reproduced. **Corrected by default** (4.5).
+- **A38. `assembly/alignment/AlignmentFilters.java:511-533`** For an alignment in PMS2CL with low map
+  quality whose XA alternative lies in PMS2, the alternative is selected as the aligner states it: its
+  leftmost base and its strand. `BreakendBuilder.formMultipleBreakends` (lines 563-591) takes a selected
+  alternative's position and orientation as the breakend's, which is how the SSX2 swap (line 467) and
+  `collectAlignmentCandidates` (lines 306-336, converted for the segment end) store theirs. So of the
+  four cases (breakend at the segment's end or start, alternative on the + or - strand) three get a
+  wrong breakend: at the end of a + strand segment the position should be the alignment's last base,
+  and at the start of a segment the orientation is the opposite of the strand. `collectAlignmentCandidates`
+  also passes the unconverted alternative to the length test against a neighbouring low-quality
+  segment. Reproduced. **Corrected by default** (4.5), in part: with a single alignment the swap also
+  zeroes the soft clips (`AlignData.java:341`), and `formSingleBreakend` and `formIndelBreakends` use the
+  PMS2CL coordinates; no single breakend is written, as without the swap (the alignment then fails the
+  map-quality filter). Making that case call a breakend in PMS2 is new behaviour whose form (which soft
+  clip, on which strand) the Java code does not state; left as it is.
+- **A39. `assembly/phase/PhaseSetMerger.java:34-50, 253-323`** `mergePhaseSets` never tests `merged()`.
+  When `first` is the shorter of a pair it is merged into `second`, and the inner loop goes on offering
+  it, with its own sequence but its reads already moved into the other's frame, to the later sets; a
+  `second` merged earlier is offered too. A set can so be merged twice and its reads moved twice, or be
+  merged into a set that is itself merged and never aligned (`AssemblyAligner.java:132`), so that its
+  breakends are lost. And when bases are put in front of the primary's sequence, its reads move but its
+  junction indices do not (`updateSequenceInfo`, `AssemblyAlignment.java:564`; `linkIndices` serve the
+  junction test of a later merge and SAGA matching), nor do the reads of sets merged into it earlier;
+  the reads of sets merged into the other are not moved into the primary's frame, and
+  `AlignmentFragments.java:124-127` counts the reads of one level of merged sets only. Observed in
+  Java's whole-genome output: 45 of 765 merged phase sets are merged into a set that is itself merged.
+  Reproduced. **Corrected by default** (4.5).
+- **A40. `assembly/phase/LocalSequenceMatcher.java:50, 76-115`** When an assembly's extension bases do not
+  match the local reference exactly, `tryLocalAssemblyLink` seeds a fuzzy match with 50-base pieces of the
+  extension, at offsets within the extension (lines 76-106), and passes them to `findBestSequenceMatch`
+  with the straddling sequence (line 50): up to 50 ref bases, then the whole extension. That method takes
+  the offsets as positions in this longer sequence. At a forward junction the comparison is so shifted by
+  the ref bases taken, and a local link is found only where those ref bases happen to repeat the
+  reference before the extension's match. At a reverse junction the frames agree, but the 100 bases
+  compared run on past an extension shorter than 100 into ref bases, which by construction do not follow
+  the extension's local match, so only extensions of about 97 bases or more are linked. The comment at
+  lines 52-53 proposes the extension alone (`formFullExtensionMatchSequence(assembly, false)`).
+  Reproduced. **Corrected by default** (4.5).
+- **A41. `assembly/alignment/BreakendBuilder.java:206-229`** `formIndelBreakends` places an indel of the
+  alignment's cigar in the assembly sequence: `assemblyIndelStart` and `assemblyIndelEnd` are positions in
+  the whole sequence, counted from the segment's start along the cigar. The anchor test (lines 218-219)
+  takes the left anchor as `assemblyIndelStart`, a length from position 0, and the right one as
+  `segmentLength() - assemblyIndelEnd`. When the segment does not start at 0 (a leading soft clip, or
+  any later segment) the left anchor is overstated and the right one understated by the segment's start,
+  so an indel of 32 bases or more is called or dropped according to where its segment lies. And the
+  cigar of an alignment to the reverse strand runs against the assembly sequence: the inserted bases
+  (line 228) and the indices that split-read counting tests (`AlignmentFragments.java:610-618`) are taken
+  from the mirror-image place in the segment. Reproduced. **Corrected by default** (4.5).
 
 **Nondeterminism**
 
@@ -766,6 +823,16 @@ the port run with `-java_compat`.
   regions BED). Reproduced. **Corrected by default** (4.5).
 - **C14. `caller/SvDataCache.java:61`** A breakend on a contig outside chr1-22/X/Y is skipped, so its
   mate stays unmatched and is dropped with only the summary warning. Reproduced. **Corrected by default** (4.5).
+- **C18. `caller/HotspotCache.java:81-82`** (from `caller/CallerApplication.java:232`) A single breakend is
+  a hotspot when an alignment of its insert sequence (INSALN, `chr:start|strand|cigar|score`) completes
+  a known fusion pair. Java takes the alignment's start and strand as the position and orientation of
+  the breakend at the other end of the insert. That breakend's orientation is the opposite of the
+  strand at a forward single breakend and the same at a reverse one, and when it faces forward its
+  position is the alignment's last base: Linx reads the tag so (`linx/.../types/SglMapping.java:59-63`).
+  At a forward single breakend Java therefore matches a hotspot only through inverted orientations; at a
+  reverse one the orientation is right and the position is off by the alignment's length when the
+  insert is on the + strand. Java's own `HotspotTest.java:57-64` encodes the reading. Reproduced.
+  **Corrected by default** (4.5).
 
 **Nondeterminism**
 
@@ -817,7 +884,7 @@ the port run with `-java_compat`.
 
 ### 4.5 Corrections
 
-64 of the findings above are corrected by default. Each corrected place in the code asks
+70 of the findings above are corrected by default. Each corrected place in the code asks
 `compat::java("<id>")` (`src/common/compat.rs`) and keeps the Java path beside the corrected one.
 
 - `-java_compat`, or `ESVEE_JAVA_COMPAT=1` in the environment: Java behaviour for every finding.
@@ -872,6 +939,11 @@ still differ in the order of records that tie on position and strand.
 | A25 | intent uncertain (Java defines no tie-break). Equal keys compare equal and keep the aligner's order | 3 / 0 / 0 |
 | A26 | every assembly of the alignment is examined | none on four inputs |
 | A27 | `+=` | none possible (the value is not read again) |
+| A37 | a candidate is taken only when it is better than the top match and covers ref and extension bases, as in `findBestSequenceMatch` | 20 / 15 / 12: local DUPs and DELs in tandem repeats change length; unfiltered PASS 181 to 179, germline 1,574 to 1,568, somatic unchanged |
+| A38 | the PMS2 alternative is converted, for the segment end at which a breakend is formed, as the segment's own alignment would be (last base at the end of a + strand segment, orientation from the strand and the end); the length test of `collectAlignmentCandidates` gets the same coordinates. The single-alignment case is left as Java has it (A38) | none: the small pair holds no PMS2 or PMS2CL reads; whole genome: the records in PMS2 unchanged |
+| A39 | a merged phase set takes part in no further merge; when bases are put in front of a sequence its junction indices move with them; the reads of sets merged in earlier, at any depth, move with their set's frame and are counted as support | 0 / 0 / 4 (support values): one phase set that Java merges twice; germline 2 records changed |
+| A40 | the fuzzy local match compares the extension bases alone (the commented-out alternative), and the link is formed at the reference position matched to the first extension base | 62 / 44 / 78; assemblies with a local link 286 to 453, of which 72 links are shorter than 32 bases and so, as designed, not aligned (single breakends 750 to 734); unfiltered PASS 181 to 180, germline 1,574 to 1,566, somatic unchanged |
+| A41 | the anchors are the segment's bases on either side of the indel; for an alignment to the reverse strand the indel's indices are mirrored within the segment and the inserted bases are reverse-complemented to the reference strand | 2 / 2 / 0: one insertion on a reverse-strand segment whose inserted bases were reference bases from about 540 bases away becomes a duplication with a short insert; germline the same 2 / 2 |
 | A7 | `AssemblyLogAllReads` is set from `-asm_log_all_reads` | none (nothing reads it) |
 | A32 | the visualiser runs without a reference sample or without a tumor sample (heading text chosen by the port) | files written where Java writes none: 9, 6 and 10 in three cases |
 | A33 | clips at both ends are taken off the alignment's cigar | all chain files Java failed on are written (4 and 3 more files) |
@@ -880,6 +952,16 @@ still differ in the order of records that tie on position and strand.
 
 All assembly corrections together on the small pair, later steps in Java mode: raw VCF 2,425 to 2,441
 (95 gone, 111 new, 380 changed in value); somatic the same 31 records; germline 1,516 to 1,519.
+
+A37 to A41 and C18 (2026-11-25) were measured with the one-call mode at 4 threads, each against
+`-java_compat`, counting records with a multiset keyed by chromosome, position, REF, ALT and FILTER
+(keys are not unique; id fields ignored), so a record whose filter changes counts as gone and new. All
+six together against `-java_compat`: raw VCF 2,392 to 2,369 (84 gone, 61 new, 94 changed in value),
+unfiltered PASS 181 to 178, somatic unchanged (29 records), germline 1,574 to 1,560. On top of the
+other 64 corrections (the default before them, which the new build gives with the six in Java mode,
+identical in all 21 files): raw VCF 2,435 to 2,407 (80 gone, 52 new, 100 changed), unfiltered PASS 180
+to 175, somatic unchanged (31 records, 29 PASS), germline 1,597 to 1,582; time and memory unchanged
+(25 s and 1.4 GB at 4 threads).
 
 **Depth**
 
@@ -922,6 +1004,7 @@ redesign of the step.
 | C12, C13 | an unusable discordant-stats or hotspot file is one error line; an unreadable hotspot file stops the run | message, and exit 1 where Java ran without hotspots |
 | C14 | intent uncertain. Same variants as Java; breakends left out because their mate is on another contig are counted and warned about on their own | log only |
 | C16 | an empty contig name is not a chromosome | no exception |
+| C18 | the partner of a single breakend is read from INSALN as Linx reads it: orientation reverse when the strand equals the single breakend's orientation, else forward, and then at the alignment's last base | none on the small pair or the whole genome (no single breakend is a hotspot under either reading) |
 
 On the standard runs (small pair, whole genome) no caller correction changes a line.
 
@@ -944,10 +1027,18 @@ On the standard runs (small pair, whole genome) no caller correction changes a l
   entries as the BED reader did (C11) was not checked.
 - Assembly visualiser: two assembly alignments with the same description write the same file name and
   the later one replaces the earlier.
+- Assembly, single breakends whose anchor aligns to the reverse strand (11 of 750 on the small pair):
+  INSALN holds the strands BWA gives for the assembly sequence, which then runs against the breakend's
+  reference strand, so Linx's reading, and the corrected hotspot test (C18), see the opposite strand.
+  `checkOuterSingle` (`BreakendBuilder.java:478-517`) also writes the insert sequence as it stands in
+  the assembly sequence, where `formSingleBreakend` (line 445) reverse-complements it: 2 of those 11
+  carry the insert unreversed. From reading the code; not checked further.
+- Assembly, A39: the junction indices of the set merged in are not added to the primary's, so a later
+  merge test sees only the primary's own junctions. Whether they should be is not stated; left as it is.
 
 **Tests of the corrections**
 
-Unit tests cover 49 of the 64 corrections. Without one: P2, A3, A7, A14, A16,
+Unit tests cover 55 of the 70 corrections. Without one: P2, A3, A7, A14, A16,
 A20, A21, A23, A24, A25, A26, A27, A34 (each needs a built assembly, a drawing or a run), C9, C10
 (log text). Those are covered by the runs only.
 
@@ -995,6 +1086,28 @@ version of prep took 761 s and 8.3 GB: the corrected claiming of cached reads (P
 bytes for each of up to 11.7 million waiting fragments, of which few are ever claimed. It now keeps a
 32-bit hash per waiting read id and applies the claim rule at the end from the cache BAMs, with the
 same output.
+
+A37 to A41 and C18 together (2026-11-25), on top of the other 64 corrections: assembly onwards at 4
+threads on the prep output of the default run before them (prep is not touched by these six), counted
+as for the small pair (multiset of chromosome, position, REF, ALT and FILTER):
+
+| Output | Before (64 corrections) | With A37-A41, C18 | Gone / new / changed |
+|---|---|---|---|
+| raw VCF records | 52,228 | 51,682 | 1,828 / 1,282 / 1,491 |
+| unfiltered VCF records (PASS) | 52,228 (5,431) | 51,682 (5,315) | 2,024 / 1,478 / 1,340 |
+| somatic VCF records (PASS) | 3,140 (3,137) | 3,143 (3,140) | 0 / 3 / 49 |
+| germline VCF records | 35,344 | 34,904 | 962 / 522 / 712 |
+| assemblies with a local link (A40) | 5,754 | 9,240 | |
+| merged phase sets | 855 | 1,035 | |
+| single breakends, raw VCF | 11,376 | 11,278 | |
+
+The six were not measured one at a time on the whole genome. On the small pair the rise in merged
+phase sets comes with A40 (21 to 32 alone, while A39 alone leaves 21): the phase sets of the new local
+links merge with others. C18 alone, by the caller on the same
+depth output: no record changes (2,817 single breakends have INSALN; none is a hotspot under either
+reading). A38: the 4 raw records in PMS2 are the same sites and ALTs, none lies in PMS2CL. Time and
+memory: assembly 178 s and 7.2 GB at 4 threads (7.4 GB before, at 8 threads); depth 77 s and 0.55 GB;
+caller 2 s and 0.42 GB.
 
 ## 5. Performance
 

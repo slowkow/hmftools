@@ -3,7 +3,7 @@
 A port of ESVEE 2.1, one module per step, each checked against the Java step's output given the same
 input. The Java reference is upstream master at commit `ca04e6c39d` (2026-11-20) (the fix for prep BAM loading is needed).
 
-Since 2026-11-22 the port corrects 61 of the Java findings by default; `-java_compat` gives Java's
+Since 2026-11-22 the port corrects Java findings by default (70 of 91 by 2026-11-25); `-java_compat` gives Java's
 behaviour, and every comparison with Java in the table below is made in that mode (REPORT.md, 4.5).
 
 How to build and run: [README.md](README.md). What was compared, the Java findings and the

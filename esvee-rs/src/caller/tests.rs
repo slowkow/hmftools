@@ -439,6 +439,11 @@ fn test_mark_germline() {
 
 #[test]
 fn test_hotspot_classification() {
+    // HotspotTest reads the INSALN strand as the partner's orientation (finding C18): Java behaviour
+    compat::with_java(true, test_hotspot_classification_body);
+}
+
+fn test_hotspot_classification_body() {
     let mut hotspot_cache = HotspotCache::default();
     hotspot_cache.add_hotspot(KnownHotspot {
         region_start: ChrBaseRegion::new(CHR_1, 1000, 10000),
@@ -471,6 +476,42 @@ fn test_hotspot_classification() {
     common.put(INSALN, Val::S(alt_alignment.vcf_string()));
     let var = create_sgl(vcf_id, CHR_2, 25000, ORIENT_REV, "", Some(&common), Some(&empty), Some(&empty));
     assert!(hotspot_cache.is_hotspot_variant(&var));
+}
+
+/// C18: the partner of a single breakend is read from INSALN as Linx reads it (`SglMapping.from`)
+#[test]
+fn c18_sgl_hotspot_partner_from_insert_alignment() {
+    let mut hotspot_cache = HotspotCache::default();
+    // a known pair 1:1000-10000 forward with 2:20000-30000 reverse
+    hotspot_cache.add_hotspot(KnownHotspot {
+        region_start: ChrBaseRegion::new(CHR_1, 1000, 10000),
+        orient_start: Orient::Forward,
+        region_end: ChrBaseRegion::new(CHR_2, 20000, 30000),
+        orient_end: Orient::Reverse,
+    });
+    let empty = Attrs::new();
+    let is_hotspot = |chromosome: &str, position: i32, orientation: i8, insaln: &str| {
+        let mut common = Attrs::new();
+        common.put(INSALN, Val::S(insaln.to_string()));
+        let var = create_sgl("ID_01", chromosome, position, orientation, "", Some(&common), Some(&empty), Some(&empty));
+        (hotspot_cache.is_hotspot_variant(&var), compat::with_java(true, || hotspot_cache.is_hotspot_variant(&var)))
+    };
+    // forward single breakend at 1:1050. An insert aligned to the + strand of 2 from 25000 continues
+    // forward from there: the partner is 2:25000 reverse, the hotspot. Java reads it as forward.
+    assert_eq!((true, false), is_hotspot(CHR_1, 1050, ORIENT_FWD, "2:25000|+|100M|0"));
+    // aligned to the - strand, the insert runs back from 2:25099: partner 2:25099 forward, not the
+    // hotspot's orientation. Java reads it as 2:25000 reverse, the hotspot.
+    assert_eq!((false, true), is_hotspot(CHR_1, 1050, ORIENT_FWD, "2:25000|-|100M|0"));
+    // reverse single breakend at 2:25000, insert on the + strand of 1: the partner faces forward at the
+    // alignment's last base. Ending at 9999 or 10000 it is in the region, ending at 10001 it is not;
+    // Java tests the alignment's first base, 100 bases earlier.
+    assert_eq!((true, true), is_hotspot(CHR_2, 25000, ORIENT_REV, "1:9901|+|100M|0"));
+    assert_eq!((false, true), is_hotspot(CHR_2, 25000, ORIENT_REV, "1:9902|+|100M|0"));
+    // deletions count towards the aligned length, insertions and soft clips do not
+    assert_eq!((false, true), is_hotspot(CHR_2, 25000, ORIENT_REV, "1:9920|+|20S50M2D30M5I3S|0"));
+    assert_eq!((true, true), is_hotspot(CHR_2, 25000, ORIENT_REV, "1:9920|+|20S50M30M5I3S|0"));
+    // reverse single breakend, insert on the - strand of 1: partner reverse at the first base, not a match
+    assert_eq!((false, false), is_hotspot(CHR_2, 25000, ORIENT_REV, "1:1500|-|100M|0"));
 }
 
 // ---------------------------------------------------------------------------------------------

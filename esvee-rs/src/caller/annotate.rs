@@ -127,11 +127,27 @@ impl HotspotCache {
         let chr_start = sgl.chromosome_start();
         let pos_start = sgl.pos_start();
         let orient_start = sgl.orient_start();
+        let java_c18 = crate::common::compat::java("C18");
         for alt in &alignments {
+            // Java (C18): an INSALN item is "chr:start|strand|cigar|score", the leftmost aligned base and
+            // the strand of the insert sequence, and Java takes them as the position and orientation of
+            // the breakend at the other end of the insert. That breakend's orientation is the opposite
+            // of the strand at a forward single breakend (the same at a reverse one), and when it faces
+            // forward its position is the alignment's last base, as Linx reads the tag
+            // (`SglMapping.from`). So at a forward single breakend Java matches a hotspot only through
+            // inverted orientations, and the position can be off by the alignment's length.
+            // Corrected: the partner breakend is formed as Linx forms it.
+            let (alt_position, alt_orient) = if java_c18 {
+                (alt.position, alt.orient)
+            } else {
+                let orient = if alt.orient == orient_start { Orient::Reverse } else { Orient::Forward };
+                let position = if orient.is_forward() { alt.position + calc_cigar_aligned_length(&alt.cigar) - 1 } else { alt.position };
+                (position, orient)
+            };
             for &i in regions {
                 let region = &self.hotspots[i];
-                if region.matches(chr_start, &alt.chromosome, pos_start, alt.position, orient_start, alt.orient)
-                    || region.matches(&alt.chromosome, chr_start, alt.position, pos_start, alt.orient, orient_start)
+                if region.matches(chr_start, &alt.chromosome, pos_start, alt_position, orient_start, alt_orient)
+                    || region.matches(&alt.chromosome, chr_start, alt_position, pos_start, alt_orient, orient_start)
                 {
                     return true;
                 }

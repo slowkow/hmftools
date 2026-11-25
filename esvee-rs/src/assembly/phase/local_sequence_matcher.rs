@@ -43,7 +43,22 @@ impl<'a> LocalSequenceMatcher<'a> {
         }
         let ref_genome_bases = ref_genome.get_bases(junction.chromosome, local_region_start, local_region_end).expect("ref genome bases");
         let ref_base_quals = create_base_quals_above_min_threshold(ref_genome_bases.len());
-        let assembly_seq = JunctionSequence::form_straddling_match_sequence(&assembly);
+        // Java (A40): the sequence compared with the local reference is the straddling one, up to 50 ref
+        // bases and then the whole extension, while the seed positions found below are offsets in the
+        // extension alone; find_best_sequence_match takes them as offsets in that longer sequence. At a
+        // forward junction the comparison is then shifted by the ref bases taken (up to 50), so with any
+        // mismatch in the extension (no exact match below) a local link is only found where those ref
+        // bases happen to repeat the local reference. At a reverse junction the frames agree, but the 100
+        // bases compared take ref bases after an extension shorter than 100, which by construction do not
+        // follow the extension's local match, so the link is found only for extensions of about 97 bases
+        // or more. Corrected: the extension alone is compared (Java's commented-out alternative), and the
+        // link is formed at the local position matched to the first extension base, as for an exact match.
+        let java_a40 = crate::common::compat::java("A40");
+        let assembly_seq = if java_a40 {
+            JunctionSequence::form_straddling_match_sequence(&assembly)
+        } else {
+            JunctionSequence::form_full_extension_match_sequence(&assembly, false)
+        };
         let local_ref_orientation = junction.orient.opposite();
         let local_ref_seq = JunctionSequence::from_bases(&ref_genome_bases, &ref_base_quals, local_ref_orientation, false);
         let ref_full = local_ref_seq.full_sequence.as_bytes();
@@ -82,7 +97,14 @@ impl<'a> LocalSequenceMatcher<'a> {
         }
         let min_overlap_length = assembly.extension_length().min(ASSEMBLY_LINK_OVERLAP_BASES);
         let top_match_indices = find_best_sequence_match(&assembly_seq, &local_ref_seq, min_overlap_length, &alternative_index_starts)?;
-        Some(self.form_local_link(assembly, local_region_start, top_match_indices[1]))
+        let local_ref_index_start = if java_a40 {
+            top_match_indices[1]
+        } else {
+            // the match pairs an assembly index with a local index; move to the first extension base
+            let extension_start_index = if assembly.is_forward_junction() { assembly.junction_index() + 1 } else { 0 };
+            top_match_indices[1] + extension_start_index - top_match_indices[0]
+        };
+        Some(self.form_local_link(assembly, local_region_start, local_ref_index_start))
     }
 
     fn form_local_link(&self, assembly: AsmP, local_region_start: i32, local_ref_index_start: i32) -> LinkP {

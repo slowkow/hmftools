@@ -1,11 +1,13 @@
 //! PhaseSetMerger: merges the assembly alignments of phase sets whose full sequences overlap.
 
+use crate::common::compat;
 use crate::assembly::alignment::assembly_alignment::AsmAlignP;
 use crate::assembly::assembly_utils::{create_base_quals_above_min_threshold, mismatches_per_comparison_length, reverse_complement_str};
 use crate::assembly::common_utils::{is_line_insert_pair, position_within};
 use crate::assembly::constants::*;
 use crate::assembly::orientation::Orientation;
 use crate::assembly::sequence_compare::{compare_sequences, index_of};
+use crate::assembly::types::junction_assembly::AsmP;
 use crate::assembly::types::junction_sequence::PHASED_ASSEMBLY_MATCH_SEQ_LENGTH;
 use crate::assembly::types::phase_set::PhaseSetP;
 use crate::assembly::types::repeat_info::{find_repeats, RepeatInfo};
@@ -16,19 +18,54 @@ pub fn merge_phase_sets(phase_sets: &mut Vec<PhaseSetP>) {
     if phase_sets.len() == 1 {
         return;
     }
+    // Java (A39): a set that has been merged into another stays in both loops. When `first` is the
+    // shorter of a pair it is merged into `second`, and the inner loop goes on offering it (with its own
+    // sequence, but its reads already moved into the other's frame) to the later sets; a `second` that
+    // was merged earlier is offered too. A set can so be merged twice, its reads moved twice, and a set
+    // can be merged into one that is itself merged and never aligned: its breakends are lost.
+    // Corrected: a merged set takes part in no further merge.
+    let java_a39 = compat::java("A39");
     let n = phase_sets.len();
     for i in 0..n.saturating_sub(1) {
         let first = phase_sets[i];
         if !first.has_valid_assembly_alignment() || first.is_secondary_line_link() {
             continue;
         }
+        if !java_a39 && first.merged() {
+            continue;
+        }
         for second in phase_sets.iter().skip(i + 1).copied() {
             if !second.has_valid_assembly_alignment() || second.is_secondary_line_link() {
                 continue;
             }
+            if !java_a39 && second.merged() {
+                continue;
+            }
             try_merge_phase_sets(first, second);
+            if !java_a39 && first.merged() {
+                break;
+            }
         }
     }
+}
+
+/// The assemblies whose reads are placed in the alignment's sequence: those of its phase set and, unless
+/// in Java mode (A39), those of the sets merged into it at any depth, which were moved into its frame.
+fn assemblies_in_frame(assembly_alignment: AsmAlignP) -> Vec<AsmP> {
+    let mut assemblies = assembly_alignment.assemblies();
+    if compat::java("A39") {
+        return assemblies;
+    }
+    if let Some(phase_set) = assembly_alignment.phase_set() {
+        for merged_phase_set in phase_set.merged_phase_sets_deep() {
+            for assembly in merged_phase_set.assemblies() {
+                if !assemblies.contains(assembly) {
+                    assemblies.push(*assembly);
+                }
+            }
+        }
+    }
+    assemblies
 }
 
 pub fn try_merge_phase_sets(first_phase_set: PhaseSetP, second_phase_set: PhaseSetP) {
@@ -149,8 +186,18 @@ pub fn merge_assembly_alignments(primary_assembly: AsmAlignP, other_assembly: As
     if let Some(s) = new_sequence {
         primary_assembly.m().update_sequence_info(s);
     }
+    // Java (A39): when bases are put in front of the primary's sequence, its reads move along but its
+    // junction indices (linkIndices: the junction test of a later merge, SAGA matching) do not, nor do
+    // the reads of sets merged into it before, which are already in its frame; and the reads of sets
+    // merged into the other are not moved into the primary's frame. Those reads are then placed at the
+    // wrong bases, or (one level down) not counted at all by AlignmentFragments.
+    // Corrected: the junction indices move with the bases, and the reads of every set merged into
+    // either side move with that side's own reads.
+    if primary_offset_adjust > 0 && !compat::java("A39") {
+        primary_assembly.m().shift_link_indices(primary_offset_adjust);
+    }
     if primary_offset_adjust > 0 {
-        for assembly in primary_assembly.assemblies() {
+        for assembly in assemblies_in_frame(primary_assembly) {
             for read in assembly.support() {
                 let new_assembly_index = read.full_assembly_index_start() + primary_offset_adjust;
                 let orientation = read.full_assembly_orientation();
@@ -159,7 +206,7 @@ pub fn merge_assembly_alignments(primary_assembly: AsmAlignP, other_assembly: As
         }
     }
     if other_orientation.is_reverse() || other_offset_adjust > 0 {
-        for assembly in other_assembly.assemblies() {
+        for assembly in assemblies_in_frame(other_assembly) {
             for read in assembly.support() {
                 let read_orientation;
                 let mut new_assembly_index;

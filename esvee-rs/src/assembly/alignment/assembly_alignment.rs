@@ -344,6 +344,13 @@ impl AssemblyAlignment {
         self.full_sequence = Some(new_sequence);
     }
 
+    /// moves the junction indices along when bases are put in front of the sequence (finding A39)
+    pub fn shift_link_indices(&mut self, offset: i32) {
+        for index in &mut self.link_indices {
+            *index += offset;
+        }
+    }
+
     pub fn is_simple_indel_assembly(&self) -> bool {
         let a = self.assemblies();
         a.len() == 2 && a.iter().all(|x| x.outcome() == AssemblyOutcome::Linked) && is_assembly_indel_link(&a[0], &a[1])

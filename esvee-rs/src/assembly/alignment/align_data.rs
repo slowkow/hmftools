@@ -49,6 +49,9 @@ pub struct AlignData {
     selected_alt_alignment: Option<AlternativeAlignment>,
     unselected_alt_alignments: Option<Vec<AlternativeAlignment>>,
     has_low_map_qual_short_sv_link: bool,
+    /// the selected alternative is the aligner's own (leftmost position and strand), as the PMS2 swap
+    /// stores it, rather than the coordinates of a breakend (finding A38)
+    selected_alt_is_raw: bool,
 }
 
 impl AlignData {
@@ -92,6 +95,7 @@ impl AlignData {
             raw_alt_alignments: None,
             selected_alt_alignment: None,
             unselected_alt_alignments: None,
+            selected_alt_is_raw: false,
             has_low_map_qual_short_sv_link: false,
         }
     }
@@ -311,15 +315,25 @@ impl AlignData {
     }
     pub fn set_selected_alt_alignments(&mut self, selected_alignment: Option<AlternativeAlignment>, other_alignments: Option<Vec<AlternativeAlignment>>, has_short_sv_link: bool) {
         self.selected_alt_alignment = selected_alignment;
+        self.selected_alt_is_raw = false;
         self.unselected_alt_alignments = other_alignments;
         self.has_low_map_qual_short_sv_link = has_short_sv_link;
     }
     pub fn set_selected_low_map_qual_alt_alignment(&mut self, selected_alignment: Option<AlternativeAlignment>) {
         self.selected_alt_alignment = selected_alignment;
+        self.selected_alt_is_raw = false;
         self.modified_map_qual = ALIGNMENT_MIN_MOD_MAP_QUAL;
         self.raw_alt_alignments = None;
         self.soft_clip_right = 0;
         self.soft_clip_left = 0;
+    }
+    /// setSelectedLowMapQualAltAlignment with one of the aligner's alternatives as it stands (the PMS2 swap)
+    pub fn set_selected_raw_alt_alignment(&mut self, selected_alignment: AlternativeAlignment) {
+        self.set_selected_low_map_qual_alt_alignment(Some(selected_alignment));
+        self.selected_alt_is_raw = true;
+    }
+    pub fn selected_alt_is_raw(&self) -> bool {
+        self.selected_alt_is_raw
     }
     pub fn set_modified_map_qual(&mut self, map_qual: i32) {
         self.modified_map_qual = map_qual;

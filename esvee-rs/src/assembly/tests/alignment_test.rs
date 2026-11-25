@@ -10,6 +10,7 @@ use crate::assembly::constants::{SSX2_MAX_MAP_QUAL, WEAK_ASSEMBLY_DISC_RATE, WEA
 use crate::assembly::globals::set_sample_discordant_rate;
 use crate::assembly::types::support_read::{SupP, SupportRead};
 use crate::assembly::types::StructuralVariantType::{Bnd, Del, Dup, Sgl};
+use crate::common::compat;
 use crate::common::java_sort::java_sort;
 
 fn ref_genome() -> MockRefGenome {
@@ -450,4 +451,105 @@ fn test_suspect_extensions() {
     assembly_alignment.m().breakends_mut().clear();
     add_breakends("");
     assert!(has_suspect_extension(assembly_alignment));
+}
+
+/// (chromosome, position, orientation) of each breakend, Java and corrected
+type BreakendCoords = Vec<(String, i32, Orientation)>;
+
+fn breakend_coords(assembly_alignment: AsmAlignP) -> BreakendCoords {
+    assembly_alignment.breakends().iter().map(|b| (b.chromosome.to_string(), b.position, b.orient)).collect()
+}
+
+#[test]
+fn a38_pms2_alternative_gives_breakend_coordinates() {
+    let _env = test_env();
+    let ref_genome = ref_genome();
+    // a segment in PMS2CL (version 37, chromosome 7 at 6.76 Mb) with map quality 0 and an alternative in
+    // PMS2 at 7:6010001-6010100, beside a segment of chromosome 1; `pms2cl_first` puts it first
+    let breakends = |pms2cl_first: bool, alt_strand: char| -> (BreakendCoords, BreakendCoords) {
+        let run = || {
+            let assembly_alignment = create_assembly_alignment(&ref_genome, CHR_1, 200, FORWARD, CHR_2, 250, REVERSE, "", "");
+            let xa = format!("7,{alt_strand}6010001,100M,0;");
+            let (alignment1, alignment2) = if pms2cl_first {
+                (align_data("7", 6760001, 6760100, 0, 100, 0, 100, "100M100S", Some(&xa), ""), create_alignment(CHR_1, 101, 200, 100, 200, "100S100M"))
+            } else {
+                (create_alignment(CHR_1, 101, 200, 0, 100, "100M100S"), align_data("7", 6760001, 6760100, 100, 200, 0, 100, "100S100M", Some(&xa), ""))
+            };
+            BreakendBuilder::new(Some(&ref_genome), assembly_alignment).form_breakends(&[alignment1, alignment2]);
+            breakend_coords(assembly_alignment)
+        };
+        (run(), compat::with_java(true, run))
+    };
+    let pms2 = |position: i32, orient: Orientation| ("7".to_string(), position, orient);
+    let chr1 = |position: i32, orient: Orientation| (CHR_1.to_string(), position, orient);
+    // second segment, alternative on the + strand: the breakend is at its start, facing reverse
+    let (corrected, java) = breakends(false, '+');
+    assert_eq!(vec![chr1(200, FORWARD), pms2(6010001, REVERSE)], corrected);
+    assert_eq!(vec![chr1(200, FORWARD), pms2(6010001, FORWARD)], java);
+    // on the - strand: at its last base, facing forward
+    let (corrected, java) = breakends(false, '-');
+    assert_eq!(vec![chr1(200, FORWARD), pms2(6010100, FORWARD)], corrected);
+    assert_eq!(vec![chr1(200, FORWARD), pms2(6010001, REVERSE)], java);
+    // first segment, + strand: at its last base, facing forward
+    let (corrected, java) = breakends(true, '+');
+    assert_eq!(vec![pms2(6010100, FORWARD), chr1(101, REVERSE)], corrected);
+    assert_eq!(vec![pms2(6010001, FORWARD), chr1(101, REVERSE)], java);
+    // first segment, - strand: at its start, facing reverse, which Java gets right
+    let (corrected, java) = breakends(true, '-');
+    assert_eq!(vec![pms2(6010001, REVERSE), chr1(101, REVERSE)], corrected);
+    assert_eq!(corrected, java);
+}
+
+#[test]
+fn a41_indel_anchors_are_the_segment_bases_either_side() {
+    let _env = test_env();
+    let ref_genome = ref_genome();
+    // a second segment at 100-399 of a 400-base sequence, with a 40-base deletion; the first segment
+    // (chromosome 1) makes a BND with it. Counts the DEL breakends formed from the cigar.
+    let del_breakends = |cigar: &str| {
+        let run = || {
+            let assembly_alignment = create_assembly_alignment_ext(&ref_genome, CHR_1, 200, FORWARD, CHR_2, 250, REVERSE, "", "", 200, 200);
+            assert_eq!(400, assembly_alignment.full_sequence_length());
+            let alignment1 = create_alignment(CHR_1, 101, 200, 0, 100, "100M300S");
+            let alignment2 = create_alignment(CHR_2, 150, 489, 100, 400, cigar);
+            BreakendBuilder::new(Some(&ref_genome), assembly_alignment).form_breakends(&[alignment1, alignment2]);
+            assembly_alignment.breakends().iter().filter(|x| x.sv_type() == Del).count()
+        };
+        (run(), compat::with_java(true, run))
+    };
+    // 240 aligned bases before the deletion and 60 after: Java takes the right anchor as 300 - 340
+    assert_eq!((2, 0), del_breakends("100S240M40D60M"));
+    // 30 before and 270 after: Java takes the left anchor as 130, from the sequence start
+    assert_eq!((0, 2), del_breakends("100S30M40D270M"));
+    // 150 either side: called in both
+    assert_eq!((2, 2), del_breakends("100S150M40D150M"));
+}
+
+#[test]
+fn a41_reverse_alignment_insert_is_read_from_its_own_place() {
+    let _env = test_env();
+    let ref_genome = ref_genome();
+    // along the reference strand the query is R1 (100 bases of 1:101-200), an inserted I (40), R2 (160 of
+    // 1:201-360); the assembly sequence is its reverse complement, aligned to the reverse strand
+    let r1 = ref_genome.base_string(CHR_1, 101, 200);
+    let r2 = ref_genome.base_string(CHR_1, 201, 360);
+    let insert = &REF_BASES_200[..40];
+    let query = format!("{r1}{insert}{r2}");
+    let sequence = reverse_complement_str(&query);
+    let indel = || {
+        let assembly = create_assembly(CHR_1, 200, FORWARD, &sequence, 99);
+        let assembly_alignment = AssemblyAlignment::from_assembly(assembly);
+        let alignment = create_alignment_full(CHR_1, 101, 360, true, DEFAULT_MAP_QUAL, 300, 0, 300, "100M40I160M", "", "");
+        BreakendBuilder::new(Some(&ref_genome), assembly_alignment).form_breakends(&[alignment]);
+        let breakends = assembly_alignment.breakends();
+        assert_eq!(2, breakends.len());
+        (breakends[0].inserted_bases.clone(), breakends[0].segments()[0].indel_sequence_indices().unwrap())
+    };
+    let (corrected, java) = (indel(), compat::with_java(true, indel));
+    // in the assembly sequence the insert is at 160-199, reverse complemented
+    assert_eq!((insert.to_string(), [160, 200]), corrected);
+    assert_eq!(reverse_complement_str(insert), sequence[160..200]);
+    // Java takes 100-139, bases of R2
+    assert_eq!([100, 140], java.1);
+    assert_ne!(insert, java.0);
 }
