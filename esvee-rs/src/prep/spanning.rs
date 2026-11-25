@@ -692,7 +692,7 @@ impl SpanningReadCache {
                 threads: config.threads,
                 filter: config.filter.clone(),
                 chr_junction_read_ids: JavaHashMap::new(),
-                trimmer: ReadIdTrimmer::new(config.trim_read_id),
+                trimmer: ReadIdTrimmer::for_run(config.trim_read_id, config.trim_prefix.as_ref()),
                 contigs,
             },
         }

@@ -380,6 +380,14 @@ pub fn run(argv: &[String]) -> Result<()> {
         let header = reader.header();
         tid_maps.push(header.target_names().iter().map(|n| contigs.add(&String::from_utf8_lossy(n))).collect());
         headers.push(String::from_utf8_lossy(header.as_bytes()).into_owned());
+        if config.trim_read_id && !crate::common::compat::java("P12") {
+            // corrected (finding P12): one read name prefix for every partition, that of the first record
+            let mut rec = bam::Record::new();
+            config.trim_prefix = match reader.read(&mut rec) {
+                Some(Ok(())) => tracker::trim_prefix(rec.qname()),
+                _ => None,
+            };
+        }
     }
     for name in HUMAN_CHROMOSOMES {
         contigs.add(name);
@@ -416,7 +424,12 @@ pub fn run(argv: &[String]) -> Result<()> {
     let cache_header = bam::HeaderView::from_bytes(writer::header_with_sort_order(&writer::combined_header_text(&headers), "unsorted").as_bytes());
     let cache = SpanningReadCache::new(&config, contigs.clone(), Some(cache_header));
     let results_writer = ResultsWriter::new(&config, contigs.clone(), &headers)?;
-    let tracker_cfg = TrackerConfig { filter: config.filter.clone(), trim_read_id: config.trim_read_id, contigs: contigs.clone() };
+    let tracker_cfg = TrackerConfig {
+        filter: config.filter.clone(),
+        trim_read_id: config.trim_read_id,
+        trim_prefix: config.trim_prefix.clone(),
+        contigs: contigs.clone(),
+    };
     let threads = config.threads;
     let ctx = Context { config, contigs: contigs.clone(), tid_maps, hotspots, saga, tracker_cfg, poly_g_region };
 

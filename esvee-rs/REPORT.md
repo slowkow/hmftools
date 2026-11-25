@@ -24,7 +24,7 @@ port was made; they are outside this repository, because the outputs are derived
   count, and Java's assembly output changes from run to run even at one thread (section 3). The
   reference is Java at one thread with every identity hash made equal (`-XX:hashCode=2`). The port
   gives that result at any thread count.
-- 83 findings about the Java code are recorded in section 4: 11 in prep, 36 in assembly, 19 in depth,
+- 84 findings about the Java code are recorded in section 4: 12 in prep, 36 in assembly, 19 in depth,
   17 in the caller. The port reproduces those that change the output.
 - On the small input at 8 threads the Rust chain takes 24 s against Java's 95 s, with a peak of 1.9 GB
   against 44 GB (section 5).
@@ -82,7 +82,8 @@ Java at one thread against the port. Scripts: `tools/esvee/prep_cmp.sh`, `prep_o
 
 The whole genome is in section 2.6. Not tested: sambamba as `-bamtool` (treated like samtools;
 not installed, so not compared); `ReadIdTrimmer` switching itself off part-way through a partition
-(ported as written, no test data reaches it); reference genome 37 with reads that match it.
+under `-java_compat` (ported as written; a unit test reaches it, no test data does; the corrected
+trimmer, finding P12, does not switch off); reference genome 37 with reads that match it.
 
 ### 2.2 Assembly
 
@@ -449,6 +450,17 @@ the port run with `-java_compat`.
   partition, on the same chromosome, so they are only out of order. A remote region on another
   chromosome, which hotspot pairs allow, would be written under the wrong chromosome: from reading the
   code, not observed. Reproduced. **Corrected by default** (4.5).
+- **P12. `prep/JunctionTracker.java:130`, `prep/SpanningReadCache.java`** (`common/ReadIdTrimmer.java`)
+  When prep is given one BAM, as in a tumor-only run, it cuts read names after their third ':' to save
+  memory, as assembly does (A5). Each partition and the spanning-read cache have their own trimmer,
+  whose prefix comes from the first name it sees; after that only the position of the third ':' is
+  checked. With reads of several sequencing runs in the one BAM, names of different flowcells whose
+  prefixes have the same length are cut to the same `lane:tile:x:y` id, so reads of two fragments can
+  fall into one read group. Where the prefixes differ in length, the trimmer switches itself off part way
+  through a partition, and a read cut before that and its mate read after it no longer share an id; a
+  partition that switched off also hands whole names to the spanning-read cache, whose own trimmer may
+  still be cutting. Observed on the tumor of the small pair (four runs, prefixes of one length).
+  Reproduced. **Corrected by default** (4.5).
 - **P10. `prep/ReadFilters.java:107-113`** A supplementary read with fewer than 40 aligned bases is
   always dropped: the score function returns -1 for it, and the last line tests
   `-1 < MIN_SUPP_CALC_ALIGNMENT_SCORE`. The test at line 104 (`alignedLength < 40 && hasLowMapQual`)
@@ -570,9 +582,8 @@ the port run with `-java_compat`.
     different flowcells can get the same id (patterned flowcells reuse well positions).
 
   Reproduced as written. **Corrected by default** (4.5); on that pair every assembly output is then
-  identical at 16, 16 and 1 threads (Linux). Prep has a trimmer of its own per partition
-  (`prep/JunctionTracker.java:130`), enabled only when prep is given one BAM, with the same collision
-  of names from runs with prefixes of one length; not corrected (oncoanalyser gives prep both BAMs).
+  identical at 16, 16 and 1 threads (Linux). Prep has trimmers of its own, used when it is given one
+  BAM: finding P12.
 - **A30. Decoy rows in completion order.** Decoy matches (`AlignmentChecker`, called at
   `assembly/JunctionGroupAssembler.java:219`) are written by each task as it goes, so `decoy_match.tsv`
   and the decoy rows of `assembly.tsv` are in task completion order with more than one thread. Not
@@ -798,7 +809,7 @@ the port run with `-java_compat`.
 
 ### 4.5 Corrections
 
-62 of the findings above are corrected by default. Each corrected place in the code asks
+63 of the findings above are corrected by default. Each corrected place in the code asks
 `compat::java("<id>")` (`src/common/compat.rs`) and keeps the Java path beside the corrected one.
 
 - `-java_compat`, or `ESVEE_JAVA_COMPAT=1` in the environment: Java behaviour for every finding.
@@ -819,6 +830,7 @@ the alternatives are given. These in particular should be confirmed with the ESV
 | P5 | reads claimed from the cache BAM keep their filters, and the cache-BAM mode claims by the rule of the in-memory mode (`-no_cache_bam`), taken as the intended one | tumor BAM 19 records gone (8 poly-G), 69 supplementary new; normal 10 gone, 31 new; one INFO value in one VCF record |
 | P6 | unmapped candidate reads are claimed | 4 tumor and 1 normal record new |
 | P8 | a remote discordant junction outside the finding partition is written under its own chromosome, in position order | 8 junction rows move; the file is in order |
+| P12 | one prefix for the whole run, that of the BAM's first record, in every partition and in the spanning-read cache; only names with that prefix are cut, others are kept whole, and trimming never switches off | tumor/normal: none (prep is given two BAMs and does not trim). Tumor-only on the small pair's tumor (four runs, prefixes of one length): prep BAM 52 records gone, 22 new; 1 junction new and 398 changed (89 in `OtherSupportFrags`, 59 of them lower, 314 in `InitialReadId`); VCFs: 2 raw and unfiltered records and 1 somatic record change in segment values (`SEGRL`, `SEGSCO`, `SEGMAPQ`), no site gone or new, PASS counts unchanged (115 unfiltered, 83 somatic); output identical at 8 and 1 threads |
 | P10 | **intent uncertain.** The repeat-trimmed score is calculated for a supplementary of any aligned length, then Java's three rules apply as written. Alternatives: keep every supplementary under 40 aligned bases with mapping quality 10 or more (the README's wording; about 110 more records, the same new sites), or Java's behaviour is meant and the first rule is dead code | junction rows 17,951 to 18,064 (7 sites gone, 120 new); about 5,100 records new in each BAM; final VCFs: unfiltered 2,425 to 2,441 (33 gone, 49 new), somatic 31 to 33, germline 1,516 to 1,524 |
 | A17 (prep site) | every base that is not A, C, G, T or N becomes N, also past the early exit | none (no such base in a kept read) |
 
@@ -907,7 +919,7 @@ On the standard runs (small pair, whole genome) no caller correction changes a l
 **Not corrected**
 
 - Emulations of Java's iteration and sort order, kept in both modes because they are not faults of the
-  result and the port is already deterministic: A1, A5, A15, A29, P11.
+  result and the port is already deterministic: A1, A15, A29, P11.
 - Already different from Java in both modes: P1, P7, P9, A2, A30, C1, D12, D19.
 - D6 (above). A31 and A36 (single breakends and the `TODO` rows of the visualiser: features that do
   not exist, not faults). A8, C15, D17, D18 (dead code or text in Java). A28, C17 (Java test
@@ -927,7 +939,7 @@ On the standard runs (small pair, whole genome) no caller correction changes a l
 
 **Tests of the corrections**
 
-Unit tests cover 47 of the 62 corrections. Without one: P2, A3, A7, A14, A16,
+Unit tests cover 48 of the 63 corrections. Without one: P2, A3, A7, A14, A16,
 A20, A21, A23, A24, A25, A26, A27, A34 (each needs a built assembly, a drawing or a run), C9, C10
 (log text). Those are covered by the runs only.
 
@@ -1157,8 +1169,9 @@ Not tested, or tested only in part:
 - **Caller filters** `strandBias`, `lineSource`, `sbxInvZeroMotif`, `invShortFragLowVaf`, SAGA-matched
   variants, and contigs outside chr1-22/X/Y: unit tests and synthetic data only.
 - **A real decoy genome image** in assembly; **sambamba** as prep's `-bamtool`; prep's
-  `ReadIdTrimmer` switching itself off part-way through a partition. (Assembly's, under `-java_compat`,
-  is reached by whole-genome data from two runs, finding A5, and by a unit test.)
+  `ReadIdTrimmer` switching itself off part-way through a partition, on data (Java behaviour, kept for
+  `-java_compat`; a unit test reaches it). Assembly's is reached by whole-genome data from two runs,
+  finding A5, and by a unit test.
 - **SAGA** was tested with synthetic resources only, in prep and assembly.
 - **Platforms.** Every run was on one macOS ARM machine. The visualiser's text positions use that
   machine's font metrics; Java on another system may place text differently.

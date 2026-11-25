@@ -163,7 +163,7 @@ pub fn prep_read(rec: bam::Record) -> PrepRead {
 }
 
 pub fn tracker_config() -> TrackerConfig {
-    TrackerConfig { filter: ReadFilterConfig::default(), trim_read_id: false, contigs: contigs() }
+    TrackerConfig { filter: ReadFilterConfig::default(), trim_read_id: false, trim_prefix: None, contigs: contigs() }
 }
 
 pub fn new_tracker(region: Region) -> JunctionTracker {

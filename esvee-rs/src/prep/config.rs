@@ -177,6 +177,9 @@ pub struct PrepConfig {
     pub threads: usize,
     pub use_cache_bam: bool,
     pub trim_read_id: bool,
+    /// corrected (finding P12): the read name prefix of the run, from the first record of the BAM; set by
+    /// `run` before the partitions start
+    pub trim_prefix: Option<std::sync::Arc<[u8]>>,
     pub specific: SpecificRegions,
     pub log_read_ids: Vec<String>,
     pub perf_debug: bool,
@@ -255,6 +258,7 @@ impl PrepConfig {
         let has_filters = specific.has_filters();
         Ok(PrepConfig {
             trim_read_id: !args.has_flag("no_trim_read_id") && !has_filters && bam_files.len() == 1,
+            trim_prefix: None,
             use_cache_bam: !args.has_flag("no_cache_bam") && !has_filters,
             sample_ids,
             bam_files,
@@ -321,6 +325,7 @@ impl PrepConfig {
             threads: 1,
             use_cache_bam: false,
             trim_read_id: false,
+            trim_prefix: None,
             specific: SpecificRegions::default(),
             log_read_ids: Vec::new(),
             perf_debug: false,

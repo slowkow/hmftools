@@ -88,3 +88,54 @@ fn low_base_qual_threshold_option_keeps_low_qual_reads() {
     // with the band at Q20 and below it is kept
     assert!(!filtered_at(Some((20, 30))));
 }
+
+// not in Java: finding P12, one read name prefix for the run
+
+const RUN_A: &str = "A00260:251:HLYGFDSXY:1:1673:32280:4946";
+// another run, prefix of the same length: Java cuts it to the same lane:tile:x:y id as RUN_A
+const RUN_B: &str = "A00260:252:HLYGFDSXZ:1:1673:32280:4946";
+// another run, prefix one character shorter: Java switches trimming off here
+const RUN_C: &str = "A0026:251:HLYGFDSXY:1:1673:32280:4946";
+
+#[test]
+fn corrected_trimmer_cuts_only_the_run_prefix() {
+    use crate::common::compat::with_java;
+    use crate::prep::tracker::trim_prefix;
+    with_java(false, || {
+        let prefix = trim_prefix(RUN_A.as_bytes());
+        assert_eq!(Some(b"A00260:251:HLYGFDSXY:".as_slice()), prefix.as_deref());
+        let mut trimmer = ReadIdTrimmer::for_run(true, prefix.as_ref());
+        // a name of another run keeps its whole name, so the two fragments stay apart
+        assert_eq!(RUN_B.as_bytes(), trimmer.trim(RUN_B.as_bytes()));
+        assert_eq!(b"1:1673:32280:4946", trimmer.trim(RUN_A.as_bytes()));
+        assert_eq!(RUN_C.as_bytes(), trimmer.trim(RUN_C.as_bytes()));
+        // and trimming stays on
+        assert!(trimmer.enabled());
+        assert_eq!(b"1:1673:32280:4946", trimmer.trim(RUN_A.as_bytes()));
+        // the prefix alone is not cut to an empty id
+        assert_eq!(b"A00260:251:HLYGFDSXY:", trimmer.trim(b"A00260:251:HLYGFDSXY:"));
+        // no prefix (a first name without three ':'): no trimming
+        assert_eq!(None, trim_prefix(b"011852_2-UGAv3-2-1333458495"));
+        assert_eq!(None, trim_prefix(b"A00260:251:HLYGFDSXY:"));
+        let mut trimmer = ReadIdTrimmer::for_run(true, None);
+        assert!(!trimmer.enabled());
+        assert_eq!(RUN_A.as_bytes(), trimmer.trim(RUN_A.as_bytes()));
+    });
+}
+
+#[test]
+fn java_trimmer_ids_depend_on_the_first_name() {
+    use crate::common::compat::with_java;
+    use crate::prep::tracker::trim_prefix;
+    with_java(true, || {
+        // two runs with prefixes of one length: both names are cut to the same id
+        let mut trimmer = ReadIdTrimmer::for_run(true, trim_prefix(RUN_A.as_bytes()).as_ref());
+        assert_eq!(trimmer.trim(RUN_A.as_bytes()), trimmer.trim(RUN_B.as_bytes()));
+        // a shorter prefix switches trimming off, and the mate of a read cut before keeps its whole name
+        let mut trimmer = ReadIdTrimmer::for_run(true, None);
+        assert_eq!(b"1:1673:32280:4946", trimmer.trim(RUN_A.as_bytes()));
+        assert_eq!(RUN_C.as_bytes(), trimmer.trim(RUN_C.as_bytes()));
+        assert_eq!(RUN_A.as_bytes(), trimmer.trim(RUN_A.as_bytes()));
+        assert!(!trimmer.enabled());
+    });
+}

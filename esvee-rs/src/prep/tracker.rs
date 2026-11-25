@@ -9,6 +9,7 @@ use super::jmap::JavaHashMap;
 use super::rec::*;
 use super::saga::SagaLocationMatcher;
 use super::types::*;
+use crate::common::compat;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -17,14 +18,40 @@ pub const SIMPLE_SEARCH_COUNT: usize = 10;
 pub const SBX_MAX_DUPLICATE_DISTANCE: i32 = 2;
 
 /// ReadIdTrimmer: drops the part of a read id before its third ':' while every id has it in the same place.
+///
+/// Java (finding P12): each partition and the spanning-read cache have their own trimmer, whose prefix is
+/// the part before the third ':' of the first name it is given; after that only the position of that ':'
+/// is checked, and the trimmer switches itself off at a name whose ':' is elsewhere. With reads of several
+/// sequencing runs in the one BAM, names of different flowcells whose prefixes have the same length are cut
+/// to the same `lane:tile:x:y` id, and a switch-off part way leaves earlier mates under their cut ids and
+/// later ones under their whole names. Corrected: one prefix for the whole run, that of the BAM's first
+/// record (`trim_prefix`), and only names that start with it are cut.
 pub struct ReadIdTrimmer {
     enabled: bool,
     trim_index: i32,
+    /// corrected: the prefix to cut, the same in every partition
+    prefix: Option<Arc<[u8]>>,
+}
+
+/// Corrected (finding P12): the part of a read name up to its third ':', the prefix for the whole run. None
+/// for a name without three ':' or with nothing after the third, for which Java switches trimming off.
+pub fn trim_prefix(read_name: &[u8]) -> Option<Arc<[u8]>> {
+    let index = find_read_id_trim_index(read_name);
+    (index >= 0 && (index as usize) < read_name.len()).then(|| Arc::from(&read_name[..index as usize]))
 }
 
 impl ReadIdTrimmer {
+    /// Java's trimmer, which takes its prefix from the first name it is given.
     pub fn new(enabled: bool) -> Self {
-        ReadIdTrimmer { enabled, trim_index: -1 }
+        ReadIdTrimmer { enabled, trim_index: -1, prefix: None }
+    }
+    /// The run's trimmer: corrected, the prefix of the run (none: no trimming); with finding P12 reproduced,
+    /// Java's.
+    pub fn for_run(enabled: bool, prefix: Option<&Arc<[u8]>>) -> Self {
+        if compat::java("P12") {
+            return Self::new(enabled);
+        }
+        ReadIdTrimmer { enabled: enabled && prefix.is_some(), trim_index: -1, prefix: prefix.cloned() }
     }
     pub fn enabled(&self) -> bool {
         self.enabled
@@ -32,6 +59,12 @@ impl ReadIdTrimmer {
     pub fn trim<'a>(&mut self, read_id: &'a [u8]) -> &'a [u8] {
         if !self.enabled {
             return read_id;
+        }
+        if let Some(prefix) = &self.prefix {
+            return match read_id.strip_prefix(&prefix[..]) {
+                Some(rest) if !rest.is_empty() => rest,
+                _ => read_id,
+            };
         }
         if self.trim_index < 0 {
             self.trim_index = find_read_id_trim_index(read_id);
@@ -67,6 +100,8 @@ fn find_read_id_trim_index(read_id: &[u8]) -> i32 {
 pub struct TrackerConfig {
     pub filter: ReadFilterConfig,
     pub trim_read_id: bool,
+    /// corrected (finding P12): the read name prefix of the run
+    pub trim_prefix: Option<Arc<[u8]>>,
     pub contigs: Arc<Contigs>,
 }
 
@@ -356,7 +391,7 @@ pub struct JunctionTracker {
 impl JunctionTracker {
     pub fn new(region: Region, cfg: TrackerConfig, known_hotspots: Vec<Arc<KnownHotspot>>, saga: Option<SagaLocationMatcher>) -> Self {
         let discordant_finder = DiscordantGroups::new(region.clone(), cfg.filter.observed_frag_length_max, known_hotspots.clone(), cfg.contigs.clone());
-        let trimmer = ReadIdTrimmer::new(cfg.trim_read_id);
+        let trimmer = ReadIdTrimmer::for_run(cfg.trim_read_id, cfg.trim_prefix.as_ref());
         JunctionTracker {
             region,
             cfg,
