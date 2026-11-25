@@ -26,7 +26,7 @@ mode (before the corrections existed, the only mode).
 
 ## Corrections
 
-Done: 24 of the 40 numbered findings are corrected by default, each behind `compat::java("<id>")` with
+Done: 25 of the 41 numbered findings are corrected by default, each behind `compat::java("<id>")` with
 the Java path beside it (REPORT.md, sections 3.1 to 3.5). The Java-mode regression (88 stored Java
 baselines) gives the same result as before the corrections.
 

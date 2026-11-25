@@ -3,12 +3,50 @@
 //!
 //! `redux-rs diff_bams <a.bam> <b.bam> [threads]`: counts the differences between two coordinate-sorted BAMs of
 //! the same reads, by kind. It is how the effect of a correction is measured (REPORT.md, section 3).
+//!
+//! Both leave out the attributes named in `REDUX_COMPARE_IGNORE_TAGS` (comma-separated, for example `MQ,HN`), so that
+//! the alignments of writers that add tags can be compared.
 
 use crate::rec::*;
 use anyhow::Result;
 use rust_htslib::bam::{self, Read};
 
+/// The attribute tags to leave out of the comparison (REDUX_COMPARE_IGNORE_TAGS)
+fn ignored_tags() -> &'static [[u8; 2]] {
+    static TAGS: std::sync::OnceLock<Vec<[u8; 2]>> = std::sync::OnceLock::new();
+    TAGS.get_or_init(|| {
+        std::env::var("REDUX_COMPARE_IGNORE_TAGS")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|t| t.len() == 2)
+            .map(|t| [t.as_bytes()[0], t.as_bytes()[1]])
+            .collect()
+    })
+}
+
+/// The attribute bytes of a record without the ignored tags
+fn kept_aux(aux: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    let ignore = ignored_tags();
+    if ignore.is_empty() {
+        return std::borrow::Cow::Borrowed(aux);
+    }
+    let spans = aux_spans(aux);
+    if !spans.iter().any(|&(s, _)| ignore.contains(&[aux[s], aux[s + 1]])) {
+        return std::borrow::Cow::Borrowed(aux);
+    }
+    let mut out = Vec::with_capacity(aux.len());
+    for (s, e) in spans {
+        if !ignore.contains(&[aux[s], aux[s + 1]]) {
+            out.extend_from_slice(&aux[s..e]);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 fn aux_equal(a: &[u8], b: &[u8]) -> bool {
+    let (a, b) = (kept_aux(a), kept_aux(b));
+    let (a, b) = (&a[..], &b[..]);
     if a == b {
         return true;
     }
@@ -98,7 +136,7 @@ pub fn run(args: &[String]) -> Result<()> {
                 k.extend_from_slice(&r.flags().to_le_bytes());
                 k.extend_from_slice(&r.seq().encoded[..(r.seq_len() + 1) / 2]);
                 k.extend_from_slice(r.qual());
-                k.extend_from_slice(&aux_sorted_copy(aux_bytes(r)));
+                k.extend_from_slice(&aux_sorted_copy(&kept_aux(aux_bytes(r))));
                 k
             };
             let (mut ka, mut kb) = (vec![key(&ra)], vec![key(&rb)]);
@@ -197,7 +235,7 @@ fn record_hash(r: &bam::Record) -> u128 {
         r.flags().hash(&mut h);
         r.seq().encoded[..r.seq_len().div_ceil(2)].hash(&mut h);
         r.qual().hash(&mut h);
-        aux_sorted_copy(aux_bytes(r)).hash(&mut h);
+        aux_sorted_copy(&kept_aux(aux_bytes(r))).hash(&mut h);
         out = (out << 64) | h.finish() as u128;
     }
     out

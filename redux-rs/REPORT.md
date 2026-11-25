@@ -259,8 +259,11 @@ Section 2 says for each of these what the corrected mode gives at different thre
   records whose bases REDUX rewrites), 16 and 24 records only in one; `duplicate_freq.tsv` differed in 8
   of its rows; the 4-lane normal, listed in the same order both times, was byte-identical. On the
   two-lane test input of section 1 the two orders give the same records (Java mode) except the order of
-  32 unplaced reads. Reproduced. Not yet corrected; the slowkow/oncoanalyser fork now lists the lane
-  BAMs by file name, so a pipeline run gives one result.
+  32 unplaced reads. Reproduced. **Corrected by default** (2026-11-25): the inputs are taken in the order
+  of their header text, which differs by read group, so every place where the order reaches the output
+  (the merge of reads with one start, the unplaced reads, the output header) sees the same order however
+  the files are listed. The slowkow/oncoanalyser fork also lists the lane BAMs by file name, so that Java
+  REDUX gives one result there too.
 
 ### 3.3 Crash
 
@@ -329,7 +332,7 @@ Section 2 says for each of these what the corrected mode gives at different thre
 
 ### 3.5 Corrections
 
-24 of the findings above are corrected by default. Each corrected place in the code asks
+25 of the findings above are corrected by default. Each corrected place in the code asks
 `compat::java("<id>")` (`src/compat.rs`) and keeps the Java path beside the corrected one.
 
 - `-java_compat`, or `REDUX_JAVA_COMPAT=1` in the environment: Java behaviour for every finding.
@@ -370,6 +373,7 @@ the REDUX authors.
 | R14 | **intent uncertain.** `checkPosCheckAdjust` returns early only when the distance is the default and the cache is under the threshold, so the pop distance goes down by 10% of the default for each 100,000 cached reads and back up below the threshold, as the rest of the method does. Alternative: the early return is a deliberate switch-off and the early purge alone is meant to bound the cache | deep contig: 6,147 records changed (2,688 duplicate flags), 830 gone, 654 new, 176 fewer records (fewer groups split by an early purge). Illumina, SBX: none |
 | R21 | the size-check counter and the last counted size start again with each region, as after `clear()`; no partition waits for the read counts of earlier ones | deep contig alone: none. With the reads on chr1: 400 records changed (171 duplicate flags), 68 gone, 77 new, and the records on the contig are then those of the contig alone (in Java 171 flags differ between the two inputs). Illumina, SBX: none |
 | R18 | the label of a row is the rounded size | Illumina 1 of 10 rows; SBX (10 Mb region) 19 of 28 rows; labels only, the counts are the same |
+| R41 | the input BAMs are read in the order of their header text (then of their paths, for inputs whose headers are the same), not in the order given | two-lane Illumina input: BAM, `bqr.tsv`, `duplicate_freq.tsv`, `jitter_params` and `ms_table` byte-identical for both orders (Java: the 32 unplaced reads in another order). Whole genome: see R41 |
 
 **UMIs**
 
@@ -408,7 +412,7 @@ All corrections together, default against `-java_compat`:
 
 Unit tests: every correction that can be shown without real data has a test of the corrected path
 beside a check of the Java path (R1 to R5, R7 to R11, R13, R14, R16, R18, R21, R24, R25, R26, R28, R29,
-R31). The Java tests that pass only with a fault run inside `compat::with_java(true, ...)`: the last
+R31, R41). The Java tests that pass only with a fault run inside `compat::with_java(true, ...)`: the last
 block of `testSbxDuplicateGroupCollapsing` (R7) and the ported checks of the failures. R6 and R27 have
 no unit test: R6 needs a duplicate group through the partition reader and is covered by the SBX runs,
 R27 ends the process.

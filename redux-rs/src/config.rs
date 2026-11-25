@@ -118,6 +118,14 @@ impl Config {
         } else {
             dir_of(&bam_files[0])
         };
+        // R41: Java reads the inputs in the order given, and that order reaches the output (reads with one start are
+        // merged in file order, and ties then go to the first read). Corrected: the inputs are taken in the order of
+        // their headers, which differ by read group, so the output does not depend on the order of -input_bam.
+        let bam_files = if bam_files.len() > 1 && !crate::compat::java("R41") {
+            input_order_by_header(bam_files)?
+        } else {
+            bam_files
+        };
         let msi_only = args.has_flag("bqr_jitter_msi_only");
         let skip_unmapping = msi_only || args.has_flag("skip_unmapping");
         let threads = args.integer("threads", 1)?.max(1) as usize;
@@ -195,4 +203,18 @@ impl Config {
     pub fn is_ultima(&self) -> bool {
         self.sequencing_type == SequencingType::Ultima
     }
+}
+
+/// R41 corrected: the input BAMs in the order of their header text, then of their paths (only for inputs whose headers
+/// are the same). Lanes differ in their read groups, so this order comes from the files themselves, not from the order
+/// in which they were listed.
+pub fn input_order_by_header(bam_files: Vec<String>) -> Result<Vec<String>> {
+    use rust_htslib::bam::Read as _;
+    let mut keyed = Vec::with_capacity(bam_files.len());
+    for f in bam_files {
+        let r = rust_htslib::bam::Reader::from_path(&f).map_err(|e| anyhow::anyhow!("failed to read the header of {f}: {e}"))?;
+        keyed.push((r.header().as_bytes().to_vec(), f));
+    }
+    keyed.sort();
+    Ok(keyed.into_iter().map(|(_, f)| f).collect())
 }

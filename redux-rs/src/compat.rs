@@ -1,6 +1,6 @@
 //! Switch between the corrected behaviour (the default) and that of Java REDUX 2.1.
 //!
-//! REPORT.md, section 3, numbers the faults found in the Java code (R1 to R40). Each place where the
+//! REPORT.md, section 3, numbers the faults found in the Java code (R1 to R41). Each place where the
 //! port corrects one asks `compat::java("R7")`: false, the default, takes the corrected path; true
 //! takes the Java path, so that the output can be compared with Java's.
 //!
@@ -52,8 +52,8 @@ pub fn java_all() -> bool {
     MODE.load(Ordering::Relaxed) == JAVA
 }
 
-/// The number of findings in REPORT.md section 3: R1 to R40.
-pub const FINDINGS: u32 = 40;
+/// The number of findings in REPORT.md section 3: R1 to R41.
+pub const FINDINGS: u32 = 41;
 
 fn valid_id(id: &str) -> bool {
     let Some(n) = id.strip_prefix('R') else { return false };
