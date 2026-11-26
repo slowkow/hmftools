@@ -1109,6 +1109,36 @@ reading). A38: the 4 raw records in PMS2 are the same sites and ALTs, none lies 
 memory: assembly 178 s and 7.2 GB at 4 threads (7.4 GB before, at 8 threads); depth 77 s and 0.55 GB;
 caller 2 s and 0.42 GB.
 
+**A second whole-genome pair, one at a time (2026-11-26).** A 35x tumor/normal pair aligned with
+bwa-mem3 on Google Batch (the oncoanalyser fork's third run in its RUST_PORTS.md), whole chain at 16
+threads. The image with P12, P13, A37-A41 and C18 against the one before them, on the same BAMs: somatic
+PASS 298 to 289 (9 gone), germline 27,428 to 27,202 (473 gone, 247 new), unfiltered PASS 3,619 to 3,522.
+Then the default run with one of P13 and A37-A41 at a time taken back to Java (`-java_compat_except` with
+every other id); the difference each makes, against the default run:
+
+| Taken back to Java | Somatic PASS | Germline PASS |
+|---|---|---|
+| none (default) | 289 | 27,202 |
+| P13 | 289, no record changed | 27,202, no record changed |
+| A37 | 289, no record changed | 27,220 (106 gone, 124 new) |
+| A38 | 289, no record changed | 27,202, no record changed |
+| A39 | 289, no record changed | 27,201 (1 gone) |
+| A40 | 298 (the 9 lost come back) | 27,393 (126 gone, 317 new) |
+| A41 | 289, no record changed | 27,218 (18 gone, 34 new) |
+
+The 9 somatic breakends are 5 events (two breakends each, one single breakend), all in satellite or
+simple-repeat sequence near centromeres, with quality 32 to 50. With Java's match each assembly has no
+link, and its extension (158 to 465 bases) aligns to another copy of the repeat (or nowhere: the single
+breakend). The corrected match finds the first 50 to 100 extension bases in the reference within 500
+bases of the junction, so the assembly becomes a local duplication or deletion of 51 to 407 bases,
+which the somatic filters drop. Compared ungapped with that local reference, the whole extension
+mismatches at 5 to 10% for three of the five (as satellite copies differ, and as a tandem duplication
+in an array would), and from about the 50th base on for the other two (simple repeats, where an indel
+shifts the frame). Seven of the 9 are also in the Java run of the same pair (2.1-beta.4). Calls in such
+repeats are placed with little confidence by either match; the correction is kept, as the Java comment
+proposes it and the offsets Java passes are wrong, but this is the one correction of the six whose
+whole-genome effect reaches the somatic calls.
+
 ## 5. Performance
 
 One machine (macOS, Apple silicon, 20 cores), which was shared with other jobs during all runs. Time

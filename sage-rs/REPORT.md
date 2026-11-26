@@ -404,7 +404,7 @@ particular should be confirmed with the SAGE authors.
 | S8 | with a split read, the index asked about is used, relative to the segment | not measured: no RNA input is on the local disk; the path is only reached by a split read that needs realignment |
 | S9 | the jitter check of a split read is made on the segment | not measured, as S8; unit test |
 | S24 | a contig is cut into the slices of one thread at any thread count | chrM at 3 threads: 2 of 128 records change in their read counts, and the output is byte for byte Java's at 1 thread; at 1 thread none |
-| S49 | a change of more than 5 repeat units, longer or shorter, is outside the jitter model | Illumina chr21: 18 indel records changed (quality and support values), `FILTER` on 3, 245 passing as before. `-germline`: 1 gone, 335 changed (330 indels), `FILTER` on 22, passing 72,902 to 72,897 |
+| S49 | a change of more than 5 repeat units, longer or shorter, is outside the jitter model | Illumina chr21: 18 indel records changed (quality and support values), `FILTER` on 3, 245 passing as before. `-germline`: 1 gone, 335 changed (330 indels), `FILTER` on 22, passing 72,902 to 72,897. Whole genome, a 35x Illumina pair on Google Batch (2026-11-26; the image before and after S49 to S51, on the same BAMs): somatic 416,119 to 416,053 records (92 gone, 26 new, 7,274 changed), passing 4,378 to 4,365: 17 homopolymer deletions of 6 to 23 bases become `minTumorQual` with the same support, 2 of 6 bases become passing; after PAVE and PURPLE one of the 17 had been passing (3,824 to 3,823) |
 | S50 | an MNV filtered on the way is skipped on both sides of a pair | Illumina chr21 `-germline`: `FILTER` on 4 records (2 MNVs, 2 SNVs), passing the same; with soft filters none |
 
 **TINC**
