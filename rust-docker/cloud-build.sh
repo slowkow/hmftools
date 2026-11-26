@@ -26,6 +26,7 @@ trap 'rm -rf "$tmp"' EXIT
 # only what the Dockerfile copies, as committed: no build folders, nothing uncommitted
 git -C "$root" archive HEAD \
     hmf-common-rs/Cargo.toml hmf-common-rs/Cargo.lock hmf-common-rs/src \
+    hmf-common/src/test/resources/segmentation hmf-common/src/test/resources/pcf \
     sage-rs/Cargo.toml sage-rs/Cargo.lock sage-rs/src sage-rs/resources \
     redux-rs/Cargo.toml redux-rs/Cargo.lock redux-rs/src \
     esvee-rs/Cargo.toml esvee-rs/Cargo.lock esvee-rs/build.rs esvee-rs/src esvee-rs/vendor \

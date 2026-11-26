@@ -3,6 +3,8 @@
 !hmf-common-rs/Cargo.toml
 !hmf-common-rs/Cargo.lock
 !hmf-common-rs/src
+!hmf-common/src/test/resources/segmentation
+!hmf-common/src/test/resources/pcf
 !sage-rs/Cargo.toml
 !sage-rs/Cargo.lock
 !sage-rs/src

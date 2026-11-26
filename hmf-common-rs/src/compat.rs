@@ -23,9 +23,41 @@ const JAVA_EXCEPT: u8 = 2;
 static MODE: AtomicU8 = AtomicU8::new(FIXED);
 static EXCEPT: OnceLock<HashSet<String>> = OnceLock::new();
 
+/// The findings of hmf-common-rs's own code, SG1 to SG<SEGMENTATION_FINDINGS> (segmentation; see the
+/// segmentation module). A port whose code calls into it accepts these ids in its `valid_id`.
+pub const SEGMENTATION_FINDINGS: u32 = 3;
+
+/// Whether `id` is a finding of hmf-common-rs (SG1 to SG<SEGMENTATION_FINDINGS>).
+pub fn common_id(id: &str) -> bool {
+    numbered_id(id, "SG", SEGMENTATION_FINDINGS)
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_MODE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// For this crate's tests: runs `f` with Java behaviour on (`true`) or off for every finding, on this
+/// thread only.
+#[cfg(test)]
+pub fn with_java<T>(on: bool, f: impl FnOnce() -> T) -> T {
+    struct Reset(Option<bool>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_MODE.with(|m| m.set(self.0));
+        }
+    }
+    let _reset = Reset(TEST_MODE.with(|m| m.replace(Some(on))));
+    f()
+}
+
 /// Whether to behave as Java does for the finding `id`, as set by `take_options`.
 #[inline]
 pub fn java(id: &str) -> bool {
+    #[cfg(test)]
+    if let Some(v) = TEST_MODE.with(|m| m.get()) {
+        return v;
+    }
     match MODE.load(Ordering::Relaxed) {
         FIXED => false,
         JAVA => true,
@@ -100,6 +132,8 @@ mod tests {
         assert!(numbered_id("S1", "S", 53) && numbered_id("S53", "S", 53));
         assert!(!numbered_id("S54", "S", 53) && !numbered_id("S0", "S", 53) && !numbered_id("X1", "S", 53));
         assert!(!numbered_id("S", "S", 53) && !numbered_id("", "S", 53) && !numbered_id("S+1", "S", 53));
+        assert!(common_id("SG1") && common_id(&format!("SG{SEGMENTATION_FINDINGS}")));
+        assert!(!common_id(&format!("SG{}", SEGMENTATION_FINDINGS + 1)) && !common_id("AM1"));
     }
 
     #[test]

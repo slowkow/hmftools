@@ -11,6 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY hmf-common-rs hmf-common-rs
+# the Java test resources that the shared crate's segmentation tests read (build stage only)
+COPY hmf-common/src/test/resources/segmentation hmf-common/src/test/resources/segmentation
+COPY hmf-common/src/test/resources/pcf hmf-common/src/test/resources/pcf
 COPY sage-rs sage-rs
 COPY redux-rs redux-rs
 COPY esvee-rs esvee-rs
