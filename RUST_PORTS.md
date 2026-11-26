@@ -153,11 +153,22 @@ done, the pipeline needs no Java, R, Python or Perl, but it still runs these pro
 
 ## 5. Shared code
 
-The three ports each carry their own copies of reference-genome access, BAM reading, Java-style
-number formatting, Java-style option parsing and the `-java_compat` switch. Before wave B, which
-leans heavily on `hmf-common` (Ensembl cache, gene panels, driver catalogues, VCF and TSV readers),
-move these into shared crates in one Cargo workspace. New ports use them; the existing ports move
-over when convenient, with their regression runs as the check.
+Done on 2026-11-26: `hmf-common-rs` holds what the three ports had each copied, and they use it. That
+is the indexed FASTA reader and reference genome, Java number formatting, option parsing, logging,
+regions and chromosome order, and the engine of the `-java_compat` switch (each port keeps its own
+finding ids). It also has ESVEE's Java-behaviour helpers (HashMap iteration order, identity-hash
+order under `-XX:hashCode=2`, TimSort, stream sums), which later ports need. BAM reading stays in each
+port: the three read differently, each tuned to its access pattern.
+
+Each port takes the crate as a path dependency rather than joining one Cargo workspace. That keeps
+each port's `Cargo.lock`, build folder and binary path, which the test scripts use. The check was the
+full set of regression runs of the three ports against the stored Java outputs, in Java mode. All
+results were as before; the failures are the same ones, known in advance, from Java's own faults
+or thread-count effects. In addition, the old and the new binaries gave identical output in the
+default mode on one input each.
+
+Before wave B, which leans heavily on `hmf-common` (Ensembl cache, gene panels, driver catalogues,
+VCF and TSV readers), those readers go into this crate too.
 
 ## 6. How each port is checked
 

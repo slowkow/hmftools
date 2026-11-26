@@ -17,6 +17,8 @@ mod esvee;
 mod prep;
 
 pub use common::log;
+// the log macros of hmf_common, under the paths the code uses (crate::info! and use crate::{info})
+pub(crate) use hmf_common::{debug, error, info, warn};
 
 pub const VERSION: &str = "2.1";
 

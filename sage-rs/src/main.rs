@@ -12,9 +12,7 @@ mod constants;
 mod dedup;
 mod evidence;
 mod evidence_stage;
-mod faidx;
 mod filters;
-mod fmt;
 mod matcher;
 mod phase;
 mod quality;
@@ -36,6 +34,9 @@ mod vis_svg;
 
 #[cfg(test)]
 mod tests;
+
+// shared with the other ports, under the paths the code uses (crate::faidx, crate::fmt)
+use hmf_common::{faidx, fmt};
 
 use anyhow::{anyhow, Result};
 use candidate::*;

@@ -10,11 +10,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         clang libclang-dev cmake libbz2-dev liblzma-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
+COPY hmf-common-rs hmf-common-rs
 COPY sage-rs sage-rs
 COPY redux-rs redux-rs
 COPY esvee-rs esvee-rs
-# build each port and run its unit tests on this platform; a failing test fails the image build
+# build each port and run its unit tests (and those of the shared crate) on this platform; a failing
+# test fails the image build
 RUN rustc --version \
+    && (cd hmf-common-rs && cargo test --release --locked) \
     && for crate in sage-rs redux-rs esvee-rs; do \
         (cd $crate && cargo build --release --locked && cargo test --release --locked) || exit 1; \
         install -m 755 $crate/target/release/$crate /usr/local/bin/; \

@@ -1,0 +1,13 @@
+[package]
+name = "hmf-common"
+version = "0.1.0"
+edition = "2024"
+description = "Code shared by the Rust ports of hmftools"
+
+[lib]
+name = "hmf_common"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate", "bzip2", "lzma"] }

@@ -17,7 +17,7 @@ case "${image##*/}" in
     *:*) ;;
     *) image="$image:$(git -C "$root" rev-parse --short=10 HEAD)" ;;
 esac
-if [ -n "$(git -C "$root" status --porcelain -- sage-rs redux-rs esvee-rs rust-docker)" ]; then
+if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs sage-rs redux-rs esvee-rs rust-docker)" ]; then
     echo "note: uncommitted changes are not part of the build; it uses HEAD" >&2
 fi
 
@@ -25,6 +25,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 # only what the Dockerfile copies, as committed: no build folders, nothing uncommitted
 git -C "$root" archive HEAD \
+    hmf-common-rs/Cargo.toml hmf-common-rs/Cargo.lock hmf-common-rs/src \
     sage-rs/Cargo.toml sage-rs/Cargo.lock sage-rs/src sage-rs/resources \
     redux-rs/Cargo.toml redux-rs/Cargo.lock redux-rs/src \
     esvee-rs/Cargo.toml esvee-rs/Cargo.lock esvee-rs/build.rs esvee-rs/src esvee-rs/vendor \

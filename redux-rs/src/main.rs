@@ -4,24 +4,18 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-mod args;
 mod bamin;
 mod bqr;
 mod capture;
 mod compare;
 mod compat;
 mod config;
-#[allow(dead_code)]
-mod fmt;
 mod jitter;
 mod consensus;
 mod dup;
-mod faidx;
-mod log;
 mod out;
 mod partition;
 mod rec;
-mod refgenome;
 #[allow(dead_code)]
 mod sbx;
 mod sbx_dup;
@@ -35,6 +29,10 @@ mod umi_test;
 mod unmap;
 #[cfg(test)]
 mod tests;
+
+// shared with the other ports, under the paths the code uses (crate::fmt, crate::info!, use crate::{info})
+use hmf_common::{args, fmt, log, refgenome};
+use hmf_common::{debug, error, info, warn};
 
 use anyhow::Result;
 use config::Config;

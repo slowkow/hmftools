@@ -1,5 +1,8 @@
-# Only the three crates and the wrappers go into the build context.
+# Only the crates and the wrappers go into the build context.
 *
+!hmf-common-rs/Cargo.toml
+!hmf-common-rs/Cargo.lock
+!hmf-common-rs/src
 !sage-rs/Cargo.toml
 !sage-rs/Cargo.lock
 !sage-rs/src

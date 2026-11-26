@@ -11,6 +11,7 @@ libm = "0.2.16"
 memchr = "2.8.3"
 mimalloc = { version = "0.1.52", default-features = false, optional = true }
 rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate", "bzip2", "lzma"] }
+hmf-common = { path = "../hmf-common-rs" }
 
 [features]
 mimalloc = ["dep:mimalloc"]
