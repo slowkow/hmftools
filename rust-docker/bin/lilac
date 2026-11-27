@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# `lilac` as oncoanalyser calls the Java tool, run by lilac-rs: JVM options are dropped (lilac-rs also
+# ignores them) and the main class com.hartwig.hmftools.lilac.LilacApplication, the jar's default, runs.
+# -java_compat or LILAC_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.lilac.LilacApplication) ;;
+        com.hartwig.*) echo "lilac (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec lilac-rs ${args[@]+"${args[@]}"}

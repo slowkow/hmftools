@@ -1,0 +1,25 @@
+[package]
+name = "lilac-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A port of hmftools LILAC 2.1 (HLA typing) to Rust"
+
+[[bin]]
+name = "lilac-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+flate2 = { version = "1.1.11", default-features = false, features = ["zlib"] }
+hmf-common = { path = "../hmf-common-rs" }
+mimalloc = { version = "0.1.52", default-features = false, optional = true }
+rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate", "bzip2", "lzma"] }
+
+[features]
+default = ["mimalloc"]
+# a faster allocator; build with --no-default-features to use the system one
+mimalloc = ["dep:mimalloc"]
+
+[profile.release]
+panic = "abort"
+debug = 1

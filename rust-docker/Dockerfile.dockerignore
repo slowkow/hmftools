@@ -38,4 +38,9 @@
 !teal-rs/Cargo.lock
 !teal-rs/src
 !teal-rs/resources
+!lilac-rs/Cargo.toml
+!lilac-rs/Cargo.lock
+!lilac-rs/src
+!lilac-rs/resources
+!lilac-rs/testdata
 !rust-docker/bin

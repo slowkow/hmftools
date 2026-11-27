@@ -220,6 +220,55 @@ impl<K: JavaHash + Eq + Hash + Clone> JavaHashSet<K> {
     }
 }
 
+/// Bucket of a key with hash code `h` in a HashMap table of `cap` buckets (a power of two)
+#[inline]
+pub fn bucket_index(h: i32, cap: usize) -> usize {
+    (spread(h) as usize) & (cap - 1)
+}
+
+/// HashMap.tableSizeFor: the smallest power of two at or above `cap` (1 for 0)
+pub fn java_table_size_for(cap: usize) -> usize {
+    table_size_for(cap)
+}
+
+/// The table size after `n` distinct keys were put into a HashMap whose table started at `cap` buckets:
+/// Java doubles the table whenever the size passes `(int)(cap * 0.75f)`.
+pub fn grown_capacity(cap: usize, n: usize) -> usize {
+    let mut cap = cap.max(1);
+    while n > (cap as f32 * 0.75f32) as usize {
+        cap *= 2;
+    }
+    cap
+}
+
+/// The table size of `new HashSet<>(collection)` / `Sets.newHashSet(collection)` with `n` elements on
+/// JDK 19 and later (`HashMap.newHashMap(Math.max(n, 12))`, that is `ceil(max(n, 12) / 0.75)` rounded up
+/// to a power of two). JDK 8 to 18 used `max((int)(n / .75f) + 1, 16)`, which `JavaHashSet::from_collection`
+/// models; the two differ when `n / 0.75` is a power of two (12, 24, 48, ...).
+pub fn jdk19_collection_capacity(n: usize) -> usize {
+    let m = n.max(12) as f64;
+    table_size_for((m / 0.75).ceil() as usize)
+}
+
+/// Guava 33 `Maps.capacity(expectedSize)` (used by `Sets.newHashSet(E...)`, `newHashSetWithExpectedSize`,
+/// `Maps.newHashMapWithExpectedSize`): `n + 1` below 3, else `ceil(n / 0.75)`. Older Guava versions used
+/// `(int)(n / 0.75f + 1.0f)` (`guava_capacity`).
+pub fn guava33_capacity(expected_size: usize) -> usize {
+    if expected_size < 3 { expected_size + 1 } else { (expected_size as f64 / 0.75).ceil() as usize }
+}
+
+/// Java iteration order of the keys of a HashMap or HashSet whose table has `cap` buckets: `hashes` are the
+/// hash codes of the keys in first-insertion order (removed keys left out); returns their indices in the
+/// order Java iterates them (by bucket, and in insertion order within a bucket). Buckets converted to trees
+/// (eight or more colliding keys in a table of 64 or more) are not modelled.
+pub fn java_iteration_order(hashes: &[i32], cap: usize) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..hashes.len()).collect();
+    if cap > 1 {
+        order.sort_by_key(|&i| bucket_index(hashes[i], cap));
+    }
+    order
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,5 +301,23 @@ mod tests {
             m.insert(k, k);
         }
         assert_eq!(m.keys().cloned().collect::<Vec<_>>(), vec![17, 1, 33, 3]);
+    }
+
+    #[test]
+    fn capacities() {
+        assert_eq!(jdk19_collection_capacity(0), 16);
+        assert_eq!(jdk19_collection_capacity(12), 16);
+        assert_eq!(jdk19_collection_capacity(13), 32);
+        assert_eq!(jdk19_collection_capacity(24), 32);
+        assert_eq!(jdk19_collection_capacity(25), 64);
+        assert_eq!(guava33_capacity(1), 2);
+        assert_eq!(guava33_capacity(3), 4);
+        assert_eq!(guava33_capacity(6), 8);
+        assert_eq!(grown_capacity(16, 12), 16);
+        assert_eq!(grown_capacity(16, 13), 32);
+        assert_eq!(grown_capacity(1, 1), 2);
+        assert_eq!(grown_capacity(2, 2), 4);
+        // bucket order, insertion order within a bucket
+        assert_eq!(java_iteration_order(&[98, 97, 113], 16), vec![1, 2, 0]);
     }
 }
