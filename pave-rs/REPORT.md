@@ -176,6 +176,18 @@ PhasedVariantsTest, HomologyRealignTest and ResourcesTest.
 In hmf-common-rs, `vcf` and `gz` have tests of their own: header order and repair, record parsing and
 encoding, and the index read back through htslib.
 
+### In the pipeline (GIAB HG008, 2026-11-27)
+
+HG008 rerun 8 on Google Batch ran PAVE_SOMATIC and PAVE_GERMLINE as the port, in Java mode, with every step
+before them from the first run's cache. Against the first run's Java PAVE (Hartwig's 2.0-beta.2 image),
+all 17,254 somatic and 846 germline records are identical. Only the `##PaveVersion` header line differs,
+2.0 against 2.0-beta.2, and with it the compressed bytes and the index.
+
+| Step | Port | Java |
+|---|---|---|
+| PAVE_SOMATIC | 6.0 s, 211 MB | 31 s, 6.3 GB |
+| PAVE_GERMLINE | 4.8 s, 189 MB | 37 s, 9.8 GB |
+
 ## 3. Findings
 
 Each is corrected by default behind `compat::java("PAn")`; `-java_compat` gives Java's behaviour.

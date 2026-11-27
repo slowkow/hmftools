@@ -82,6 +82,23 @@ port's, apart from the version string, KT and baf.circos.
 AMBER and COBALT version files aside). Even so, Java PURPLE's somatic VCF changed on 104 of 17,254
 records, only in KT: a one-to-one renaming of 24 cluster ids. That is PU1 inside the pipeline.
 
+### In the pipeline (GIAB HG008, 2026-11-27)
+
+HG008 rerun 8 on Google Batch ran PURPLE as the port (`rust_purple`), in Java mode, with PAVE as the port
+too and everything before from the first run's cache. Against the first run's Java PURPLE (Hartwig's
+4.5-beta.5 image):
+- **Text files:** every one is identical: purity, QC, segments, copy numbers, drivers, clonality and the
+  rest.
+- **VCFs:** the records are identical, apart from KT on 101 of the 17,254 somatic records, a one-to-one
+  renaming of 24 kataegis clusters (PU1, which varies between Java runs too). The headers differ only in
+  `##purpleVersion` and `##PaveVersion`.
+- **Not written:** the plots and Circos files. Without a Circos binary the image's wrapper drops
+  `-circos`, and no R plots are drawn. oncoanalyser then skipped ORANGE.
+- **Later steps:** every other step's outputs, from LINX, CHORD, SIGS, LILAC, NEO, CUPPA, PEACH and Virus
+  Interpreter, are unchanged.
+- **Time and memory:** 11.9 s and 1.0 GB, against Java's 44 s and 5.3 GB, which include R's plots and
+  Circos.
+
 ## 3. Findings
 
 Each is corrected by default and kept in Java mode (`-java_compat`).
@@ -199,7 +216,9 @@ and runs Circos when `-circos` is given, but does not run R.
 | `<tumor>.somatic.rainfall.png` | r/somaticVariantPlots.R | plot/<tumor>.somatic_data.tsv (written by Java for R and deleted afterwards; the port does not write it) |
 | `<tumor>.circos.png`, `<tumor>.input.png` | the Circos binary (`-circos`) | circos/*.circos, *.conf, gaps.txt |
 
-ORANGE reads the circos plot, so a pipeline run without Circos needs the plot drawn some other way.
+ORANGE needs these plots (its plot fields are mandatory), and oncoanalyser runs ORANGE only when
+`plot/<tumor>.circos.png` exists. So in a pipeline run with purple-rs, ORANGE is skipped until the plots
+are drawn natively.
 
 ## 7. Open points
 
