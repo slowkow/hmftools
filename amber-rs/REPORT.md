@@ -277,7 +277,11 @@ use. COBALT and BamTools, which read sequentially, took 3-4 min. Java AMBER took
   `AMBER_STREAM_GAP_KB=0` gives one query per task.
 - **Checks:** all 17 small cases are byte-identical to Java with the change, including the CRAM cases.
   So are three more runs with 1 Mb items and with 5 kb and 20 kb gap splits.
-- **Speed:** on local files the two modes take the same time (small cases back to back: 24.0/23.7 s
+- **On Google Batch** (HG008 rerun 4, the same n2-standard-16 machine, BAMs through gcsfuse, Java
+  mode): 2.8 min at 1035% CPU, against 10.1 and 10.7 min at 208-266% for the first version and 12.2 min
+  for Java AMBER. All 7 AMBER output files are identical to Java's, apart from `amber.version`, and so is
+  everything after AMBER (PURPLE apart from its own kataegis ids).
+- **Speed on local files:** the two modes take the same time (small cases back to back: 24.0/23.7 s
   against 25.9/24.2 s, and 28.1/25.3 s against 27.5/26.3 s). With `-position_gap 500` the change is
   faster, 10.7 s against 39 s, as close regions are no longer decompressed again.
 
