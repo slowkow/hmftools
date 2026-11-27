@@ -71,6 +71,7 @@ Times are wall, user CPU and peak RSS. The machine was shared with other jobs th
 | TealPipelineApp, COBALT file without GC bucket 50 | 1.2 s, 0.34 GB | 0.1 s, 0.03 GB | identical (TE9 in Java mode) |
 | TealApplication without GC50 depths | exit 1 | exit 1 | same failure (TE8) |
 | TealPipelineApp, whole-genome telbams | 599.2 s, 627 s, 3.49 GB | 19.3 s, 19 s, 0.79 GB | identical (5 files); Java: 260 records twice (TE1) |
+| Prep, first whole-genome pair, tumor/normal (96 and 120 GB BAMs) | 7,561 s, 7,271 s, 2.43 GB | 649 s, 1,232 s, 1.07 GB | identical (475,471 tumor and 331,014 normal records, uncompressed bytes); no duplicates from Java this time |
 
 **TE1 in practice:** Java's duplicates are exact copies of unplaced unmapped records of complete groups,
 adjacent in the sorted telbam. With them removed, Java's telbam equals the port's. They came in 6 of 9
@@ -103,7 +104,9 @@ whole-genome telbams:
   - option parsing;
   - an end-to-end prep on a BAM written by the test, at 1, 2 and 3 threads.
 
-**Not yet compared:** the whole-genome prep against Java (section 5).
+**Whole-genome prep:** on the first whole-genome pair at `-threads 2`, both telbams are identical to Java's,
+uncompressed byte for byte. That is 475,471 tumor and 331,014 normal records. The port took 649 s against
+Java's 7,561 s, 11.6 times faster, and 1.07 GB against 2.43 GB.
 
 ### In the pipeline (GIAB HG008, 2026-11-27)
 
@@ -208,9 +211,11 @@ Java takes 98.9 s and 1.52 GB at 2 threads (one reader thread). The port's CPU t
 threads: every thread inflates BGZF batches with libdeflate, so the work is shared, not duplicated.
 
 **Whole-genome prep** of the first whole-genome pair: tumor 96 GB, normal 120 GB, with 54.5 and 51.2 million
-unplaced reads; `-threads 2`, Java mode. It took 827 s wall for both BAMs, 1,248 + 134 s CPU, and 0.83
-GB peak. In an oncoanalyser run on a pair of that size, the Java prep used about 5 CPU hours and peaked
-at 18.5 GB.
+unplaced reads; `-threads 2`, Java mode. With the read-ahead (4 handles, 32 MB chunks) it took 649 s wall
+for both BAMs, 1,232 + 72 s CPU, and 1.07 GB peak; before the read-ahead, 827 s and 0.83 GB. The extra
+memory is the chunks read ahead. Java took 7,561 s, 7,271 + 252 s CPU and 2.43 GB on the same machine,
+with the same telbams. In an oncoanalyser run on a pair of that size, the Java prep used about 5 CPU
+hours and peaked at 18.5 GB.
 
 Where the time goes, from macOS `sample` on the normal's main pass:
 - inflating (libdeflate, with its CRC32): about 60%;
@@ -234,10 +239,8 @@ at whole-genome sizes), plus up to 2 x threads + 2 inflated batches of about 4 M
 - **Stand-alone programs not ported:** TelbamApp, TelLengthApp and BreakEndApp. Their code is ported
   as far as the pipeline apps use it, but not their command lines, so there is no `-tsv_file`,
   `-specific_chr` or `-genome_regions`.
-- **Whole-genome prep against Java:** the Java reference was not ready when this was written.
 - **TE3 and TE5** are questions for Hartwig.
 - **Not run:** Java with 3 or more threads (TE6 says why its result varies), and a whole-genome CRAM.
-- **Prep reading on Batch:** on BAMs read through a bucket mount the prep is bound by one stream per BAM
-  (section 1, in the pipeline). Two remedies keep the single-reader result:
-  - read the tumor and normal at the same time;
-  - give the BGZF reader several concurrent ranged reads ahead of the record it is at.
+- **Prep reading on Batch:** the read-ahead (several ranged reads ahead of the record the reader is at)
+  took the prep from 15.5 to 7.5 minutes. Reading the tumor and normal at the same time could take it
+  further. It is not done, because 7.5 minutes is already under Java's 13.8.

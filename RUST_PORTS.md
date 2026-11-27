@@ -111,12 +111,13 @@ GIAB HG008, where they and every later step matched the Java run):
   after reading runs of regions with one index query each. Findings AM1-AM7 and AM51-AM55.
 - **COBALT** (`cobalt-rs`): identical to Java on the whole-genome tumor/normal pair. 3 times faster at
   2 threads, in 0.7 GB against 4.6 GB. Findings CO1-CO6.
-- **BamTools metrics** (`bam-tools-rs`): identical to Java on 19 small and option runs; the whole-genome
-  comparison is pending. 5-8 times faster, in about 100 MB against 2-3 GB. Findings BT1-BT20.
+- **BamTools metrics** (`bam-tools-rs`): identical to Java on 19 small and option runs and on the
+  whole-genome pair. 5-8 times faster (6.5 and 7.1 times on the whole-genome BAMs), in about 100 MB
+  against 2-3 GB. Findings BT1-BT20.
 - **TEAL** (`teal-rs`): identical to Java on 29 cases (telbams record for record, lengths, break ends);
   the prep 8-13 times faster on BAM, TealPipelineApp 19 s against 599 s on whole-genome telbams. Java
-  writes some fragments twice through a race (TE1). Findings TE1-TE11. The whole-genome prep comparison
-  is pending.
+  writes some fragments twice through a race (TE1). Findings TE1-TE11. The whole-genome prep is
+  identical to Java's and 11.6 times faster (649 s against 7,561 s, 1.07 GB against 2.43 GB).
 - **LILAC** (`lilac-rs`): byte-identical to Java on 22 cases; under a second against 30 s, 0.4 GB
   against 5 GB. Findings LI1-LI25.
 - **CIDER** (`cider-rs`): byte-identical to Java on 16 cases with BAM input (from CRAM, cider.bam's tag
