@@ -20,10 +20,10 @@ step are counted once.
 | REDUX, tumor and normal | 35.8 | 4.2% | 8.4 h summed | 51 GB | ported |
 | fastp read splitting | 17.8 | 2.1% | 1.4 h summed | 2 GB | not hmftools |
 | ESVEE | 13.7 | 1.6% | 2.2 h | 121 GB | ported |
-| BamTools, tumor and normal | 8.1 | 1.0% | 0.7 h summed | 4.7 GB | not ported |
-| TEAL, prep and pipeline | 5.2 | 0.6% | 0.75 h | 18.5 GB | not ported |
-| COBALT | 4.4 | 0.5% | 0.4 h | 9.9 GB | not ported |
-| AMBER | 2.9 | 0.3% | 0.5 h | 9.8 GB | not ported |
+| BamTools, tumor and normal | 8.1 | 1.0% | 0.7 h summed | 4.7 GB | ported (metrics) |
+| TEAL, prep and pipeline | 5.2 | 0.6% | 0.75 h | 18.5 GB | in progress |
+| COBALT | 4.4 | 0.5% | 0.4 h | 9.9 GB | ported |
+| AMBER | 2.9 | 0.3% | 0.5 h | 9.8 GB | ported |
 | VIRUSBreakend (GRIDSS) | 1.9 | 0.2% | 0.6 h | 5.9 GB | not hmftools |
 | SAGE germline | 0.5 | 0.1% | 4 min | 12.7 GB | ported |
 | 14 other hmftools steps | 0.7 | 0.1% | CIDER 0.9 h (3% CPU), the rest minutes | up to 10.7 GB | not ported |
@@ -103,6 +103,19 @@ ORANGE.
 | 4 | TEAL | 4,400 (Kotlin) | 5.2 CPU h, 18.5 GB | telomere content and rearrangements |
 | 5 | CIDER | 11,500 (Kotlin) | 55 min wall at 3% CPU: waiting on reads, not computing | aligns with BWA-MEM through the same library as ESVEE, which esvee-rs already builds |
 | 6 | LILAC | 13,700 | HLA typing; seconds to minutes | small runtime, needed for completeness and for NEO |
+
+Status on 2026-11-26:
+- **AMBER** (`amber-rs`): byte-identical to Java on the whole-genome pair in all four modes. 4-7 times
+  faster at 2 threads, with a fifth of the memory or less. Findings AM1-AM7 and AM51-AM55.
+- **COBALT** (`cobalt-rs`): identical to Java on the whole-genome tumor/normal pair. 3 times faster at
+  2 threads, in 0.7 GB against 4.6 GB. Findings CO1-CO6.
+- **BamTools metrics** (`bam-tools-rs`): identical to Java on 19 small and option runs; the whole-genome
+  comparison is pending. 5-8 times faster, in about 100 MB against 2-3 GB. Findings BT1-BT20.
+- **TEAL and LILAC:** in progress.
+- **CIDER:** next.
+
+The pipeline's Java images for these tools are Hartwig's beta builds (`amber:4.4-beta.1`,
+`cobalt:3.1-beta.1`, `bam-tools:1.7-beta.3`), from tags with the same sources as the ports follow.
 
 Once each matches Java on its own, AMBER, COBALT, BamTools and TEAL's read collection could share a
 single pass over each BAM, or be computed by REDUX while it writes the BAM. Today each program
