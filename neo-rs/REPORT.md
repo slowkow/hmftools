@@ -276,3 +276,17 @@ Everything is an addition; no existing function changed behaviour.
 - **In the pipeline:** the port has not yet run as NEO_FINDER / NEO_SCORER in an oncoanalyser run (the
   `--rust_ports_bin` profile needs `neo-rs` added; the wrapper's main-class argument is supported).
 - **Not ported:** NEO's other main classes (BindTrainer, BindScorer, MissensePeptideScorer, the `utils` programs).
+
+## In the pipeline (GIAB HG008, 2026-11-27)
+
+HG008 rerun 10 on Google Batch ran NEO_FINDER and NEO_SCORER as the port, in Java mode, with every other step
+from the first run's cache. All three NEO files (neo_data, neoepitope and peptide_scores) are identical to the
+first run's Java NEO outputs (Hartwig's 1.4-beta.3 image).
+
+| Step | Port | Java |
+|---|---|---|
+| NEO_FINDER | 4.0 s, 105 MB | 6 s, 1.0 GB |
+| NEO_SCORER | 3.1 s, 134 MB | 16 s, 1.3 GB |
+
+The rerun's tasks cost $0.01.
+
