@@ -697,6 +697,82 @@ pub fn load_transcript_splice_acceptor_data(
     Ok(())
 }
 
+/// TranscriptAminoAcids (NEO)
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranscriptAminoAcids {
+    pub gene_id: String,
+    pub gene_name: String,
+    pub trans_name: String,
+    pub canonical: bool,
+    pub amino_acids: String,
+}
+
+pub fn ensembl_amino_acid_data_file(version: RefGenomeVersion) -> String {
+    format!("ensembl_trans_amino_acids.{}.csv", version.identifier())
+}
+
+/// EnsemblDataLoader.loadTranscriptAminoAcidData: TranscriptAminoAcids by transcript name (the last line
+/// of a name wins). Err where Java returns false (no file) or throws. As Java, a line of a gene outside
+/// `restricted_gene_ids` also skips the line after it (Java calls readLine() once more).
+pub fn load_transcript_amino_acid_data(
+    data_path: &str, version: RefGenomeVersion, restricted_gene_ids: &[String], canonical_only: bool,
+) -> Result<std::collections::HashMap<String, TranscriptAminoAcids>> {
+    let filename = check_old_filename(&(check_add_dir_separator(data_path) + &ensembl_amino_acid_data_file(version)));
+    if !std::path::Path::new(&filename).exists() {
+        bail!("missing Ensembl transcript amino acid data file: {filename}");
+    }
+    let mut map = std::collections::HashMap::new();
+    let mut cols: Option<[usize; 4]> = None;
+    let mut canonical_col: Option<usize> = None;
+    let mut skip_next = false;
+    java_text::for_each_line(&filename, |line| {
+        let Some([gene_i, name_i, trans_i, aa_i]) = cols else {
+            let f = java_text::fields_index_map(line, ',');
+            cols = Some([
+                index_of(&f, "GeneId", &filename)?,
+                index_of(&f, "GeneName", &filename)?,
+                index_of(&f, "TransName", &filename)?,
+                index_of(&f, "AminoAcids", &filename)?,
+            ]);
+            canonical_col = f.get("Canonical").copied();
+            return Ok(());
+        };
+        if skip_next {
+            skip_next = false;
+            return Ok(());
+        }
+        // line.split(ENSEMBL_DELIM): trailing empty fields dropped
+        let items = java_text::split(line, ',');
+        let item = |i: usize| items.get(i).copied().ok_or_else(|| anyhow!("{filename}: ArrayIndexOutOfBounds in line: {line}"));
+        let gene_id = item(gene_i)?;
+        if !restricted_gene_ids.is_empty() && !restricted_gene_ids.iter().any(|g| g == gene_id) {
+            skip_next = true;
+            return Ok(());
+        }
+        let trans_name = item(trans_i)?;
+        let canonical = match canonical_col {
+            None => true,
+            Some(i) => java_text::parse_bool(item(i)?),
+        };
+        if canonical_only && !canonical {
+            return Ok(());
+        }
+        map.insert(
+            trans_name.to_string(),
+            TranscriptAminoAcids {
+                gene_id: gene_id.to_string(),
+                gene_name: item(name_i)?.to_string(),
+                trans_name: trans_name.to_string(),
+                canonical,
+                amino_acids: item(aa_i)?.to_string(),
+            },
+        );
+        Ok(())
+    })
+    .with_context(|| format!("failed to load transcript amino-acid data({filename})"))?;
+    Ok(map)
+}
+
 /// EnsemblDataCache.getProteinDomainPositions: the genomic start and end of a protein feature
 pub fn get_protein_domain_positions(protein: &TranscriptProteinData, trans: &TranscriptData) -> [Option<i32>; 2] {
     if trans.exons.is_empty() {
@@ -862,6 +938,30 @@ mod tests {
         r.set_restricted_gene_id_list(&["G3".to_string()]);
         // no 37 files, nor unversioned ones
         assert!(r.load(false).is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn transcript_amino_acids() {
+        let dir = std::env::temp_dir().join(format!("ensembl_aa_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("ensembl_trans_amino_acids.csv"),
+            "GeneId,GeneName,TransName,Canonical,AminoAcids\nG1,N1,T1,true,MAAA\nG2,N2,T2,false,MCCC\nG3,N3,T3,true,MDDD\nG1,N1,T1,true,MEEE\n",
+        )
+        .unwrap();
+        let d = dir.to_str().unwrap();
+        // the unversioned file stands in for the 38 one; a repeated transcript keeps its last line
+        let all = load_transcript_amino_acid_data(d, RefGenomeVersion::V38, &[], false).unwrap();
+        assert_eq!(all.len(), 3);
+        assert_eq!(all["T1"].amino_acids, "MEEE");
+        assert!(!all["T2"].canonical);
+        let canonical = load_transcript_amino_acid_data(d, RefGenomeVersion::V37, &[], true).unwrap();
+        assert!(canonical.contains_key("T3") && !canonical.contains_key("T2"));
+        // as Java, a line outside the restricted genes also skips the line after it: G2 skips T3 too
+        let r = load_transcript_amino_acid_data(d, RefGenomeVersion::V38, &["G1".to_string(), "G3".to_string()], false).unwrap();
+        assert!(r.contains_key("T1") && !r.contains_key("T2") && !r.contains_key("T3"));
+        assert!(load_transcript_amino_acid_data("/nonexistent", RefGenomeVersion::V38, &[], false).is_err());
         std::fs::remove_dir_all(&dir).ok();
     }
 

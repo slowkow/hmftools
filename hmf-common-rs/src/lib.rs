@@ -30,6 +30,8 @@
 //!   stream and tabix index.
 //! - `commons_math`, `java_strictmath`, `kernel_estimator`, `config_builder`: commons-math3
 //!   distributions, StrictMath, KernelEstimator and ConfigBuilder as the Java tools use them.
+//! - `neo`, `hla`, `rna`: the neoepitope files of LINX, NEO and ISOFOX, LILAC's allele file, and ISOFOX's
+//!   transcript expression and the cohort expression matrix (NEO).
 
 pub mod args;
 pub mod blosum;
@@ -45,6 +47,7 @@ pub mod ensembl;
 pub mod faidx;
 pub mod fmt;
 pub mod gz;
+pub mod hla;
 pub mod java_fastmath;
 pub mod java_hash;
 pub mod java_id_hash;
@@ -57,10 +60,12 @@ pub mod known_fusion;
 pub mod kotlin_random;
 pub mod log;
 pub mod metrics;
+pub mod neo;
 pub mod ref_coords;
 pub mod refgenome;
 pub mod sam_header;
 pub mod regions;
+pub mod rna;
 pub mod poisson;
 pub mod purple_files;
 pub mod segmentation;

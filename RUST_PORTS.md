@@ -189,6 +189,12 @@ Second batch, merged on 2026-11-27:
   CH1-CH10: R breaks BRCA1/BRCA2 ties at random (CH1), turns sample ids such as `0123` into `123` (CH3), and
   a soft-masked reference loses every indel's context (CH4).
 
+- **NEO** (`neo-rs`): NEO_FINDER and NEO_SCORER byte-identical to Java on HG008, a private pair and 45 of 46
+  small cases (9 with synthetic RNA inputs); the 46th is Java's thread-timing row order (NE10). 3-11 times
+  faster, in a tenth of the memory. Findings NE1-NE14: wrong intron lengths in cigars (NE1, NE2), cohort TPM
+  sums starting at -1 (NE6: every DNA-only run's expected TPMs are 1 too low, some negative), a missing
+  score distribution read as the best rank (NE13), and IG V-segment genes not excluded (NE14).
+
 For the R and Python parts, the first version keeps calling the same scripts, so plots and
 predictions stay identical. Replacing them is a separate decision per program: a random forest or a
 fitted classifier can be reproduced exactly in Rust; plots and the PDF cannot be byte-identical and

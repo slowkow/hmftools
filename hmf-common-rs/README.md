@@ -1,7 +1,7 @@
 # hmf-common-rs
 
 Code shared by the Rust ports of hmftools (`sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`,
-`bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, `chord-rs`, and the ports that follow).
+`bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, `chord-rs`, `neo-rs`, and the ports that follow).
 It plays the part of the Java `hmf-common` module, plus the Java library behaviour the ports reproduce
 so that their output equals the Java tools'.
 
@@ -31,7 +31,7 @@ so that their output equals the Java tools'.
 | `purple_files` | PURPLE's files: PurpleCopyNumber, PurityContext (purity, ploidy, gender, WGD), GeneCopyNumber, DriverCatalog (read and write), `write_lines` as Files.write |
 | `known_fusion` | KnownFusionCache and KnownFusionData (the known fusion file), KnownFusionType, FusionCommon's constants |
 | `transcript_utils` | TranscriptUtils: coding bases and phases |
-| `poisson` | re-exports `commons_math`'s PoissonDistribution, logGamma and regularized gamma functions (AMBER, LINX) |
+| `poisson` | re-exports `commons_math`'s PoissonDistribution, logGamma and regularized gamma functions (AMBER, LINX), and PoissonCalcs.calcPoissonNoiseValue (NEO) |
 | `gz` | fast gzip / BGZF text reading (zlib-rs, one member after another, optionally inflating on its own thread) and a line reader (PAVE's resource files) |
 | `vcf` | VCF headers, records and the VCFEncoder as htsjdk 2.23 has them, and `VcfFileWriter`: the BGZF stream (zlib level 5, as java.util.zip) with htsjdk's on-the-fly tabix index (PAVE) |
 | `variant_context` | VCF records with htsjdk's typed attributes and lazy genotypes (VariantContext, LazyGenotypesContext, VCFEncoder.formatVCFField), written through `vcf`'s BGZF stream and tabix index (PURPLE) |
@@ -39,6 +39,7 @@ so that their output equals the Java tools'.
 | `java_strictmath` | StrictMath exp, log, log10 and pow (FdLibm) |
 | `kernel_estimator` | hmf-common KernelEstimator |
 | `config_builder` | hmf-common ConfigBuilder: registered items, hasValue, path and number checks, -version and -help (PURPLE) |
+| `neo`, `hla`, `rna` | the neoepitope files of LINX and NEO, LILAC's allele file, ISOFOX's transcript expression and the cohort expression matrix (NEO) |
 | `ref_coords` | RefGenomeCoordinates: the GRCh37 and GRCh38 lengths of chromosomes 1-22, X and Y (resources refgenome/lengths.*.tsv) |
 
 The ports take it as a path dependency (`hmf-common = { path = "../hmf-common-rs" }`, with

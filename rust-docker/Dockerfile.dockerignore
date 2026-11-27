@@ -79,4 +79,8 @@
 !chord-rs/src
 !chord-rs/resources
 !chord-rs/testdata
+!neo-rs/Cargo.toml
+!neo-rs/Cargo.lock
+!neo-rs/src
+!neo-rs/resources
 !rust-docker/bin

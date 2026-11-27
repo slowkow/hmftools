@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# `neo` as oncoanalyser calls the Java tool (NEO_FINDER, NEO_SCORER), run by neo-rs: JVM options are dropped;
+# neo-rs takes the Java main class itself (NeoEpitopeFinder, the default, and score.NeoScorer).
+# -java_compat or NEO_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec neo-rs ${args[@]+"${args[@]}"}
