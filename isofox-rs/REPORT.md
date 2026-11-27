@@ -648,3 +648,25 @@ The pipeline ran both versions on the same STAR BAM:
   unregistered option). Java 2.0.1 also reads NEO's file by `-sample`. The port accepts `-tumor` in 2.0.1 mode.
 - **`-excluded_regions`:** upstream's 2.0.1 release passed `-excluded_regions`; the fork's ISOFOX module, written for
   2.1, does not. The port handles both.
+
+## In the pipeline (a STAR-aligned tumor RNA, Google Batch, 2026-11-27)
+
+oncoanalyser's STAR route (STAR 2.7.3a, samtools sort, GATK MarkDuplicates; 74 M read pairs) ran ISOFOX_QUANTIFICATION
+three times from the same cached alignment: Java ISOFOX 2.0.1 twice (16 and 15 threads, upstream's command line with
+`-excluded_regions`) and isofox-rs in 2.0.1 mode with `-java_compat`. Java's whole-sample output is not defined (it
+depends on thread timing and identity hashes, IF7 and IF13), so the port is compared with Java's own run-to-run
+variation:
+
+| File | Java against Java | Java against the port |
+|---|---|---|
+| gene_data, transcript_data, summary, alt_splice_junc | identical | identical |
+| gene_collection | same rows, other order | same rows, other order |
+| alt_splice_junc_unfiltered (80,401 rows) | 17.8% of rows differ | 17.2% |
+| pass_fusions (624 rows) | 9.9% | 9.6% |
+| retained_intron (about 124,600 rows) | 25.2% | 24.6% |
+| fusions (37,930 rows) | 89.6% (fusion ids) | 100% (ids: the port numbers as Java does at one thread) |
+
+The differences are of the kinds IF7 and IF13 describe: row order, fusion ids, which of tied transcripts is reported,
+and some retained-intron and fusion fragment counts. Every passing fusion is at the same breakends. ISOFOX took 2.5
+minutes and 16.5 GB, against Java's 39 minutes and 43 GB at 16 threads. CUPPA's RNA-only prediction from the port's
+output equals Java's within 1e-14 relative.
