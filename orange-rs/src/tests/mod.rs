@@ -7,7 +7,7 @@ use hmf_common::linx_files::{LinxBreakend, LinxSvAnnotation};
 use hmf_common::purple_files::{ChrArmCopyNumber, GeneCopyNumber, GermlineAmpDel, PurplePurity, PurpleQc};
 use hmf_common::rna;
 use hmf_common::small_variant::determine_coding_effect;
-use hmf_common::tool_results::{self as tr, AnnotatedVirus};
+use hmf_common::tool_results as tr;
 
 use crate::compat::with_java;
 use crate::linx::LinxData;
@@ -651,43 +651,130 @@ fn should_convert_cancer_flag_values_to_null() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// VirusInterpreterTest
+// ViridianInterpreterTest (upstream f5f660cc9f; VirusInterpreterTest and OrangeConversionTest's virus test
+// went with VirusInterpreter), and the loading of either tool's file
 
-fn annotated_virus(name: &str, reported: bool, blacklisted: Option<bool>) -> AnnotatedVirus {
-    AnnotatedVirus {
-        taxid: 0,
-        name: name.into(),
-        qc_status: "NO_ABNORMALITIES".into(),
-        integrations: 0,
-        interpretation: None,
-        percentage_covered: 1.0,
-        mean_coverage: 1.0,
-        expected_clonal_coverage: Some(1.0),
-        reported,
-        blacklisted,
-        driver_likelihood: "HIGH".into(),
+fn virus_report(name: &str, group: &str, qc: &str, t: Option<&str>, n: i32, cov: f64, depth: f64, copies: Option<f64>, clonality: &str, reported: bool) -> tr::VirusReport {
+    tr::VirusReport {
+        virus_name: name.into(),
+        virus_group: group.into(),
+        qc_status: qc.into(),
+        reporting_type: t.map(String::from),
+        integrations: n,
+        coverage_percentage: cov,
+        mean_depth: depth,
+        copies_per_tumor_cell: copies,
+        clonality_status: clonality.into(),
+        is_reported: reported,
     }
 }
 
 #[test]
-fn can_filter_blacklisted_viruses() {
-    let a = annotated_virus("blacklisted virus", false, Some(true));
-    let b = annotated_virus("non blacklisted virus", true, Some(false));
-    let f = crate::others::filter_blacklisted(&[&a, &b]).unwrap();
-    assert_eq!(f.len(), 1);
-    assert_eq!(f[0].name, "non blacklisted virus");
-    assert_eq!(f[0].driver_interpretation, "HIGH");
-    let unknown = annotated_virus("unknown", true, None);
-    assert!(crate::others::filter_blacklisted(&[&unknown]).is_err());
-    assert!(crate::others::filter_blacklisted(&[]).unwrap().is_empty());
+fn viridian_interpret() {
+    let reported = virus_report("Human papillomavirus type 16", "Human papillomavirus", "AMBIGUOUS_VIRUS", Some("HPV"), 2, 0.9, 20.0, Some(2.5), "CLONAL", true);
+    let not_reported = virus_report("JC polyomavirus", "JC polyomavirus", "NO_ABNORMALITIES", None, 0, 0.4, 1.0, None, "PURPLE_FAIL_NO_TUMOR", false);
+    let expected_reported = VirusReport {
+        name: "Human papillomavirus type 16".into(),
+        virus_group: "Human papillomavirus".into(),
+        qc_status: "AMBIGUOUS_VIRUS".into(),
+        integrations: 2,
+        interpretation: Some("HPV".into()),
+        percentage_covered: 0.9,
+        mean_coverage: 20.0,
+        reported: true,
+        clonality_status: "CLONAL".into(),
+        copies_per_tumor_cell: Some(2.5),
+    };
+    let expected_not_reported = VirusReport {
+        name: "JC polyomavirus".into(),
+        virus_group: "JC polyomavirus".into(),
+        qc_status: "NO_ABNORMALITIES".into(),
+        integrations: 0,
+        interpretation: None,
+        percentage_covered: 0.4,
+        mean_coverage: 1.0,
+        reported: false,
+        clonality_status: "PURPLE_FAIL_NO_TUMOR".into(),
+        copies_per_tumor_cell: None,
+    };
+    assert_eq!(
+        crate::others::interpret_viridian(&[reported, not_reported]),
+        ViridianRecord { all_viruses: vec![expected_reported.clone(), expected_not_reported], reportable_viruses: vec![expected_reported] }
+    );
+    assert_eq!(crate::others::interpret_viridian(&[]), ViridianRecord { all_viruses: vec![], reportable_viruses: vec![] });
 }
 
 #[test]
 fn virus_types_convert() {
-    // OrangeConversionTest.convertsEachVirusConstantProperly: VirusType names are VirusInterpretation names
+    // ViridianInterpreterTest.convertsEachVirusConstantProperly: VirusType's display names give the
+    // VirusInterpretation names; ReportQcStatus and ClonalityStatus have the same names in both
     for (display, name) in [("MCV", "MCV"), ("EBV", "EBV"), ("HPV", "HPV"), ("HBV", "HBV"), ("HHV-8", "HHV8")] {
         assert_eq!(tr::virus_type_from_name(display).unwrap(), name);
     }
+    assert_eq!(tr::VIRIDIAN_REPORT_QC_STATUSES, ["NO_ABNORMALITIES", "AMBIGUOUS_VIRUS"]);
+    assert_eq!(tr::VIRIDIAN_CLONALITY_STATUSES.len(), 5);
+}
+
+#[test]
+fn virus_report_json() {
+    // as minimally.populated.orange.json writes a VirusReport
+    let v = VirusReport {
+        name: "JC polyomavirus".into(),
+        virus_group: "JC polyomavirus".into(),
+        qc_status: "NO_ABNORMALITIES".into(),
+        integrations: 0,
+        interpretation: None,
+        percentage_covered: 0.4,
+        mean_coverage: 1.0,
+        reported: false,
+        clonality_status: "PURPLE_FAIL_NO_TUMOR".into(),
+        copies_per_tumor_cell: None,
+    };
+    let mut w = crate::json::JsonWriter::new();
+    crate::json::ToJson::write_json(&ViridianRecord { all_viruses: vec![v], reportable_viruses: vec![] }, &mut w);
+    let j = w.finish();
+    assert_eq!(
+        j,
+        "{\n  \"allViruses\": [\n    {\n      \"name\": \"JC polyomavirus\",\n      \"virusGroup\": \"JC polyomavirus\",\n      \"qcStatus\": \"NO_ABNORMALITIES\",\n      \"integrations\": 0,\n      \"interpretation\": null,\n      \"percentageCovered\": 0.4,\n      \"meanCoverage\": 1.0,\n      \"reported\": false,\n      \"clonalityStatus\": \"PURPLE_FAIL_NO_TUMOR\",\n      \"copiesPerTumorCell\": null\n    }\n  ],\n  \"reportableViruses\": []\n}"
+    );
+}
+
+#[test]
+fn virus_files_load() {
+    let dir = std::env::temp_dir().join(format!("orange_virus_{}", std::process::id()));
+    let (vi, vir, both, none) = (dir.join("vi"), dir.join("viridian"), dir.join("both"), dir.join("none"));
+    for d in [&vi, &vir, &both, &none] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let vi_text = "taxid\tname\tqcStatus\tintegrations\tinterpretation\tpercentageCovered\tmeanCoverage\texpectedClonalCoverage\treported\tblacklisted\tdriverLikelihood\n\
+                   1\tVirus A\tNO_ABNORMALITIES\t3\tHPV\t98.25\t120.5\t44.125\ttrue\tfalse\tHIGH\n\
+                   2\tVirus B\tLOW_VIRAL_COVERAGE\t0\tnull\t5.0\t1.25\tnull\tfalse\ttrue\tLOW\n";
+    let viridian_text = "name\tqcStatus\tintegrations\tinterpretation\tpercentageCovered\tmeanCoverage\treported\tclonalityStatus\tcopiesPerTumorCell\tvirusGroup\n\
+                         Virus C\tNO_ABNORMALITIES\t1\tHHV-8\t0.5\t7.0\ttrue\tCLONAL\t3.0\tGroup C\n";
+    std::fs::write(vi.join("T.virus.annotated.tsv"), vi_text).unwrap();
+    std::fs::write(vir.join("T.viridian.report.tsv"), viridian_text).unwrap();
+    std::fs::write(both.join("T.virus.annotated.tsv"), vi_text).unwrap();
+    std::fs::write(both.join("T.viridian.report.tsv"), viridian_text).unwrap();
+    let load = |d: &std::path::Path| crate::others::load_virus_dir(&Some(format!("{}/", d.display())), "T");
+
+    // Virus Interpreter's file, converted: blacklisted viruses kept (OR12), coverage as a fraction
+    let r = load(&vi).unwrap().unwrap();
+    assert_eq!(r.all_viruses.len(), 2);
+    assert_eq!(r.reportable_viruses.len(), 1);
+    assert_eq!(r.all_viruses[0].percentage_covered, 98.25 * 0.01);
+    assert_eq!((r.all_viruses[0].virus_group.as_str(), r.all_viruses[0].clonality_status.as_str()), ("Virus A", "NOT_PROFILED"));
+    assert_eq!((r.all_viruses[1].qc_status.as_str(), r.all_viruses[1].copies_per_tumor_cell), ("AMBIGUOUS_VIRUS", None));
+    // Viridian's
+    let r = load(&vir).unwrap().unwrap();
+    assert_eq!((r.all_viruses[0].name.as_str(), r.all_viruses[0].interpretation.as_deref()), ("Virus C", Some("HHV8")));
+    assert_eq!(r.reportable_viruses.len(), 1);
+    // both files: Virus Interpreter's
+    assert_eq!(load(&both).unwrap().unwrap().all_viruses[0].name, "Virus A");
+    // a directory without either file fails (Viridian's report is read); no directory, no record
+    assert!(load(&none).is_err());
+    assert_eq!(crate::others::load_virus_dir(&Some(format!("{}/missing/", dir.display())), "T").unwrap(), None);
+    assert_eq!(crate::others::load_virus_dir(&None, "T").unwrap(), None);
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -801,7 +888,7 @@ fn record_json_layout() {
         isofox: None,
         lilac: None,
         immune_escape: crate::others::immune_escape(&purple_record(vec![], vec![]), &linx_record(&[])),
-        virus_interpreter: None,
+        viridian: None,
         chord: None,
         cuppa: None,
         peach: Some(Vec::new()),

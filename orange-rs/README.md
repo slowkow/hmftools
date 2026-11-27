@@ -1,11 +1,12 @@
 # orange-rs
 
-A Rust port of hmftools ORANGE 5.1 (`../orange`, with the data model `../orange-datamodel`): the report that gathers
-every tool's results for a tumor sample. It takes ORANGE's command line, loads and interprets PURPLE, LINX, LILAC,
-CHORD, CUPPA, PEACH, SIGS, Virus Interpreter and ISOFOX results as ORANGE does (driver and variant selection,
-reportable events, germline handling, immune escape), copies the plots, and writes `<tumor>.orange.json`. With
-`-java_compat` the JSON is byte-identical to the Java jar's; by default the faults found in the Java code are
-corrected (findings OR1-OR11 in REPORT.md).
+A Rust port of hmftools ORANGE 5.1 (`../orange`, with the data model `../orange-datamodel`; upstream 883ab11bba of
+2026-11-27, which has f5f660cc9f's Viridian input): the report that gathers every tool's results for a tumor sample.
+It takes ORANGE's command line, loads and interprets PURPLE, LINX, LILAC, CHORD, CUPPA, PEACH, SIGS, Viridian (or
+Virus Interpreter) and ISOFOX results as ORANGE does (driver and variant selection, reportable events, germline
+handling, immune escape), copies the plots, and writes `<tumor>.orange.json`. With `-java_compat` the JSON is
+byte-identical to the Java jar's; by default the faults found in the Java code are corrected (findings OR1-OR11 in
+REPORT.md; OR12 is kept as Java).
 
 The PDF report is not written (PDFBox and boxable in Java; out of scope for now). REPORT.md lists each section and
 table the PDF draws and the data and plots it uses.
@@ -31,9 +32,16 @@ As Java's (`orange-rs -help` lists them):
   tumor-only), `-rna_sample`, `-ref_genome_version` (37 by default, or 38), `-sequencing_type` (ILLUMINA, ULTIMA, SBX).
 - **Inputs:** `-purple_dir`, `-purple_plot_dir`, `-linx_dir` (required, or resolved from a root directory),
   `-linx_germline_dir` (required with a reference), `-linx_plot_dir`, `-sage_plot_dir`, `-lilac_dir`, `-chord_dir`,
-  `-cuppa_dir`, `-peach_dir`, `-sigs_dir`, `-virus_dir`, `-qsee_dir`, `-isofox_dir`, `-purple_rna_append_vcf`; or
-  `-pipeline_sample_root_dir` with `-pipeline_format` (OA_V3_1 by default, OA_V3_0, OA_V2_3, OA_V2_2, OA_V2_0,
-  PIP5_V6_0, DB_V6_0) or `-pipeline_format_file`; or `-sample_data_dir` (everything in one directory).
+  `-cuppa_dir`, `-peach_dir`, `-sigs_dir`, `-viridian_dir`, `-virus_dir`, `-qsee_dir`, `-isofox_dir`,
+  `-purple_rna_append_vcf`; or `-pipeline_sample_root_dir` with `-pipeline_format` (OA_V3_1 by default, OA_V3_0,
+  OA_V2_3, OA_V2_2, OA_V2_0, PIP5_V6_0, DB_V6_0) or `-pipeline_format_file`; or `-sample_data_dir` (everything in
+  one directory).
+- **Viruses:** `-virus_dir` (Virus Interpreter's directory, kept for compatibility) is taken as given and wins over
+  `-viridian_dir`; without it the virus directory is `-viridian_dir`, else the layout's (`viridian` in OA_V3_1,
+  `virusinterpreter` in the older layouts; `viridianDir` in a `-pipeline_format_file`), else `-sample_data_dir`. In
+  that directory `<tumor>.virus.annotated.tsv` (Virus Interpreter) is read when it exists, converted to Viridian's
+  reports, and otherwise `<tumor>.viridian.report.tsv` (Viridian), which must then exist. No directory, or one that
+  does not exist: no `viridian` section (null).
 - **Report:** `-pipeline_version_file`, `-sampling_date` (yyMMdd; today by default), `-primary_tumor_doids` (with
   `-doid_json`), `-primary_tumor_location`, `-panel_name`, `-display_sample`, `-add_disclaimer` (the last two are
   PDF-only).
@@ -45,7 +53,10 @@ As Java's (`orange-rs -help` lists them):
 ## Outputs
 
 In `-output_dir`:
-- `<tumor>.orange.json`: the report, as Gson writes it (pretty-printed, HTML-safe escapes, nulls written);
+- `<tumor>.orange.json`: the report, as Gson writes it (pretty-printed, HTML-safe escapes, nulls written); the virus
+  section is `viridian` (`allViruses` and `reportableViruses`, each a VirusReport: name, virusGroup, qcStatus,
+  integrations, interpretation, percentageCovered as a fraction, meanCoverage, reported, clonalityStatus,
+  copiesPerTumorCell);
 - `plot/`: the PURPLE plots, the LINX driver plots, the SAGE variant pages, the QSee and CUPPA plots, copied.
 
 ## How it works
@@ -61,6 +72,7 @@ the JSON (the local phase set ids), EnumSet order for enum sets, and directory l
 
 `CARGO_BUILD_JOBS=2 cargo test --release` runs the Java unit tests of the ported classes (GermlineGainDeletionFactory,
 PurpleInterpreter, CodingEffectDeterminer, DriverInterpretation, LinxBreakendInterpreter, ImmuneEscapeInterpreter,
-Isofox interpretation and conversion, VirusInterpreter, CuppaDataFactory with the Java tests' CUPPA files,
-FileBasedPlotManager, PathUtil) and tests of the port (JSON layout, findings in both modes, dates, plot lookup).
+Isofox interpretation and conversion, ViridianInterpreter, CuppaDataFactory with the Java tests' CUPPA files,
+FileBasedPlotManager, PathUtil, PipelineToolDirectories' complete format file) and tests of the port (the virus
+loading from either tool's file , JSON layout, findings in both modes, dates, plot lookup).
 The comparisons with Java are in REPORT.md.

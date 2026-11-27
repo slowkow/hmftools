@@ -40,9 +40,9 @@ so that their output equals the Java tools'.
 | `kernel_estimator` | hmf-common KernelEstimator |
 | `config_builder` | hmf-common ConfigBuilder: registered items, hasValue, path and number checks, -version and -help (PURPLE) |
 | `neo`, `hla`, `rna` | the neoepitope files of LINX and NEO, LILAC's allele and QC files, ISOFOX's transcript and gene expression, summary statistics, RNA fusions and novel splice junctions, and the cohort expression matrix (NEO) |
-| `linx_files`, `small_variant`, `tool_results`, `cytobands` | LINX's SV annotations, breakends, clusters, fusions, drivers and germline disruptions; PURPLE's small variants as SmallVariantFactory reads them (filters, impacts, pathogenicity); CHORD, PEACH, SIGS, Virus Interpreter and CUPPA result files and the pipeline version file; the cytoband tables (resources/refgenome) (ORANGE) |
+| `linx_files`, `small_variant`, `tool_results`, `cytobands` | LINX's SV annotations, breakends, clusters, fusions, drivers and germline disruptions; PURPLE's small variants as SmallVariantFactory reads them (filters, impacts, pathogenicity); CHORD, PEACH, SIGS, Virus Interpreter, Viridian (VirusReportFile, and Virus Interpreter's viruses converted to Viridian's reports) and CUPPA result files and the pipeline version file; the cytoband tables (resources/refgenome) (ORANGE) |
 | `sigs` | hmf-common sigs: LeastSquaresFit, Matrix / loadMatrixDataFile, SnvSigUtils (bucket names, variantContext, the COSMIC SNV signatures resource) and PositionFrequencies' functions (SIGS, CUPPA) |
-| `delim_file` | DelimFileReader (named columns), and the plain or gzip writer of FileWriterUtils.createBufferedWriter with DelimFileWriter's rows |
+| `delim_file` | DelimFileReader (named columns; Row.getBoolean and getDoubleOrNull), and the plain or gzip writer of FileWriterUtils.createBufferedWriter with DelimFileWriter's rows |
 | `redux_files`, `cobalt_files`, `esvee_files` | REDUX's BQR, duplicate frequency and jitter count files, COBALT's GC median file, ESVEE's discordant fragment statistics (qsee) |
 | `ref_coords` | RefGenomeCoordinates: the GRCh37 and GRCh38 lengths of chromosomes 1-22, X and Y (resources refgenome/lengths.*.tsv) |
 

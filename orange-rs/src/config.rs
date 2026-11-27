@@ -92,6 +92,7 @@ pub fn register(cb: &mut ConfigBuilder) {
         ("cuppa_dir", "cuppa"),
         ("peach_dir", "peach"),
         ("sigs_dir", "sigs"),
+        ("viridian_dir", "viridian"),
         ("sage_dir", "sage"),
         ("sage_germline_dir", "sage_germline"),
         ("purple_dir", "purple"),
@@ -130,7 +131,7 @@ fn exists(path: &str) -> bool {
 }
 
 /// The tool directories of a pipeline layout (PipelineToolDirectories), those ORANGE uses
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 struct ToolDirectories {
     chord: String,
     cuppa: String,
@@ -141,7 +142,8 @@ struct ToolDirectories {
     peach: String,
     purple: String,
     sigs: String,
-    virus_interpreter: String,
+    /// virusDir: Viridian's in OA_V3_1, Virus Interpreter's in the older layouts (upstream f5f660cc9f)
+    virus: String,
     qsee: String,
 }
 
@@ -156,11 +158,12 @@ fn layout(format: &str) -> Result<ToolDirectories> {
         peach: "peach".into(),
         purple: "purple".into(),
         sigs: "sigs".into(),
-        virus_interpreter: virus.into(),
+        virus: virus.into(),
         qsee: qsee.into(),
     };
     Ok(match format {
-        "OA_V3_1" | "OA_V3_0" | "OA_V2_3" | "OA_V2_2" | "DB_V6_0" => {
+        "OA_V3_1" => d("chord", "linx/germline_annotations", "linx/somatic_annotations", "viridian", "qsee"),
+        "OA_V3_0" | "OA_V2_3" | "OA_V2_2" | "DB_V6_0" => {
             d("chord", "linx/germline_annotations", "linx/somatic_annotations", "virusinterpreter", "qsee")
         }
         "OA_V2_0" => d("chord", "linx/germline_annotations", "linx/somatic_annotations", "virusinterpreter", ""),
@@ -169,7 +172,8 @@ fn layout(format: &str) -> Result<ToolDirectories> {
     })
 }
 
-/// PipelineToolDirectoriesFile.read: `name<TAB>dir` lines, "" for an absent name
+/// PipelineToolDirectoriesFile.read: `name<TAB>dir` lines, "" for an absent name (the virus directory is
+/// `viridianDir` since upstream f5f660cc9f; an older file's `virusInterpreterDir` is ignored)
 fn layout_from_file(path: &str) -> Result<ToolDirectories> {
     let lines = hmf_common::java_text::read_lines(path)
         .map_err(|e| anyhow!("java.lang.IllegalArgumentException: Could not load tool subdirectory config file: {path} ({e})"))?;
@@ -192,7 +196,7 @@ fn layout_from_file(path: &str) -> Result<ToolDirectories> {
         peach: get("peachDir")?,
         purple: get("purpleDir")?,
         sigs: get("sigsDir")?,
-        virus_interpreter: get("virusInterpreterDir")?,
+        virus: get("viridianDir")?,
         qsee: get("qSeeDir")?,
     })
 }
@@ -388,7 +392,7 @@ impl OrangeConfig {
                 &mut dirs.peach,
                 &mut dirs.purple,
                 &mut dirs.sigs,
-                &mut dirs.virus_interpreter,
+                &mut dirs.virus,
                 &mut dirs.qsee,
             ] {
                 *d = convert_wildcards(d, &tumor_id, n);
@@ -412,7 +416,13 @@ impl OrangeConfig {
         let cuppa_dir = resolver.optional_tool_dir("cuppa_dir", &dirs.cuppa);
         let peach_dir = resolver.optional_tool_dir("peach_dir", &dirs.peach);
         let sigs_dir = resolver.optional_tool_dir("sigs_dir", &dirs.sigs);
-        let virus_dir = resolver.optional_tool_dir("virus_dir", &dirs.virus_interpreter);
+        // -virus_dir (Virus Interpreter's, for backwards compatibility) as given; else -viridian_dir, or the
+        // layout's virus directory
+        let virus_dir = if cb.has_value("virus_dir") {
+            check_add_dir_separator(cb.value("virus_dir").as_deref())
+        } else {
+            resolver.optional_tool_dir("viridian_dir", &dirs.virus)
+        };
 
         let rna_sample_id = cb.value("rna_sample");
         let purple_rna_append_vcf = cb.value("purple_rna_append_vcf");
@@ -499,6 +509,39 @@ mod tests {
         assert!(parse_sampling_date("230132").is_none());
         assert!(parse_sampling_date("2023-01-31").is_none());
         assert!(parse_sampling_date("23013").is_none());
+    }
+
+    #[test]
+    fn pipeline_layouts() {
+        // PipelineToolDirectoriesTest.canLoadFromCompleteFile: the complete file is OA_V3_1's layout
+        let dir = std::env::temp_dir().join(format!("orange_layouts_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("complete.tsv");
+        let complete = [
+            "amberDir\tamber", "chordDir\tchord", "ciderDir\tcider", "cobaltDir\tcobalt", "cuppaDir\tcuppa",
+            "esveeDir\tesvee", "germlineFlagstatDir\tbamtools/$", "germlineMetricsDir\tbamtools/$", "isofoxDir\tisofox",
+            "lilacDir\tlilac", "linxGermlineDir\tlinx/germline_annotations", "linxSomaticDir\tlinx/somatic_annotations",
+            "orangeDir\torange", "paveGermlineDir\tpave/germline", "paveSomaticDir\tpave/somatic", "peachDir\tpeach",
+            "purpleDir\tpurple", "sageGermlineDir\tsage/germline", "sageSomaticDir\tsage/somatic", "sigsDir\tsigs",
+            "snpGenotypeDir\t", "tealDir\tteal", "tumorFlagstatDir\tbamtools/*", "tumorMetricsDir\tbamtools/*",
+            "vChordDir\tvchord", "viridianDir\tviridian", "qSeeDir\tqsee",
+        ];
+        std::fs::write(&p, complete.join("\n") + "\n").unwrap();
+        let path = p.to_str().unwrap();
+        assert_eq!(layout_from_file(path).unwrap(), layout("OA_V3_1").unwrap());
+        // OA_V3_1 has Viridian's directory, the older layouts Virus Interpreter's
+        assert_eq!(layout("OA_V3_1").unwrap().virus, "viridian");
+        for f in ["OA_V3_0", "OA_V2_3", "OA_V2_2", "OA_V2_0", "DB_V6_0"] {
+            assert_eq!(layout(f).unwrap().virus, "virusinterpreter", "{f}");
+        }
+        assert_eq!(layout("PIP5_V6_0").unwrap().virus, "virusintrprtr");
+        assert_eq!(layout("OA_V2_0").unwrap().qsee, "");
+        assert!(layout("OA_V9").is_err());
+        // a file of the older format: virusInterpreterDir is no longer read
+        std::fs::write(&p, "purpleDir\tpurple\nvirusInterpreterDir\tvirusinterpreter\n").unwrap();
+        let old = layout_from_file(path).unwrap();
+        assert_eq!((old.purple.as_str(), old.virus.as_str()), ("purple", ""));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

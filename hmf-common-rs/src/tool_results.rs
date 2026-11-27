@@ -1,8 +1,10 @@
 //! Readers of the result files of the smaller tools, as hmf-common reads them (ORANGE): CHORD's
 //! prediction (ChordDataFile), PEACH's best haplotypes (PeachGenotypeFile, with the old Python format),
 //! SIGS' allocations (SignatureAllocationFile) and the signature etiologies (SnvSigUtils, the resource
-//! `sigs/signatures_etiology.tsv`), Virus Interpreter's annotated viruses (AnnotatedVirusFile), CUPPA's
-//! visualisation data (CuppaPredictions.fromTsv), and the pipeline version file (PipelineVersionFile).
+//! `sigs/signatures_etiology.tsv`), Virus Interpreter's annotated viruses (AnnotatedVirusFile), Viridian's
+//! virus reports (VirusReportFile) and the conversion of the former to the latter
+//! (VirusInterpreterDataLoader.convertToViridianReports), CUPPA's visualisation data
+//! (CuppaPredictions.fromTsv), and the pipeline version file (PipelineVersionFile).
 //! Errors where Java throws are `Err`.
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -293,6 +295,102 @@ pub fn read_annotated_viruses(path: &str) -> Result<Vec<AnnotatedVirus>> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Viridian (common.viridian: VirusReport, VirusReportFile, ReportQcStatus, ClonalityStatus) and
+// VirusInterpreterDataLoader.convertToViridianReports (added 2026-11-27, upstream f5f660cc9f)
+
+/// ReportQcStatus names
+pub const VIRIDIAN_REPORT_QC_STATUSES: [&str; 2] = ["NO_ABNORMALITIES", "AMBIGUOUS_VIRUS"];
+/// ClonalityStatus names
+pub const VIRIDIAN_CLONALITY_STATUSES: [&str; 5] =
+    ["CLONAL", "NOT_CLONAL", "NOT_PROFILED", "PURPLE_FAIL_NO_TUMOR", "PURPLE_FAIL_CONTAMINATION"];
+
+/// common.viridian.VirusReport: one virus group's reporting verdict
+#[derive(Clone, Debug, PartialEq)]
+pub struct VirusReport {
+    pub virus_name: String,
+    pub virus_group: String,
+    /// ReportQcStatus name
+    pub qc_status: String,
+    /// VirusType enum name (MCV, EBV, HPV, HBV, HHV8), None if not a reportable virus
+    pub reporting_type: Option<String>,
+    pub integrations: i32,
+    /// a fraction (0-1), unlike Virus Interpreter's percentage
+    pub coverage_percentage: f64,
+    pub mean_depth: f64,
+    /// None where PURPLE's data was not usable
+    pub copies_per_tumor_cell: Option<f64>,
+    /// ClonalityStatus name
+    pub clonality_status: String,
+    pub is_reported: bool,
+}
+
+/// VirusReportFile.generateFilename: `<dir>/<sample>[.<output id>].viridian.report.tsv`
+pub fn virus_report_filename(base_path: &str, sample: &str, output_id: Option<&str>) -> String {
+    // checkAddDirSeparator: "" stays ""
+    let base = if base_path.is_empty() { String::new() } else { dir(base_path) };
+    match output_id {
+        Some(id) => format!("{base}{sample}.{id}.viridian.report.tsv"),
+        None => format!("{base}{sample}.viridian.report.tsv"),
+    }
+}
+
+/// VirusReportFile.read (DelimFileReader: columns by name, `null` / `NULL` only where nullable, booleans
+/// `true` / `false` in any case, the interpretation by VirusType's display name)
+pub fn read_virus_reports(path: &str) -> Result<Vec<VirusReport>> {
+    let reader = crate::delim_file::DelimFileReader::open(path)?;
+    let mut out = Vec::new();
+    for row in reader.rows() {
+        // in Java's order of evaluation: the interpretation first, then the constructor's arguments
+        let reporting_type = row.get_or_null("interpretation")?;
+        let virus_name = row.get("name")?.to_string();
+        let virus_group = row.get("virusGroup")?.to_string();
+        let qc_status = enum_value(row.get("qcStatus")?, &VIRIDIAN_REPORT_QC_STATUSES, "com.hartwig.hmftools.common.viridian.ReportQcStatus")?;
+        let reporting_type = match reporting_type {
+            Some(t) => Some(virus_type_from_name(t)?),
+            None => None,
+        };
+        out.push(VirusReport {
+            virus_name,
+            virus_group,
+            qc_status,
+            reporting_type,
+            integrations: row.get_int("integrations")?,
+            coverage_percentage: row.get_double("percentageCovered")?,
+            mean_depth: row.get_double("meanCoverage")?,
+            copies_per_tumor_cell: row.get_double_or_null("copiesPerTumorCell")?,
+            clonality_status: enum_value(
+                row.get("clonalityStatus")?,
+                &VIRIDIAN_CLONALITY_STATUSES,
+                "com.hartwig.hmftools.common.viridian.ClonalityStatus",
+            )?,
+            is_reported: row.get_bool("reported")?,
+        });
+    }
+    Ok(out)
+}
+
+/// VirusInterpreterDataLoader.convertToViridianReports: every annotated virus (blacklisted ones too), the
+/// name as the group, a QC status other than NO_ABNORMALITIES as AMBIGUOUS_VIRUS, the coverage as a
+/// fraction (x 0.01), no copies per tumor cell, NOT_PROFILED
+pub fn convert_to_viridian_reports(viruses: &[AnnotatedVirus]) -> Vec<VirusReport> {
+    viruses
+        .iter()
+        .map(|v| VirusReport {
+            virus_name: v.name.clone(),
+            virus_group: v.name.clone(),
+            qc_status: if v.qc_status == "NO_ABNORMALITIES" { "NO_ABNORMALITIES" } else { "AMBIGUOUS_VIRUS" }.to_string(),
+            reporting_type: v.interpretation.clone(),
+            integrations: v.integrations,
+            coverage_percentage: v.percentage_covered * 0.01,
+            mean_depth: v.mean_coverage,
+            copies_per_tumor_cell: None,
+            clonality_status: "NOT_PROFILED".to_string(),
+            is_reported: v.reported,
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------------------------
 // CUPPA
 
 /// DataType names
@@ -440,5 +538,74 @@ mod tests {
         };
         assert_eq!(g.haplotype().unwrap(), "*1_HOM");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn viridian_reports() {
+        let dir = std::env::temp_dir().join(format!("tool_results_viridian_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let d = dir.to_str().unwrap();
+        assert_eq!(virus_report_filename(d, "S", None), format!("{d}/S.viridian.report.tsv"));
+        assert_eq!(virus_report_filename(&format!("{d}/"), "S", Some("x")), format!("{d}/S.x.viridian.report.tsv"));
+        assert_eq!(virus_report_filename("", "S", None), "S.viridian.report.tsv");
+        let p = virus_report_filename(d, "S", None);
+        // Viridian's column order, and a different one (columns are read by name)
+        std::fs::write(
+            &p,
+            "name\tqcStatus\tintegrations\tinterpretation\tpercentageCovered\tmeanCoverage\treported\tclonalityStatus\tcopiesPerTumorCell\tvirusGroup\n\
+             Virus A\tAMBIGUOUS_VIRUS\t2\tHHV-8\t0.9\t20.0\tTRUE\tCLONAL\t2.5\tGroup A\n\
+             Virus B\tNO_ABNORMALITIES\t0\tnull\t0.4\t1.0\tfalse\tPURPLE_FAIL_NO_TUMOR\tNULL\tVirus B\n",
+        )
+        .unwrap();
+        let r = read_virus_reports(&p).unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].reporting_type.as_deref(), Some("HHV8"));
+        assert_eq!((r[0].virus_group.as_str(), r[0].qc_status.as_str(), r[0].is_reported), ("Group A", "AMBIGUOUS_VIRUS", true));
+        assert_eq!((r[0].coverage_percentage, r[0].mean_depth, r[0].copies_per_tumor_cell), (0.9, 20.0, Some(2.5)));
+        assert_eq!((r[1].reporting_type.clone(), r[1].copies_per_tumor_cell, r[1].is_reported), (None, None, false));
+        assert_eq!(r[1].clonality_status, "PURPLE_FAIL_NO_TUMOR");
+        std::fs::write(&p, "virusGroup\treported\tname\tqcStatus\tintegrations\tinterpretation\tpercentageCovered\tmeanCoverage\tclonalityStatus\tcopiesPerTumorCell\n").unwrap();
+        assert!(read_virus_reports(&p).unwrap().is_empty());
+        // the failures of Java's reader: an unknown display name, a status, a boolean, a null name, no file
+        let bad = |line: &str| {
+            std::fs::write(&p, format!("name\tqcStatus\tintegrations\tinterpretation\tpercentageCovered\tmeanCoverage\treported\tclonalityStatus\tcopiesPerTumorCell\tvirusGroup\n{line}\n")).unwrap();
+            read_virus_reports(&p).is_err()
+        };
+        assert!(bad("V\tNO_ABNORMALITIES\t0\tHHV8\t0.4\t1.0\tfalse\tCLONAL\t1.0\tG"));
+        assert!(bad("V\tLOW_VIRAL_COVERAGE\t0\tnull\t0.4\t1.0\tfalse\tCLONAL\t1.0\tG"));
+        assert!(bad("V\tNO_ABNORMALITIES\t0\tnull\t0.4\t1.0\tyes\tCLONAL\t1.0\tG"));
+        assert!(bad("null\tNO_ABNORMALITIES\t0\tnull\t0.4\t1.0\tfalse\tCLONAL\t1.0\tG"));
+        assert!(bad("V\tNO_ABNORMALITIES\t0\tnull\t0.4\t1.0\tfalse\tCLONAL"));
+        assert!(read_virus_reports(&format!("{d}/missing.tsv")).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn virus_interpreter_to_viridian() {
+        let v = |name: &str, qc: &str, interpretation: Option<&str>, pct: f64, reported: bool, blacklisted: Option<bool>| AnnotatedVirus {
+            taxid: 1,
+            name: name.into(),
+            qc_status: qc.into(),
+            integrations: 3,
+            interpretation: interpretation.map(String::from),
+            percentage_covered: pct,
+            mean_coverage: 12.5,
+            expected_clonal_coverage: Some(4.0),
+            reported,
+            blacklisted,
+            driver_likelihood: "HIGH".into(),
+        };
+        let r = convert_to_viridian_reports(&[
+            v("A", "NO_ABNORMALITIES", Some("HPV"), 98.25, true, Some(false)),
+            v("B", "LOW_VIRAL_COVERAGE", None, 5.0, false, Some(true)),
+            v("C", "UNCLEAR_TAXID_ASSIGNMENT", Some("HHV8"), 1.0e-4, false, None),
+        ]);
+        assert_eq!(r.len(), 3);
+        assert_eq!((r[0].virus_name.as_str(), r[0].virus_group.as_str(), r[0].qc_status.as_str()), ("A", "A", "NO_ABNORMALITIES"));
+        assert_eq!((r[0].reporting_type.as_deref(), r[0].integrations, r[0].mean_depth), (Some("HPV"), 3, 12.5));
+        assert_eq!(r[0].coverage_percentage, 98.25 * 0.01);
+        assert_eq!((r[0].copies_per_tumor_cell, r[0].clonality_status.as_str(), r[0].is_reported), (None, "NOT_PROFILED", true));
+        assert_eq!((r[1].qc_status.as_str(), r[1].is_reported), ("AMBIGUOUS_VIRUS", false));
+        assert_eq!((r[2].qc_status.as_str(), r[2].reporting_type.as_deref()), ("AMBIGUOUS_VIRUS", Some("HHV8")));
     }
 }

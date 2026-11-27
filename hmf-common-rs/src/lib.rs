@@ -37,7 +37,7 @@
 //!   transcript expression and the cohort expression matrix (NEO).
 //! - `linx_files`, `small_variant`, `cytobands`, `tool_results` (added for ORANGE): LINX's output files,
 //!   SmallVariantFactory (PURPLE's VCFs as SmallVariants), CytoBands, and the result files of CHORD, PEACH,
-//!   SIGS, Virus Interpreter and CUPPA and the pipeline version file.
+//!   SIGS, Virus Interpreter, Viridian and CUPPA and the pipeline version file.
 
 pub mod args;
 pub mod blosum;

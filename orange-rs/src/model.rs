@@ -129,7 +129,7 @@ pub struct OrangeRecord {
     pub isofox: Option<IsofoxRecord>,
     pub lilac: Option<LilacRecord>,
     pub immune_escape: ImmuneEscapeRecord,
-    pub virus_interpreter: Option<VirusInterpreterData>,
+    pub viridian: Option<ViridianRecord>,
     pub chord: Option<ChordRecord>,
     pub cuppa: Option<CuppaData>,
     pub peach: Option<Vec<PeachGenotype>>,
@@ -155,7 +155,7 @@ impl ToJson for OrangeRecord {
             .f_opt("isofox", self.isofox.as_ref())
             .f_opt("lilac", self.lilac.as_ref())
             .f_value("immuneEscape", &self.immune_escape)
-            .f_opt("virusInterpreter", self.virus_interpreter.as_ref())
+            .f_opt("viridian", self.viridian.as_ref())
             .f_opt("chord", self.chord.as_ref())
             .f_opt("cuppa", self.cuppa.as_ref())
             .f_opt_list("peach", self.peach.as_deref())
@@ -803,7 +803,7 @@ impl ToJson for IsofoxRecord {
 }
 
 // ---------------------------------------------------------------------------------------------
-// lilac, immune escape, virus, chord, cuppa, peach, sigs
+// lilac, immune escape, viridian, chord, cuppa, peach, sigs
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LilacAllele {
@@ -874,42 +874,49 @@ impl ToJson for ImmuneEscapeRecord {
     }
 }
 
+/// datamodel.viridian.VirusReport (upstream f5f660cc9f; was VirusInterpreterEntry)
 #[derive(Clone, Debug, PartialEq)]
-pub struct VirusInterpreterEntry {
+pub struct VirusReport {
     pub name: String,
+    pub virus_group: String,
+    /// ReportQcStatus name
     pub qc_status: String,
     pub integrations: i32,
+    /// VirusInterpretation name
     pub interpretation: Option<String>,
     pub percentage_covered: f64,
     pub mean_coverage: f64,
-    pub expected_clonal_coverage: Option<f64>,
     pub reported: bool,
-    pub driver_interpretation: String,
+    /// ClonalityStatus name
+    pub clonality_status: String,
+    pub copies_per_tumor_cell: Option<f64>,
 }
 
-impl ToJson for VirusInterpreterEntry {
+impl ToJson for VirusReport {
     fn write_json(&self, w: &mut JsonWriter) {
         w.begin_object()
             .f_str("name", &self.name)
+            .f_str("virusGroup", &self.virus_group)
             .f_str("qcStatus", &self.qc_status)
             .f_int("integrations", self.integrations as i64)
             .f_opt_str("interpretation", self.interpretation.as_deref())
             .f_double("percentageCovered", self.percentage_covered)
             .f_double("meanCoverage", self.mean_coverage)
-            .f_opt_double("expectedClonalCoverage", self.expected_clonal_coverage)
             .f_bool("reported", self.reported)
-            .f_str("driverInterpretation", &self.driver_interpretation)
+            .f_str("clonalityStatus", &self.clonality_status)
+            .f_opt_double("copiesPerTumorCell", self.copies_per_tumor_cell)
             .end_object();
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct VirusInterpreterData {
-    pub all_viruses: Vec<VirusInterpreterEntry>,
-    pub reportable_viruses: Vec<VirusInterpreterEntry>,
+/// datamodel.viridian.ViridianRecord (was VirusInterpreterData)
+#[derive(Clone, Debug, PartialEq)]
+pub struct ViridianRecord {
+    pub all_viruses: Vec<VirusReport>,
+    pub reportable_viruses: Vec<VirusReport>,
 }
 
-impl ToJson for VirusInterpreterData {
+impl ToJson for ViridianRecord {
     fn write_json(&self, w: &mut JsonWriter) {
         w.begin_object().f_list("allViruses", &self.all_viruses).f_list("reportableViruses", &self.reportable_viruses).end_object();
     }

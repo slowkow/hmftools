@@ -1,6 +1,6 @@
-//! The smaller sections: LILAC (LilacInterpreter), immune escape (ImmuneEscapeInterpreter), Virus Interpreter
-//! (VirusInterpreter), CHORD, CUPPA (CuppaDataFactory), PEACH, SIGS (SigsInterpreter) and the configured
-//! primary tumor (OrangeAlgo.formConfiguredPrimaryTumorDoid).
+//! The smaller sections: LILAC (LilacInterpreter), immune escape (ImmuneEscapeInterpreter), viruses
+//! (ViridianInterpreter, from Viridian's or Virus Interpreter's file), CHORD, CUPPA (CuppaDataFactory), PEACH,
+//! SIGS (SigsInterpreter) and the configured primary tumor (OrangeAlgo.formConfiguredPrimaryTumorDoid).
 
 use anyhow::{anyhow, bail, Result};
 use hmf_common::hla;
@@ -81,37 +81,54 @@ pub fn immune_escape(purple: &PurpleRecord, linx: &LinxRecord) -> ImmuneEscapeRe
 }
 
 // ---------------------------------------------------------------------------------------------
-// Virus Interpreter
+// Viridian, or Virus Interpreter's file converted
 
-fn convert_virus(v: &tr::AnnotatedVirus) -> VirusInterpreterEntry {
-    VirusInterpreterEntry {
-        name: v.name.clone(),
-        qc_status: v.qc_status.clone(),
-        integrations: v.integrations,
-        interpretation: v.interpretation.clone(),
-        percentage_covered: v.percentage_covered,
-        mean_coverage: v.mean_coverage,
-        expected_clonal_coverage: v.expected_clonal_coverage,
-        reported: v.reported,
-        driver_interpretation: v.driver_likelihood.clone(),
-    }
+/// ViridianInterpreter.interpret: every report, and the reported ones
+pub(crate) fn interpret_viridian(reports: &[tr::VirusReport]) -> ViridianRecord {
+    let viruses: Vec<VirusReport> = reports
+        .iter()
+        .map(|r| VirusReport {
+            name: r.virus_name.clone(),
+            virus_group: r.virus_group.clone(),
+            qc_status: r.qc_status.clone(),
+            integrations: r.integrations,
+            interpretation: r.reporting_type.clone(),
+            percentage_covered: r.coverage_percentage,
+            mean_coverage: r.mean_depth,
+            reported: r.is_reported,
+            clonality_status: r.clonality_status.clone(),
+            copies_per_tumor_cell: r.copies_per_tumor_cell,
+        })
+        .collect();
+    let reportable_viruses = viruses.iter().filter(|v| v.reported).cloned().collect();
+    ViridianRecord { all_viruses: viruses, reportable_viruses }
 }
 
-/// VirusInterpreter.filterBlacklistedViruses: Err for a virus without a blacklist status
-pub(crate) fn filter_blacklisted(viruses: &[&tr::AnnotatedVirus]) -> Result<Vec<VirusInterpreterEntry>> {
-    if let Some(v) = viruses.iter().find(|v| v.blacklisted.is_none()) {
-        bail!("java.lang.RuntimeException: Encountered virus '{}' with unknown blacklist status", v.name);
-    }
-    Ok(viruses.iter().filter(|v| v.blacklisted == Some(false)).map(|v| convert_virus(v)).collect())
+/// OrangeAlgo.loadVirusData and ViridianInterpreter.interpret: Virus Interpreter's file where the virus
+/// directory has one (converted, VirusInterpreterDataLoader.convertToViridianReports), else Viridian's report
+/// (which must then exist). OR12: Virus Interpreter's blacklisted viruses are no longer left out, as Java.
+pub fn load_virus(config: &OrangeConfig) -> Result<Option<ViridianRecord>> {
+    load_virus_dir(&config.virus_dir, &config.tumor_id)
 }
 
-/// OrangeAlgo.loadVirusInterpreterData and VirusInterpreter.interpret
-pub fn load_virus(config: &OrangeConfig) -> Result<Option<VirusInterpreterData>> {
-    let Some(dir) = dir_exists(&config.virus_dir) else { return Ok(None) };
-    let all = tr::read_annotated_viruses(&tr::annotated_virus_filename(dir, &config.tumor_id))?;
-    let all_refs: Vec<&tr::AnnotatedVirus> = all.iter().collect();
-    let reportable: Vec<&tr::AnnotatedVirus> = all.iter().filter(|v| v.reported).collect();
-    Ok(Some(VirusInterpreterData { all_viruses: filter_blacklisted(&all_refs)?, reportable_viruses: filter_blacklisted(&reportable)? }))
+pub(crate) fn load_virus_dir(virus_dir: &Option<String>, tumor_id: &str) -> Result<Option<ViridianRecord>> {
+    let Some(dir) = dir_exists(virus_dir) else {
+        hmf_common::debug!("skipping reportable viruses as no input has been provided");
+        return Ok(None);
+    };
+    let virus_interpreter_file = tr::annotated_virus_filename(dir, tumor_id);
+    let reports = if std::path::Path::new(&virus_interpreter_file).exists() {
+        let viruses = tr::read_annotated_viruses(&virus_interpreter_file)?;
+        hmf_common::debug!(
+            " loaded {} annotated viruses, reportable({}) from {virus_interpreter_file}",
+            viruses.len(),
+            viruses.iter().filter(|v| v.reported).count()
+        );
+        tr::convert_to_viridian_reports(&viruses)
+    } else {
+        tr::read_virus_reports(&tr::virus_report_filename(dir, tumor_id, None))?
+    };
+    Ok(Some(interpret_viridian(&reports)))
 }
 
 // ---------------------------------------------------------------------------------------------

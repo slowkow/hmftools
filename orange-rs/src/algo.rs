@@ -156,7 +156,7 @@ pub fn run(config: &OrangeConfig) -> Result<OrangeRecord> {
         isofox,
         lilac,
         immune_escape,
-        virus_interpreter: virus,
+        viridian: virus,
         chord,
         cuppa,
         peach: Some(peach),

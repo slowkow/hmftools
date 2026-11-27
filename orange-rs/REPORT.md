@@ -4,13 +4,18 @@ This report covers how `orange-rs` was checked against Java ORANGE 5.1, the faul
 timings. Finding ids: OR. Options, outputs and tests are in [README.md](README.md).
 
 `orange-rs` writes ORANGE's JSON report (`<tumor>.orange.json`) and copies the plots into `plot/`, as the jar does.
-Under `-java_compat` the JSON was byte-identical to the jar's in every case run (33 comparisons: 24 identical JSONs,
-and 9 runs where both exit 1). The PDF is not written; section "PDF (not ported)" lists what Java draws and from what.
+Under `-java_compat` the JSON was byte-identical to the jar's in every case run (52 comparisons: 38 identical JSONs,
+and 14 runs where both exit 1, at the same point). The PDF is not written; section "PDF (not ported)" lists what Java draws and from what.
 
 ## How it was checked
 
-Reference: `orange/target/orange-5.1-jar-with-dependencies.jar`, built from this repository's sources (upstream
-ca04e6c39d of 2026-11-20).
+Reference: the ORANGE 5.1 jar-with-dependencies built from upstream master 883ab11bba (2026-11-27), which has
+f5f660cc9f ("Orange - support loading Viridian and VirusInterpreter files", 2026-11-23). The port first followed
+ca04e6c39d (2026-11-20); between the two, f5f660cc9f is the only change to ORANGE's JSON or options (the other
+commits touching `orange`, `orange-datamodel` or `hmf-common` only rename the modules in their pom.xml; the
+hmf-common changes ORANGE uses are those of f5f660cc9f: PipelineToolDirectories(File) and
+VirusInterpreterDataLoader). The 33 comparisons of the first version were all rerun against this jar, and 19 cases
+were added for the Viridian input (NEW below).
 
 Each case ran with the jar (`java -Xmx8g -jar`, default JVM) and with `orange-rs -java_compat`, in the case folder
 (the JSON's variant and breakend plot paths are the configured directory strings), one run at a time. The JSON was
@@ -24,50 +29,80 @@ takes about 1 s.
 
 | Case | What | Java | Rust | Result |
 |---|---|---|---|---|
-| hg008 | HG008 tumor/normal, the pipeline's command (`commands/ORANGE.command.sh`) | 9.03 s, 764 MB | 0.28 s, 43 MB | identical, 53,911 bytes, 21 plots |
-| hg008 :json | the same, JSON-only harness | 1.00 s, 350 MB | 0.27 s, 38 MB | identical |
-| hg008_tumor_only | no reference (no germline, CHORD, CUPPA, PEACH) | 7.53 s, 697 MB | 0.22 s, 32 MB | identical |
-| hg008_panel | `-experiment_type PANEL`, tumor/normal | 1.75 s, 374 MB | 0.27 s, 38 MB | both exit 1 (OR10) |
-| hg008_panel :json | the same, harness | 1.01 s, 350 MB | 0.27 s, 38 MB | identical |
-| hg008_panel_tumor_only | PANEL, tumor-only | 7.67 s, 696 MB | 0.23 s, 33 MB | identical |
-| hg008_minimal | only the required options: no LILAC, CHORD, CUPPA, PEACH, SIGS, virus, QSee, plots of SAGE or LINX, version file | 4.17 s, 533 MB | 0.22 s, 33 MB | identical |
-| hg008_minimal_reference | minimal with a reference (no CHORD) | 1.82 s, 372 MB | 0.28 s, 46 MB | both exit 1 (OR10) |
-| hg008_minimal_reference :json | the same, harness | 1.08 s, 347 MB | 0.28 s, 43 MB | identical |
-| hg008_options | `-sampling_date 240230` (SMART resolution: 2024-02-29), `-primary_tumor_location`, `-panel_name`, `-display_sample`, `-output_id`, `-sequencing_type SBX`, `-rna_sample` (not in the VCF, no ISOFOX), `-log_debug` | 9.44 s, 750 MB | 0.29 s, 38 MB | identical |
-| hg008_location | invalid `-sampling_date` (warning, today), primary tumor location | 9.40 s, 770 MB | 0.29 s, 37 MB | identical |
-| hg008_doids | `-primary_tumor_doids` with the DOID JSON (OR1) and a location | 9.10 s, 755 MB | 0.28 s, 37 MB | identical |
-| hg008_root | `-pipeline_sample_root_dir` (OA_V3_1 layout, defaults for every directory) | 6.63 s, 682 MB | 0.28 s, 42 MB | identical |
-| hg008_root_format | root directory with `-pipeline_format OA_V2_0` and explicit plot directories | 8.31 s, 747 MB | 0.28 s, 37 MB | identical |
-| hg008_sample_data_dir | `-sample_data_dir` (every file in one folder) | 9.14 s, 755 MB | 0.28 s, 40 MB | identical |
-| hg008_format_file | root directory with `-pipeline_format_file` (a file naming 10 of the tool directories) | 6.22 s, 673 MB | 0.27 s, 37 MB | identical |
-| hg008_format_file, first version | the same file without the CUPPA and PEACH entries | 0.98 s, 349 MB | 0.27 s, 37 MB | both exit 1 (the CUPPA file looked for in the root) |
-| hg008_bad_format, hg008_bad_type, hg008_no_tumor | invalid `-pipeline_format`, `-experiment_type`, no `-tumor` | 0.3 s, 92 MB | 0.00 s, 2 MB | both exit 1 |
-| hg008_no_plots | a PURPLE plot directory without the plots | 0.84 s, 306 MB | 0.20 s, 32 MB | both exit 1 |
-| hg008_wrong_reference | a reference id not in the VCFs | 0.43 s, 149 MB | 0.00 s, 3 MB | both exit 1 |
-| t0 | a private whole-genome tumor/normal pair (renamed copies), the pipeline's command | 7.29 s, 653 MB | 0.17 s, 36 MB | identical, plots too |
-| t0 :json | the same, harness | 0.82 s, 272 MB | 0.17 s, 45 MB | identical |
-| t0_tumor_only | the private pair, tumor-only | 6.04 s, 514 MB | 0.12 s, 32 MB | identical |
-| testrun_wgts | the Java tests' synthetic run (GRCh37, plain VCFs, ISOFOX RNA, old LINX fusion format, DOIDs with the example DOID file) | 6.16 s, 914 MB | 0.53 s, 35 MB | identical |
-| testrun_wgts :json | the same, harness | 1.12 s, 606 MB | 0.55 s, 34 MB | identical |
-| testrun_panel | its targeted tumor-only run | 4.96 s, 896 MB | 0.48 s, 29 MB | identical |
-| testrun_rna_tumor_id | ISOFOX without `-rna_sample` (the tumor id's files, by fallback) | 1.83 s, 589 MB | 0.53 s, 34 MB | both exit 1 (OR10) |
-| testrun_rna_tumor_id :json | the same, harness | 1.11 s, 509 MB | 0.54 s, 34 MB | identical |
-| synthetic | the synthetic case with RNA | 2.60 s, 430 MB | 0.26 s, 42 MB | both exit 1 (OR11) |
-| synthetic :json | the same, harness | 0.97 s, 353 MB | 0.26 s, 37 MB | identical, 67,767 bytes |
-| synthetic_tumor_only :json | tumor-only | 0.87 s, 288 MB | 0.21 s, 32 MB | identical |
-| synthetic_no_rna | without ISOFOX | 10.96 s, 881 MB | 0.26 s, 42 MB | identical |
+| hg008 | HG008 tumor/normal, the pipeline's command (`commands/ORANGE.command.sh`, `-virus_dir virusinterpreter`) | 9.40 s, 752 MB | 0.28 s, 42 MB | identical, 53,903 bytes |
+| hg008 :json | the same, JSON-only harness | 1.06 s, 350 MB | 0.28 s, 42 MB | identical, 53,903 bytes |
+| hg008_tumor_only | no reference | 7.99 s, 696 MB | 0.23 s, 33 MB | identical, 37,596 bytes |
+| hg008_panel | `-experiment_type PANEL`, tumor/normal | 1.80 s, 380 MB | 0.27 s, 37 MB | both exit 1 (OR10) |
+| hg008_panel :json | the same, harness | 1.00 s, 350 MB | 0.28 s, 38 MB | identical, 39,362 bytes |
+| hg008_panel_tumor_only | PANEL, tumor-only | 7.95 s, 703 MB | 0.21 s, 32 MB | identical, 37,592 bytes |
+| hg008_minimal | only the required options (no virus directory: `viridian` null) | 4.01 s, 546 MB | 0.22 s, 33 MB | identical, 28,469 bytes |
+| hg008_minimal_reference | minimal with a reference (no CHORD) | 1.77 s, 376 MB | 0.27 s, 43 MB | both exit 1 (OR10) |
+| hg008_minimal_reference :json | the same, harness | 1.02 s, 346 MB | 0.28 s, 37 MB | identical, 29,772 bytes |
+| hg008_options | `-sampling_date 240230`, location, panel, display id, `-output_id`, SBX, `-rna_sample`, `-log_debug` | 9.17 s, 757 MB | 0.28 s, 42 MB | identical, 53,919 bytes |
+| hg008_location | invalid `-sampling_date` (today), location | 9.19 s, 749 MB | 0.28 s, 40 MB | identical, 53,961 bytes |
+| hg008_doids | `-primary_tumor_doids` (OR1) and a location | 9.03 s, 749 MB | 0.28 s, 40 MB | identical, 53,903 bytes |
+| hg008_root | `-pipeline_sample_root_dir` on the oncoanalyser 3.0 output, OA_V3_1 default: no `viridian/` there, so `viridian` null | 6.45 s, 687 MB | 0.27 s, 41 MB | identical, 52,689 bytes |
+| hg008_root_format | root with `-pipeline_format OA_V2_0` (virusinterpreter/) and plot directories | 7.92 s, 751 MB | 0.27 s, 42 MB | identical, 53,876 bytes |
+| hg008_sample_data_dir | `-sample_data_dir` (the Virus Interpreter file in it is read) | 9.07 s, 749 MB | 0.28 s, 41 MB | identical, 53,817 bytes |
+| hg008_bad_format | invalid `-pipeline_format` | 0.34 s, 90 MB | 0.00 s, 2 MB | both exit 1 |
+| hg008_no_plots | a PURPLE plot directory without the plots | 0.89 s, 310 MB | 0.21 s, 33 MB | both exit 1 |
+| hg008_bad_type | invalid `-experiment_type` | 0.36 s, 93 MB | 0.00 s, 2 MB | both exit 1 |
+| hg008_no_tumor | no `-tumor` | 0.32 s, 92 MB | 0.00 s, 2 MB | both exit 1 |
+| hg008_wrong_reference | a reference id not in the VCFs | 0.42 s, 150 MB | 0.01 s, 3 MB | both exit 1 |
+| t0 | the private pair (renamed copies), the pipeline's command | 7.58 s, 654 MB | 0.17 s, 42 MB | identical, 36,548 bytes |
+| t0 :json | the same, harness | 0.88 s, 268 MB | 0.17 s, 42 MB | identical, 36,548 bytes |
+| t0_tumor_only | the private pair, tumor-only | 6.13 s, 528 MB | 0.12 s, 33 MB | identical, 20,231 bytes |
+| testrun_wgts | the Java tests' run at ca04e6c39d (`virusinterprtr/`, header only) | 6.55 s, 944 MB | 0.55 s, 39 MB | identical, 39,674 bytes |
+| testrun_wgts :json | the same, harness | 1.20 s, 615 MB | 0.56 s, 39 MB | identical, 39,674 bytes |
+| testrun_panel | its targeted tumor-only run | 5.16 s, 890 MB | 0.49 s, 30 MB | identical, 24,869 bytes |
+| testrun_rna_tumor_id | ISOFOX without `-rna_sample` | 1.90 s, 688 MB | 0.55 s, 36 MB | both exit 1 (OR10) |
+| testrun_rna_tumor_id :json | the same, harness | 1.15 s, 604 MB | 0.55 s, 39 MB | identical, 22,610 bytes |
+| synthetic | the synthetic case with RNA (4 Virus Interpreter viruses, one blacklisted) | 2.71 s, 436 MB | 0.27 s, 41 MB | both exit 1 (OR11) |
+| synthetic :json | the same, harness (OR12: the blacklisted virus is listed) | 1.02 s, 341 MB | 0.27 s, 40 MB | identical, 68,703 bytes |
+| synthetic_tumor_only :json | tumor-only, harness | 0.93 s, 296 MB | 0.22 s, 32 MB | identical, 48,336 bytes |
+| synthetic_no_rna | without ISOFOX | 11.49 s, 894 MB | 0.27 s, 39 MB | identical, 66,011 bytes |
+| hg008_format_file | root with the older `-pipeline_format_file` (`virusInterpreterDir`, now ignored) | 1.00 s, 344 MB | 0.28 s, 43 MB | both exit 1 |
+| hg008_viridian | NEW: the pipeline's command with `-viridian_dir viridian`: HG008's Virus Interpreter file converted (header only) | 9.40 s, 754 MB | 0.29 s, 39 MB | identical, 53,903 bytes |
+| hg008_viridian_dir_vi | NEW: `-viridian_dir virusinterpreter` (a Virus Interpreter file through the new option) | 9.23 s, 758 MB | 0.28 s, 39 MB | identical, 53,903 bytes |
+| hg008_no_virus | NEW: the pipeline's command without a virus directory (`viridian` null) | 9.54 s, 768 MB | 0.28 s, 42 MB | identical, 53,852 bytes |
+| synthetic_viridian | NEW: synthetic with RNA, `-viridian_dir viridian` (its 4 viruses converted to a Viridian report) | 2.72 s, 436 MB | 0.27 s, 44 MB | both exit 1 (OR11) |
+| synthetic_viridian :json | NEW: the same, harness; equals synthetic :json byte for byte | 1.03 s, 344 MB | 0.27 s, 41 MB | identical, 68,703 bytes |
+| synthetic_viridian_no_rna | NEW: the same without ISOFOX; equals synthetic_no_rna | 11.31 s, 898 MB | 0.27 s, 42 MB | identical, 66,011 bytes |
+| synthetic_viridian_extra | NEW: a hand-made Viridian report: 7 viruses, every clonality status and virus type, other column order, NULL/null, TRUE/False, +3, NaN, Infinity, 1e-7, 12345678.9 | 10.97 s, 892 MB | 0.26 s, 35 MB | identical, 67,588 bytes |
+| synthetic_viridian_extra_tumor_only | NEW: the same, tumor-only | 9.91 s, 751 MB | 0.22 s, 33 MB | identical, 47,221 bytes |
+| synthetic_virus_dir_viridian | NEW: `-virus_dir` on a directory with only the Viridian report | 11.34 s, 899 MB | 0.26 s, 37 MB | identical, 67,588 bytes |
+| synthetic_both_options | NEW: `-virus_dir virusinterpreter -viridian_dir viridian_extra` (`-virus_dir` wins) | 11.43 s, 884 MB | 0.27 s, 42 MB | identical, 66,011 bytes |
+| synthetic_both_files | NEW: `-viridian_dir` on a directory with both files (Virus Interpreter's read) | 11.55 s, 892 MB | 0.27 s, 42 MB | identical, 66,011 bytes |
+| synthetic_viridian_bad | NEW: a report with the interpretation `HHV8` (IllegalStateException) | 0.94 s, 336 MB | 0.26 s, 38 MB | both exit 1 |
+| synthetic_viridian_empty | NEW: `-viridian_dir` on a directory without a report (FileNotFoundException) | 0.93 s, 341 MB | 0.26 s, 43 MB | both exit 1 |
+| synthetic_viridian_missing | NEW: `-viridian_dir` that does not exist (invalid path for config) | 0.35 s, 91 MB | 0.00 s, 2 MB | both exit 1 |
+| hg008_root_viridian | NEW: a root with `viridian/` (the hand-made report), OA_V3_1 default | 6.73 s, 692 MB | 0.28 s, 37 MB | identical, 56,594 bytes |
+| hg008_root_viridian_oa_v3_0 | NEW: the same root with `-pipeline_format OA_V3_0` (virusinterpreter/) | 6.49 s, 684 MB | 0.28 s, 44 MB | identical, 52,740 bytes |
+| hg008_format_file_v2 | NEW: the same root with a format file naming `viridianDir` | 6.53 s, 684 MB | 0.28 s, 43 MB | identical, 56,552 bytes |
+| testrun_viridian | NEW: the Java tests' run at 883ab11bba, `-viridian_dir virus` (header-only report) | 6.39 s, 944 MB | 0.55 s, 38 MB | identical, 39,674 bytes |
+| testrun_virus_dir_viridian | NEW: the same with `-virus_dir virus` | 6.44 s, 946 MB | 0.56 s, 37 MB | identical, 39,674 bytes |
 
-The pipeline's own HG008 JSON (Hartwig's ORANGE image, a different build) equals the jar's but for the key
-`viridian` (the jar: `virusInterpreter`) and the order of the LINX driver plots (OR3).
+Cross-checks: the Viridian route gives the Virus Interpreter route's JSON byte for byte (`synthetic_viridian :json`
+= `synthetic :json`, `synthetic_viridian_no_rna` = `synthetic_no_rna`, `hg008_viridian` = `hg008`), and the 38
+identical cases have identical `plot/` folders.
 
-**Default mode** (every case without `-java_compat`) against Java differs only where a correction applies: the plot paths (OR2) in
+The pipeline's own HG008 JSON (Hartwig's ORANGE image 5.1-beta.1, `orange/HG008-T.orange.json`) now equals both the
+jar's and the port's (`-java_compat`, the pipeline's command without `-sampling_date`, run on 2026-11-27, the
+pipeline's sampling date) but for the order of the five LINX driver plots (OR3): the image's list is in file name
+order (cluster 132, 144, 150, 170, 4), this Mac's directory order is 144, 4, 170, 150, 132. With the entries put in
+the image's order the files are byte-identical (53,903 bytes). In the default mode the port sorts them (OR3), which
+here is the image's order; the default JSON then differs from the image only in the corrections OR2 (15 plot paths)
+and OR5 (`simpleDups32To200B` 5 to 1).
+
+**Default mode** (every case without `-java_compat`; rerun for 9 cases against the new jar, the `viridian` section
+equal to Java's in each) against Java differs only where a correction applies: the plot paths (OR2) in
 every case; the LINX plot order (OR3) where the directory order is not sorted (HG008); `simpleDups32To200B` (OR5:
 HG008 5 to 1, the private pair and the test run too); the DOIDs (OR1); `rnaId` (OR6); in the synthetic case the
 other transcripts' exon, codon and coding effect (OR7), the fusions' junction copy numbers (OR8) and the SAGE plot of
 a variant whose name is a prefix of another's (OR4). OR9 changes none of these samples (tested).
 
-**Speed.** Java's run is mostly the PDF (PDFBox drawing the large PNGs): without it, 0.8-1.1 s. The port takes
-0.12-0.55 s and 29-46 MB, 3-5 times faster than Java's JSON part and 20-40 times faster than the whole jar, in a
+**Speed.** Java's run is mostly the PDF (PDFBox drawing the large PNGs): without it, 0.9-1.2 s. The port takes
+0.12-0.56 s and 30-44 MB (against the new jar; the Viridian report adds nothing measurable), 3-5 times faster than Java's JSON part and 20-40 times faster than the whole jar, in a
 tenth of the memory or less. Of the port's time, 85-93% is reading PURPLE's somatic VCF (HG008: 17,254 records,
 0.22 s of 0.28 s; decompression is 0.02 s, the rest the parse of each PASS record's INFO and genotypes); LINX's files
 take 0.03 s, everything else (interpretation, plot copies, JSON) about 0.01 s. Filtered records are skipped before
@@ -127,6 +162,15 @@ Corrected by default, Java's behaviour with `-java_compat` (unless said otherwis
 - OR11: with RNA, a run where one reported DNA fusion has RNA support and another has none fails: the PDF's fusion
   table adds the RNA column once any fusion has support and then reads `rnaSupport()` of every fusion
   (DnaFusionTable.build). No JSON is written. Java mode fails the same way.
+- OR12 (upstream f5f660cc9f; not corrected, Java's behaviour in both modes): Virus Interpreter's blacklisted viruses
+  are no longer left out. ORANGE 5.1 at ca04e6c39d dropped them from both lists (VirusInterpreter
+  .filterBlacklistedViruses, which also failed on a file without the `blacklisted` column); the new conversion to
+  Viridian's reports (VirusInterpreterDataLoader.convertToViridianReports) takes every annotated virus, so a
+  blacklisted virus now appears in `allViruses` (Virus Interpreter never reports one: it throws for a virus both
+  reported and blacklisted, so `reportableViruses` is unchanged on real files). Seen in the synthetic case, whose
+  third virus is marked blacklisted (and, impossibly for Virus Interpreter, reported): it is in both lists now.
+  The commit says Virus Interpreter's file loads "as before", which suggests the drop was not intended, but Viridian
+  itself has no blacklist and lists every virus group it profiles, so the intent is unclear: kept as Java.
 
 Not corrected (a data model change, or the intent is unclear), as Java:
 - A germline aberration TERTRASOMY_9 in PURPLE's QC (hmf-common has it, the data model's PurpleGermlineAberration
@@ -135,7 +179,24 @@ Not corrected (a data model change, or the intent is unclear), as Java:
 - Without a pipeline version file `pipelineVersion` is "OA_V3_1", the name of the default pipeline directory layout.
 - The SAGE plot directory's default (with `-pipeline_sample_root_dir`) is under LINX's somatic directory.
 - A tool missing from a `-pipeline_format_file` gets the directory "" and so the root directory itself: ORANGE then
-  reads e.g. `<root>/<tumor>.cuppa.vis_data.tsv` and fails, or warns "invalid RNA sample ID" for ISOFOX.
+  reads e.g. `<root>/<tumor>.cuppa.vis_data.tsv` and fails, or warns "invalid RNA sample ID" for ISOFOX. Since
+  f5f660cc9f the virus directory's key is `viridianDir`; a file of the older format names `virusInterpreterDir`,
+  which is ignored, so the root directory is taken and the run fails on `<root>/<tumor>.viridian.report.tsv`
+  (case `hg008_format_file`).
+- Viruses from a Virus Interpreter file (f5f660cc9f's conversion): the virus group is the virus name, every QC
+  status other than NO_ABNORMALITIES (LOW_VIRAL_COVERAGE, EXCESSIVE_VIRAL_COVERAGE, ASSEMBLY_DOWNSAMPLED,
+  CHILD_TAXID_REFERENCE, UNCLEAR_TAXID_ASSIGNMENT) becomes AMBIGUOUS_VIRUS (Viridian's "virus doesn't match between
+  read profiling and integrations"), the clonality is NOT_PROFILED (Viridian's "not present in sample reads") with
+  no copies per tumor cell, and the expected clonal coverage and driver likelihood are dropped. The coverage becomes a
+  fraction as `percentageCovered * 0.01`; that differs from `/ 100` in the last digit for about 14% of values, but
+  neither form prints the decimal in every case (0.47% gives 0.0047 one way and 0.004699999999999999 the other), so
+  it is not a fault.
+- The default layout (OA_V3_1) now takes the virus directory `viridian/`: a `-pipeline_sample_root_dir` run on an
+  oncoanalyser 3.0 output, which has `virusinterpreter/`, gets no `viridian` section (null), with nothing logged above
+  TRACE, unless `-pipeline_format OA_V3_0` is given (cases `hg008_root`, `hg008_root_viridian_oa_v3_0`).
+- The file read is chosen by what the directory holds, not by the option: a Virus Interpreter file is read whenever
+  the virus directory has one, also for `-viridian_dir`; `-virus_dir` reads a Viridian report when there is no Virus
+  Interpreter file; with both options `-virus_dir` is used and `-viridian_dir` ignored, silently.
 - Every somatic deletion driver has `geneRange` "PARTIAL"; only AMP drivers are "FULL".
 - The arm aberrations' `copyNumber` is the arm's median copy number, while their type and `relativeCopyNumber` use
   the mean.
@@ -150,7 +211,11 @@ Not corrected (a data model change, or the intent is unclear), as Java:
 
 ## Tests
 
-- 34 tests in `orange-rs` (`cargo test --release`): the Java unit tests of the ported classes, and tests of the port.
+- 37 tests in `orange-rs` (`cargo test --release`): the Java unit tests of the ported classes, and tests of the port.
+  For f5f660cc9f: ViridianInterpreterTest (its two tests), PipelineToolDirectoriesTest.canLoadFromCompleteFile with
+  the layouts' virus directories, the VirusReport JSON as `minimally.populated.orange.json` writes it, and the
+  loading of either tool's file (both files, neither, no directory). VirusInterpreterTest and OrangeConversionTest's
+  virus test were removed upstream, and so here.
   Several of Java's immune escape and Isofox tests are `@Ignore`d and out of date: the active one is ported, and the
   current rules have tests of their own.
 - `hmf-common-rs`: tests for each module added (below).
@@ -170,7 +235,11 @@ All additions; no existing behaviour changed.
 - `cytobands` (new), with the resources `resources/refgenome/cytoBands.{37,38}.tsv` (copied from hmf-common).
 - `tool_results` (new): CHORD's prediction, PEACH's best haplotypes (Java and old Python formats), SIGS' allocations
   and the signature etiologies (resource `resources/sigs/signatures_etiology.tsv`), Virus Interpreter's annotated
-  viruses, CUPPA's vis_data, PipelineVersionFile.
+  viruses, Viridian's virus reports (VirusReport, `read_virus_reports` as VirusReportFile.read,
+  `virus_report_filename`, the ReportQcStatus and ClonalityStatus names) and `convert_to_viridian_reports`
+  (VirusInterpreterDataLoader.convertToViridianReports), CUPPA's vis_data, PipelineVersionFile.
+- `delim_file`: `get_bool` (DelimFileReader.Row.getBoolean: true / false in any case, anything else an error),
+  `get_double_or_null`, and `parse_delim_bool`.
 - `purple_files`: `read_purity_context_with_qc` (the PurplePurity reader qsee-rs added is shared), ChrArmCopyNumbersFile,
   GermlineAmpDel, `human_chromosome` (HumanChromosome.fromString), the germline driver catalog file name.
 - `hla`: LilacQcData (`read_lilac_qc`, `lilac_qc_filename`).
@@ -194,7 +263,9 @@ order (from the JSON record, `plots.*` resolved against the output directory):
    biallelic, hotspot, driver, RNA depth when present, the SAGE vis page names), Amplifications and Deletions
    (GainDeletionTable: location, gene, range, min/max/arm/relative CN, TPM, percentile and fold change with RNA),
    Fusions (DnaFusionTable: fusion, junctions, JCN, phasing, type, RNA support (OR11), driver), Disruptions
-   (DisruptionTable: location, gene, range, type, JCN, undisrupted CN), Viruses (reportable; not tumor-only), Arm Copy
+   (DisruptionTable: location, gene, range, type, JCN, undisrupted CN), Viruses (ViralPresenceTable, the reportable
+   ones of `viridian`: virus, QC status, type, integrations, % covered, mean coverage, copies per cell; since
+   f5f660cc9f no expected clonal coverage, driver column or shading of low-likelihood rows; not tumor-only), Arm Copy
    Number Aberrations (ChrArmCopyNumberTable), Signature Allocations (not tumor-only), and the Structural Driver Plots
    (`linxDriverPlots`, two per row with their titles).
 3. **Germline Findings** (not tumor-only): Small Variants (GermlineVariantTable: with ClinVar and gnomAD), Amplifications
@@ -214,8 +285,6 @@ QSee report PDF (`qsee/<tumor>.qsee.vis.report.pdf`) is not used; its PNG is.
 
 ## Open points
 
-- Upstream's change of 2026-11-23 (f5f660cc9f): the virus section is `viridian`, and ORANGE also reads Viridian's
-  files. The pipeline's ORANGE image already has it.
 - The PDF: to be drawn natively from the JSON and the copied plots, with the shared drawing crate the plot ports use.
 - In the pipeline, oncoanalyser runs ORANGE only when PURPLE's `plot/<tumor>.circos.png` exists. Until purple-rs draws
   its plots, a run with purple-rs skips ORANGE, and orange-rs runs only beside the Java PURPLE.
@@ -225,9 +294,9 @@ QSee report PDF (`qsee/<tumor>.qsee.vis.report.pdf`) is not used; its PNG is.
 ## In the pipeline (GIAB HG008, 2026-11-27)
 
 HG008 rerun 12 on Google Batch ran ORANGE as the port, in Java mode, on the inputs of rerun 11 (every other step
-from the cache; PURPLE in Java, which draws the plots ORANGE needs). The JSON equals the one Hartwig's ORANGE image
+from the cache; PURPLE in Java, which draws the plots ORANGE needs). The JSON equaled the one Hartwig's ORANGE image
 (5.1-beta.1) wrote from the same inputs but for one key: the image names the virus section `viridian`, while the
-5.1 jar this port follows (hmftools ca04e6c39d) and the port name it `virusInterpreter`. Upstream renamed it on
-2026-11-23 (f5f660cc9f, "support loading Viridian and VirusInterpreter files"); following that is an open point.
-The LINX driver plots came in the same order (in Java mode both take Linux's directory order). ORANGE took 5.3 s
-and 42 MB, against Java's 18 s and 419 MB.
+port, then following ca04e6c39d, named it `virusInterpreter`. The port now follows f5f660cc9f; run locally on the
+same inputs with the pipeline's command it gives the image's JSON but for the LINX plot order (above). The LINX
+driver plots came in the same order on Batch (in Java mode both take Linux's directory order). ORANGE took 5.3 s and
+42 MB, against Java's 18 s and 419 MB.

@@ -117,6 +117,27 @@ impl<'a> DelimRowValues<'a> {
         let v = self.get_at(i)?;
         parse_double(v).ok_or_else(|| anyhow!("java.lang.NumberFormatException: For input string: \"{v}\""))
     }
+    /// Row.getDoubleOrNull (added 2026-11-27 for orange's Viridian reports): None for `null` / `NULL`
+    pub fn get_double_or_null(&self, name: &str) -> Result<Option<f64>> {
+        match self.get_or_null(name)? {
+            None => Ok(None),
+            Some(v) => parse_double(v).map(Some).ok_or_else(|| anyhow!("java.lang.NumberFormatException: For input string: \"{v}\"")),
+        }
+    }
+    /// Row.getBoolean (added 2026-11-27): `true` or `false` in any case, anything else an
+    /// IllegalArgumentException (unlike Boolean.parseBoolean, which takes anything else as false)
+    pub fn get_bool(&self, name: &str) -> Result<bool> {
+        parse_delim_bool(self.get(name)?)
+    }
+}
+
+/// DelimFileReader.Row.parseBoolean
+pub fn parse_delim_bool(s: &str) -> Result<bool> {
+    match s.to_lowercase().as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => bail!("java.lang.IllegalArgumentException: Invalid boolean string: {s}"),
+    }
 }
 
 /// A file opened as FileWriterUtils.createBufferedWriter opens it
@@ -265,6 +286,21 @@ mod tests {
         assert!(DelimFileReader::open(&p).is_err());
         std::fs::write(&p, "").unwrap();
         assert!(DelimFileReader::open(&p).is_err());
+    }
+
+    #[test]
+    fn booleans_and_nullable_doubles() {
+        let p = tmp("b.tsv");
+        std::fs::write(&p, "f\td\nTRUE\tNULL\nfalse\t1e-3\nyes\tx\n").unwrap();
+        let r = DelimFileReader::open(&p).unwrap();
+        let rows: Vec<_> = r.rows().collect();
+        assert!(rows[0].get_bool("f").unwrap());
+        assert_eq!(rows[0].get_double_or_null("d").unwrap(), None);
+        assert!(!rows[1].get_bool("f").unwrap());
+        assert_eq!(rows[1].get_double_or_null("d").unwrap(), Some(0.001));
+        assert!(rows[2].get_bool("f").is_err());
+        assert!(rows[2].get_double_or_null("d").is_err());
+        assert!(rows[2].get_double_or_null("e").is_err());
     }
 
     #[test]
