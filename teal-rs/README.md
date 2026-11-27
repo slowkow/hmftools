@@ -37,6 +37,11 @@ TealApplication: `-reference_mean_read_depth`, `-reference_gc50_read_depth`,
 Port options: `-java_compat` (or `TEAL_JAVA_COMPAT=1`) reproduces every Java fault;
 `-java_compat_except TE2,TE4` (or `TEAL_JAVA_COMPAT_EXCEPT`) all but those listed.
 
+Reading (environment variables; no output changes): `TEAL_READ_STREAMS` (default 4) file handles read the
+BAM ahead in chunks of `TEAL_READ_CHUNK_MB` (default 32), each chunk one sequential read, and the parser
+takes the bytes in file order. Through a bucket mount one handle gives one stream's throughput; several
+add up.
+
 ## How it works
 
 The prep reads every record of the BAM. Java does so in partitions (the unplaced unmapped reads first,

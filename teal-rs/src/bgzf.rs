@@ -9,15 +9,144 @@
 
 use anyhow::{anyhow, bail, Context, Result};
 use std::collections::BTreeMap;
-use std::io::Read;
 use std::sync::{Arc, Condvar, Mutex};
 
 /// Compressed bytes per batch
 const BATCH_BYTES: usize = 1 << 20;
 
+/// Read-ahead of the file (not Java options; the environment variables TEAL_READ_STREAMS and
+/// TEAL_READ_CHUNK_MB set them): the number of file handles reading ahead, and the bytes each reads
+/// in one go.
+const READ_STREAMS: usize = 4;
+const READ_CHUNK_MB: usize = 32;
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name).ok().and_then(|v| v.parse::<usize>().ok()).filter(|&v| v > 0).unwrap_or(default)
+}
+
+struct ChunkState {
+    done: BTreeMap<u64, std::io::Result<Vec<u8>>>,
+    claimed: u64,
+    consumed: u64,
+    stop: bool,
+    free: Vec<Vec<u8>>,
+}
+
+struct ChunkShared {
+    state: Mutex<ChunkState>,
+    cv: Condvar,
+}
+
+/// The file's bytes from an offset to its end, in order, read ahead by several threads, each with its own
+/// file handle and each chunk one sequential read. Through a bucket mount (gcsfuse) one handle reading in
+/// order gives one stream's throughput (about 160 MB/s on Google Batch); the chunks of several handles
+/// add up, while the bytes still reach the BGZF parser in file order, so nothing else changes.
+struct ChunkSource {
+    shared: Arc<ChunkShared>,
+    threads: Vec<std::thread::JoinHandle<()>>,
+    cur: Vec<u8>,
+    pos: usize,
+    next: u64,
+    chunks: u64,
+}
+
+impl ChunkSource {
+    fn open(path: &str, start: u64) -> Result<ChunkSource> {
+        let len = std::fs::metadata(path).with_context(|| format!("opening {path}"))?.len();
+        let streams = env_usize("TEAL_READ_STREAMS", READ_STREAMS);
+        let chunk = (env_usize("TEAL_READ_CHUNK_MB", READ_CHUNK_MB) << 20) as u64;
+        let chunks = len.saturating_sub(start).div_ceil(chunk);
+        let max_ahead = streams as u64 + 2;
+        let shared = Arc::new(ChunkShared {
+            state: Mutex::new(ChunkState { done: BTreeMap::new(), claimed: 0, consumed: 0, stop: false, free: Vec::new() }),
+            cv: Condvar::new(),
+        });
+        let mut threads = Vec::new();
+        for _ in 0..streams.min(chunks.max(1) as usize) {
+            let mut file = std::fs::File::open(path).with_context(|| format!("opening {path}"))?;
+            let s = shared.clone();
+            threads.push(std::thread::spawn(move || {
+                use std::io::{Read, Seek};
+                let mut at: Option<u64> = None;
+                loop {
+                    let (k, mut buf) = {
+                        let mut st = s.state.lock().unwrap();
+                        while !st.stop && st.claimed < chunks && st.claimed >= st.consumed + max_ahead {
+                            st = s.cv.wait(st).unwrap();
+                        }
+                        if st.stop || st.claimed >= chunks {
+                            return;
+                        }
+                        let k = st.claimed;
+                        st.claimed += 1;
+                        (k, st.free.pop().unwrap_or_default())
+                    };
+                    let off = start + k * chunk;
+                    let n = chunk.min(len - off) as usize;
+                    buf.resize(n, 0);
+                    let r = (|| {
+                        if at != Some(off) {
+                            file.seek(std::io::SeekFrom::Start(off))?;
+                        }
+                        file.read_exact(&mut buf)?;
+                        Ok(())
+                    })();
+                    at = if r.is_ok() { Some(off + n as u64) } else { None };
+                    let mut st = s.state.lock().unwrap();
+                    st.done.insert(k, r.map(|_| buf));
+                    drop(st);
+                    s.cv.notify_all();
+                }
+            }));
+        }
+        Ok(ChunkSource { shared, threads, cur: Vec::new(), pos: 0, next: 0, chunks })
+    }
+
+    /// Up to `buf.len()` bytes into `buf`; 0 at the end of the file
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        if self.pos == self.cur.len() {
+            if self.next == self.chunks {
+                return Ok(0);
+            }
+            let chunk = {
+                let mut st = self.shared.state.lock().unwrap();
+                loop {
+                    if let Some(c) = st.done.remove(&self.next) {
+                        break c;
+                    }
+                    st = self.shared.cv.wait(st).unwrap();
+                }
+            };
+            let chunk = chunk.context("reading the BAM")?;
+            let old = std::mem::replace(&mut self.cur, chunk);
+            self.pos = 0;
+            self.next += 1;
+            let mut st = self.shared.state.lock().unwrap();
+            st.consumed = self.next;
+            st.free.push(old);
+            drop(st);
+            self.shared.cv.notify_all();
+        }
+        let n = buf.len().min(self.cur.len() - self.pos);
+        buf[..n].copy_from_slice(&self.cur[self.pos..self.pos + n]);
+        self.pos += n;
+        Ok(n)
+    }
+}
+
+impl Drop for ChunkSource {
+    fn drop(&mut self) {
+        self.shared.state.lock().unwrap().stop = true;
+        self.shared.cv.notify_all();
+        for t in self.threads.drain(..) {
+            let _ = t.join();
+        }
+    }
+}
+
 /// The whole BGZF blocks of the file, a batch at a time
 struct BlockReader {
-    file: std::fs::File,
+    file: ChunkSource,
     /// emptied compressed buffers, for reuse
     free: Vec<Vec<u8>>,
     /// bytes read but not yet part of a whole block
@@ -37,7 +166,7 @@ impl BlockReader {
         while buf.len() < BATCH_BYTES && !self.eof {
             let old = buf.len();
             buf.resize(old + BATCH_BYTES, 0);
-            let n = self.file.read(&mut buf[old..]).context("reading the BAM")?;
+            let n = self.file.read(&mut buf[old..])?;
             buf.truncate(old + n);
             if n == 0 {
                 self.eof = true;
@@ -235,9 +364,7 @@ impl BgzfStream {
 
     /// From a virtual offset (the compressed offset of a block << 16 | the offset within it)
     pub fn open_at(path: &str, voffset: u64, threads: usize) -> Result<BgzfStream> {
-        use std::io::Seek;
-        let mut file = std::fs::File::open(path).with_context(|| format!("opening {path}"))?;
-        file.seek(std::io::SeekFrom::Start(voffset >> 16)).with_context(|| format!("seeking in {path}"))?;
+        let file = ChunkSource::open(path, voffset >> 16)?;
         let threads = threads.max(1);
         let shared = Arc::new(Shared {
             reader: Mutex::new(BlockReader { file, free: Vec::new(), carry: Vec::new(), eof: false, next_id: 0 }),
