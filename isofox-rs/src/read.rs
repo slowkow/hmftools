@@ -510,7 +510,6 @@ pub struct Read {
 }
 
 pub const FLAG_PAIRED: u16 = 0x1;
-#[allow(dead_code)]
 pub const FLAG_PROPER: u16 = 0x2;
 pub const FLAG_MATE_UNMAPPED: u16 = 0x8;
 pub const FLAG_REVERSE: u16 = 0x10;
@@ -518,6 +517,7 @@ pub const FLAG_MATE_REVERSE: u16 = 0x20;
 pub const FLAG_FIRST: u16 = 0x40;
 #[allow(dead_code)]
 pub const FLAG_SECOND: u16 = 0x80;
+pub const FLAG_SECONDARY: u16 = 0x100;
 pub const FLAG_DUPLICATE: u16 = 0x400;
 pub const FLAG_SUPPLEMENTARY: u16 = 0x800;
 
@@ -624,6 +624,10 @@ impl Read {
         self.supp_data.is_some()
     }
     pub fn is_chimeric(&self) -> bool {
+        if crate::version::v201() {
+            // ISOFOX 2.0.1 also takes any pair not marked proper as chimeric
+            return self.is_translocation() || self.is_inversion() || !self.is_proper_pair() || self.is_supplementary() || self.supp_data.is_some();
+        }
         self.is_translocation() || self.is_inversion() || self.is_supplementary() || self.supp_data.is_some()
     }
     /// SamRecordUtils.inferredInsertSize
@@ -634,7 +638,17 @@ impl Read {
         self.alt_loci.as_ref().map(|a| 1 + a.len()).unwrap_or(1)
     }
     pub fn is_multi_mapped(&self) -> bool {
+        if crate::version::v201() {
+            // ISOFOX 2.0.1: STAR gives multi-mapped reads map qualities of 3 or lower
+            return self.mapq <= crate::config::MULTI_MAP_QUALITY_THRESHOLD;
+        }
         self.num_loci() > 1
+    }
+    pub fn is_secondary(&self) -> bool {
+        self.flags & FLAG_SECONDARY != 0
+    }
+    pub fn is_proper_pair(&self) -> bool {
+        self.flags & FLAG_PROPER != 0
     }
     pub fn read_bases(&self) -> &[u8] {
         match self.base_view {
@@ -699,6 +713,14 @@ impl Read {
     pub fn matches(&self, other_id: &str, other_flags: u16) -> bool {
         &*self.id == other_id && self.flags == other_flags
     }
+    /// Read.matches in ISOFOX 2.0.1: the same id, cigar (as trimmed) and aligned positions
+    pub fn matches_201(&self, other: &(Box<str>, String, i32, i32)) -> bool {
+        &*self.id == &*other.0 && self.cigar_str_201() == other.1 && self.pos_start == other.2 && self.pos_end == other.3
+    }
+    /// cigarStr() in ISOFOX 2.0.1: CigarUtils.cigarElementsToStr, empty for no elements
+    pub fn cigar_str_201(&self) -> String {
+        if self.cigar.is_empty() { String::new() } else { cigar_to_string(&self.cigar) }
+    }
     pub fn spans_gene_collections(&self) -> bool {
         self.gene_collections[0] != self.gene_collections[1]
     }
@@ -744,6 +766,54 @@ impl Read {
                 self.cigar[0] = CigarElem { op: OP_S, len: (sc_len - trim) as u32 };
             } else {
                 self.cigar.remove(0);
+            }
+        }
+    }
+}
+
+impl Read {
+    /// Read.trimAdapterSoftClipBases(mateRead) in ISOFOX 2.0.1: trims this read's 3' soft clip to the mate's
+    /// unclipped 5' end. With no soft clip at that end but the mate's end inside this read, Java still
+    /// removes the last (or first) cigar element, which then changes only the cigar string.
+    pub fn trim_adapter_soft_clip_bases_201(&mut self, mate_orient: i8, mate_unclipped_start: i32, mate_unclipped_end: i32) {
+        if self.orient() == mate_orient {
+            return;
+        }
+        if self.orig_cigar.is_none() {
+            self.orig_cigar = Some(self.cigar.clone());
+        }
+        let (o, l) = self.base_view.unwrap_or((0, self.bases.len()));
+        if !self.is_read_reversed() {
+            if mate_unclipped_end >= self.unclipped_end {
+                return;
+            }
+            let sc = self.right_clip_length();
+            let trim = (self.unclipped_end - mate_unclipped_end).min(sc);
+            self.base_view = Some((o, l - trim as usize));
+            self.unclipped_end -= trim;
+            // IF18: with no soft clip Java still removes the last cigar element (an aligned one)
+            if !self.cigar.is_empty() && (sc > 0 || crate::compat::java("IF18")) {
+                let last = self.cigar.len() - 1;
+                if trim < sc {
+                    self.cigar[last] = CigarElem { op: OP_S, len: (sc - trim) as u32 };
+                } else {
+                    self.cigar.remove(last);
+                }
+            }
+        } else {
+            if mate_unclipped_start <= self.unclipped_start {
+                return;
+            }
+            let sc = self.left_clip_length();
+            let trim = (mate_unclipped_start - self.unclipped_start).min(sc);
+            self.base_view = Some((o + trim as usize, l - trim as usize));
+            self.unclipped_start += trim;
+            if !self.cigar.is_empty() && (sc > 0 || crate::compat::java("IF18")) {
+                if trim < sc {
+                    self.cigar[0] = CigarElem { op: OP_S, len: (sc - trim) as u32 };
+                } else {
+                    self.cigar.remove(0);
+                }
             }
         }
     }

@@ -181,6 +181,9 @@ pub struct GeneCollection {
     pub transcripts: Vec<&'static TranscriptData>,
     pub transcript_read_counts: HashMap<i32, [[i32; 2]; 5]>,
     pub fragment_counts: FragmentTypeCounts,
+    /// ISOFOX 2.0.1: the transcripts of an enriched gene in the collection, and the span of their exons
+    pub enriched_transcripts: Option<Vec<&'static TranscriptData>>,
+    pub enriched_region: Option<[i32; 2]>,
 }
 
 impl GeneCollection {
@@ -201,9 +204,42 @@ impl GeneCollection {
             transcripts: Vec::new(),
             transcript_read_counts: HashMap::new(),
             fragment_counts: FragmentTypeCounts::default(),
+            enriched_transcripts: None,
+            enriched_region: None,
         };
         gc.build_cache();
         gc
+    }
+
+    /// markEnrichedAndExcludedGenes (ISOFOX 2.0.1): the last enriched gene of the collection sets the
+    /// enriched transcripts and region
+    pub fn mark_enriched_genes(&mut self, enriched_ids: &[String], cache: &'static EnsemblDataCache) {
+        if enriched_ids.is_empty() {
+            return;
+        }
+        for gi in 0..self.genes.len() {
+            let id = &self.genes[gi].gene.gene_id;
+            if !enriched_ids.iter().any(|x| x == id) {
+                continue;
+            }
+            let trans: Vec<&'static TranscriptData> = cache.transcripts(id).map(|l| l.iter().collect()).unwrap_or_default();
+            let mut region = [0, 0];
+            for t in &trans {
+                for e in &t.exons {
+                    region[0] = if region[0] > 0 { region[0].min(e.start) } else { e.start };
+                    region[1] = region[1].max(e.end);
+                }
+            }
+            self.enriched_transcripts = Some(trans);
+            self.enriched_region = Some(region);
+        }
+    }
+
+    pub fn in_enriched_region(&self, start: i32, end: i32) -> bool {
+        match self.enriched_region {
+            Some(r) => start <= r[1] && end >= r[0],
+            None => false,
+        }
     }
 
     fn build_cache(&mut self) {

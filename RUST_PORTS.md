@@ -247,7 +247,7 @@ CUPPA's and qsee's R plots, and the PDFs of ORANGE and qsee (BUI has no vector o
 
 | Program | Size | Notes |
 |---|---|---|
-| ISOFOX | 27,800 | RNA transcript counts, novel splice junctions, retained introns and fusions. Ported (`isofox-rs`, 2026-11-27): byte-identical to ISOFOX 2.1 on a private tumor RNA slice and synthetic cases, 14-19 times faster in a quarter of the memory; findings IF1-IF13 (e.g. every multi-exon gene's intronic length too large, IF2). ISOFOX 2.1 expects bwa-mem3 + TARS BAMs; on STAR BAMs Hartwig's README asks for 2.0, which the port does not reproduce yet |
+| ISOFOX | 27,800 | RNA transcript counts, novel splice junctions, retained introns and fusions. Ported (`isofox-rs`, 2026-11-27): byte-identical to ISOFOX 2.1 on a private tumor RNA slice and synthetic cases, 14-19 times faster in a quarter of the memory; findings IF1-IF13 (e.g. every multi-exon gene's intronic length too large, IF2). ISOFOX 2.1 expects bwa-mem3 + TARS BAMs; for STAR BAMs (Hartwig's README asks for 2.0) the port also reproduces ISOFOX 2.0.1 (`-isofox_version 2.0.1`, or chosen from a STAR @PG line), byte-identical to the 2.0.1 jar on the same cases; findings IF14-IF18 in 2.0.1-only code |
 | Viridian | 4,100 | Hartwig's replacement for VIRUSBreakend and Virus Interpreter; not yet in oncoanalyser 3.0.0 |
 
 SAGE append, used for RNA, is already part of `sage-rs`.

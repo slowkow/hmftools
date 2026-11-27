@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # `isofox` as oncoanalyser calls the Java tool (ISOFOX_QUANTIFICATION, NEO_ANNOTATE_FUSIONS), run by isofox-rs:
-# JVM options are dropped. isofox-rs follows ISOFOX 2.1, which expects bwa-mem3 + TARS (REDUX) RNA BAMs; for STAR
-# BAMs Hartwig's README says to use ISOFOX 2.0 or earlier. -java_compat selects Java's behaviour.
+# JVM options are dropped. isofox-rs reproduces ISOFOX 2.1 (for bwa-mem3 + TARS RNA BAMs) and 2.0.1 (for STAR BAMs):
+# `-isofox_version 2.0.1|2.1`, else ISOFOX_VERSION, else 2.0.1 when the BAM header has a STAR @PG line, else 2.1.
+# -java_compat selects Java's behaviour.
 set -euo pipefail
 args=()
 for a in "$@"; do

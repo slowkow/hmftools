@@ -5,6 +5,9 @@ versions of ISOFOX involved, and the timings. Java ISOFOX 2.1 is this repository
 `isofox/target/isofox-2.1-jar-with-dependencies.jar`, built from sources that follow upstream commit ca04e6c39d.
 Finding ids: IF. Options, outputs and tests are in [README.md](README.md).
 
+The port also reproduces ISOFOX 2.0.1, the version for STAR-aligned RNA (`-isofox_version 2.0.1`), against a jar built
+from upstream tag `isofox-v2.0.1`. Section 10 covers that mode; its findings are IF14 to IF18 in section 3.
+
 oncoanalyser runs two ISOFOX steps: ISOFOX_QUANTIFICATION (`-functions
 'TRANSCRIPT_COUNTS;ALT_SPLICE_JUNCTIONS;FUSIONS;RETAINED_INTRONS'`) and NEO_ANNOTATE_FUSIONS (`-functions NEO_EPITOPES`).
 Both are ported.
@@ -228,6 +231,48 @@ Each is corrected by default and reproduced by `-java_compat`, unless it says it
     tie-break (for example by region start, then transcript id) would be a choice no Java run makes, and the intent
     is unclear. With IF11 corrected, the discordant count no longer depends on it.
 
+The following findings are in ISOFOX 2.0.1 code that 2.1 does not share (section 10). They apply in 2.0.1 mode only.
+
+- **IF14 (2.0.1: a split read whose junction is not found ends the run).**
+  - What Java does: 2.0.1's ChimericUtils.findSplitReadJunction looks for the gap between consecutive mapped sections
+    that equals the longest N. With a deletion beside the N (`10M5D100N10M`) the gap is wider and no junction is
+    found. collectCandidateJunctions then dereferences the missing junction. The NullPointerException ends the
+    chromosome task, and with it the run (exit 1).
+  - Corrected: the read adds no candidate junction, as 2.1 does with its null check. (2.1 finds the junction from the
+    cigar.)
+  - Effect: only a split read that spans gene collections, or two genes' known splice sites, with a D beside its
+    longest N. None on the slice or the synthetic cases. Unit test `split_junction_from_mapped_sections`.
+- **IF15 (kept as Java: 2.0.1 fails on unpaired reads).**
+  - What Java does: GeneRegionFilters.skipRead calls htsjdk's getMateUnmappedFlag for every read, which throws for
+    an unpaired read. A single-end BAM fails at its first read.
+  - Kept: 2.0.1 has no single-end path to correct to (2.1 added one). The port stops with an error naming the read.
+- **IF16 (2.0.1: a fragment with two supplementary alignments loses two reads and never completes).**
+  - What Java does: a supplementary alignment pairs with whichever read of the same name comes next (the fragment
+    tracker is keyed by read name). When both reads are split, the fragment forms two pairs. addChimericReadPair
+    puts the second in place of the first; the merge exists only under `-validate`, which logs it as an error.
+    FusionReadGroup.isComplete is "three reads, or two without supplementary data", so four reads never complete.
+  - Corrected: the second pair joins the group, and completeness counts the reads expected, as 2.1 does.
+  - Effect: none on the slice. STAR's chimeric output there has at most one supplementary per fragment (16,627
+    supplementary records, no read name twice). Unit test `fusion_group_completeness_201`.
+- **IF17 (2.0.1: secondary alignments counted as unspliced or alternative fragments).**
+  - What Java does: processIntronicReads counts a fully intronic pair as UNSPLICED (or ALT if split) even when both
+    reads are secondary alignments. Every other path counts only non-secondary fragments, and TotalFragments excludes
+    secondaries. Such a pair counts its fragment a second time.
+  - Corrected: a secondary pair is not counted there. It still contributes to expression, with its map quality weight.
+  - Effect on the slice: unspliced fragments 530,513 become 527,973, alternative 545,742 become 545,684 (204 gene
+    collection rows), and UnsplicedFragmentPerc goes from 0.352 to 0.350.
+- **IF18 (2.0.1: adapter trimming removes an aligned cigar element).**
+  - What Java does: Read.trimAdapterSoftClipBases trims the smaller of the overhang past the mate and the soft clip.
+    With no soft clip the trim is 0, but the last (or first) cigar element is still removed. Only the cigar string
+    changes. Read.matches compares it when a read seen after one gene collection is met before the next, so such a
+    read can be taken twice.
+  - Corrected: nothing changes without a soft clip.
+  - Effect: none on the slice or the synthetic cases. Unit test `adapter_trimming_201`.
+
+IF1 to IF13 in 2.0.1 mode: IF1 to IF6, IF8, IF9 and IF11 are in 2.0.1's code too and are corrected the same way. IF10
+and IF13 are kept, as in 2.1. IF7 is corrected the same way (2.0.1 has the same thread structure). IF12 does not arise:
+2.0.1 has no processIncompleteReads, and counts a lone read's depth once.
+
 ### Kept as Java (oddities with no effect worth a finding, or choices)
 
 - **RetainedIntronFinder** sets `spannedIsStart` before checking the candidate, so a rejected candidate can set it.
@@ -237,7 +282,21 @@ Each is corrected by default and reproduced by `-java_compat`, unless it says it
 - **The expected counts header (unreachable):** with no configured fragment lengths, ExpectedCountsCache would take
   them from the file's header starting one column late. Configured lengths always exist, though: the option has a
   default, and an empty value fails to parse in both.
-- **`-drop_dups`** is accepted and does nothing (2.1 always drops duplicates; section 4).
+- **`-drop_dups`** is accepted and does nothing in 2.1, which always drops duplicates (section 4). In 2.0.1 it leaves
+  duplicates out of expression, as there.
+- **2.0.1's enriched genes** (RN7SL1-5 and RN7SK):
+  - the genes, with 1 kb either side, become excluded regions, so their reads are skipped and the code meant to
+    count them (processEnrichedRegionRead) is never reached;
+  - EnrichedGenePercent is therefore the share of fragments in gene collections holding an enriched gene but outside
+    that window;
+  - those gene collections are left out of the GC ratio distribution, and the enriched genes out of the adjusted TPM
+    total.
+
+  The intent is unclear, so Java's behaviour is kept.
+- **2.0.1 applies `-specific_regions` to mates and supplementaries** as well as to the read, so a pair with a mate
+  outside the regions is skipped; 2.1 exempts them. The intent is unclear, so Java's behaviour is kept.
+- **2.0.1 weights a low map quality fragment** in the category counts (0.5 to 0.1) but not in the GC ratio counts.
+  The intent is unclear, so Java's behaviour is kept.
 - **A failed run** (exit 1) leaves its output files empty, because Java exits without flushing its buffered writers.
   The port does the same: a writer not closed discards its buffer.
 
@@ -284,7 +343,7 @@ Each is corrected by default and reproduced by `-java_compat`, unless it says it
 
 ## 5. Tests
 
-`cargo test --release`: 50 tests, all passing. They are ports of the Java tests of the ported classes, on synthetic
+`cargo test --release`: 65 tests, all passing. They are ports of the Java tests of the ported classes, on synthetic
 genes and reads:
 
 - ReadUtilsTest, ReadCountsTest, TransClassificationTest, FragmentTest;
@@ -297,7 +356,14 @@ Tests of the port's own:
   (`gc_counts_skip_only_the_missing_transcript`), IF5 (`junction_homology_shift`), IF9
   (`dup_and_discordant_junction_order`);
 - the identity-hash region map (insertion order, then the compareTo tree);
-- the SeqHashMap order against Java's, the parsers and the formatting.
+- the SeqHashMap order against Java's, the parsers and the formatting;
+- the 2.0.1 mode (`tests201.rs`, `version.rs`), each behaviour that differs from 2.1, in both modes where it applies:
+  - map quality weights and multi-mapping, chimeric improper pairs, 2.0.1's adapter trimming (IF18), split
+    junctions (IF14), realignment candidates;
+  - the soft-clip rule (2.1's TransClassificationTest cases), excluded regions, the slice filters, write types;
+  - fusion group completeness (IF16), the retained intron file and headers;
+  - the allocator's counts and weights for duplicates, secondaries and low map quality;
+  - the version option and the STAR header detection.
 
 hmf-common-rs's suite (141 tests) passes with the additions, including a comparable-key tree order generated from a
 JVM probe.
@@ -378,8 +444,12 @@ No existing function changed behaviour.
 ## 9. Open points
 
 - **The version and the aligner (section 4).** The pipeline ran ISOFOX 2.1 on STAR BAMs, which 2.1 says it does not
-  support: duplicates and multi-mapped reads are treated as above. Either run 2.0.x on STAR BAMs, or give 2.1 (and
-  the port) the TARS/REDUX input it expects. The port matches 2.1 either way.
+  support: duplicates and multi-mapped reads are treated as above. The port now reproduces both: 2.1 for bwa-mem3 +
+  TARS/REDUX input, and 2.0.1 for STAR (section 10).
+- **Adapter soft clips (2.0.1 and 2.1):** Read.likelyAdaperSoftClipping compares the signed insert size with the read
+  length. A reverse mate's insert size is negative, so its soft clips always count as adapter, and never make a
+  transcript ALT. Both versions do this; it is noted here rather than corrected, as a correction would change 2.1's
+  default output as well.
 - **The whole-sample comparison** with Java and the in-pipeline run happen on Google Batch.
   - Against the pipeline's own output (16 threads), expect two kinds of difference even with `-java_compat`: thread
     order (IF7: reordered rows and other fusion ids, equal once sorted and without the id columns) and identity
@@ -394,3 +464,187 @@ No existing function changed behaviour.
   or move them if every prepared file should say TUMOR.
 - **IF10 and IF13** keep Java's behaviour because the intent is unclear. If Hartwig confirms the intent, the
   corrections are small: a reverse complement for inversion homology, and a defined tie-break for regions.
+
+## 10. ISOFOX 2.0.1 mode
+
+### Why
+
+ISOFOX 2.1 expects RNA aligned by bwa-mem3, lifted over by TARS and duplicate-marked by REDUX. Hartwig's README asks
+for ISOFOX 2.0 or earlier with STAR, and upstream oncoanalyser runs 2.0.1 after STAR. Section 4 has what 2.1 does to a
+STAR BAM. The port therefore reproduces 2.0.1 as well. The reference is a jar built from upstream tag
+`isofox-v2.0.1`; between it and 2.1 (ca04e6c39d) 103 files of ISOFOX and the shared library changed, mostly for TARS.
+
+### Selection
+
+`-isofox_version 2.0.1|2.1`, else `ISOFOX_VERSION`, else the BAM header (a STAR `@PG` line selects 2.0.1), else 2.1.
+`-version` reports `2.0.1` or `2.1` accordingly (from the option or the variable). See README.md.
+
+### What 2.0.1 does differently
+
+All of the following is reproduced in 2.0.1 mode. The fragment allocator is a separate module (`allocator201.rs`);
+the rest asks `version::v201()`.
+
+- **Reads and fragments:**
+  - **Duplicates** are read and counted in expression and the fragment counts, unless `-drop_dups` (or only fusions or
+    novel junctions run). They add no depth, no novel junctions or retained introns, and no realignment candidates.
+  - **Secondary alignments** are read when transcript counts run, each named `<read name>_<HI>`, so that a secondary
+    pair forms its own fragment. They count in expression, weighted by map quality, but not in the fragment type
+    counts, the strandedness or as chimeric fragments (IF17 is the exception).
+  - **Multi-mapped** means a map quality of 3 or less (STAR's convention). Such a fragment has the expression weight
+    0.5 (map quality 3), 0.33 (2), 0.2 (1) or 0.1 (0), and is counted as LowMapQual. The low map quality fragments
+    are allocated to transcripts and genes as 2.1's multi-mapped ones are.
+  - `-single_map_qual` defaults to 255, STAR's map quality for unique reads. It applies to the fragment length
+    sampling and the neo-epitope reads, and to every read when transcript counts are not run.
+  - **Supplementaries** pair with the next read of the same name (IF16).
+  - **An improper pair** is chimeric.
+  - **Regions and transcripts:** a read's exon regions and transcripts are worked out when it is read, before adapter
+    trimming. The soft-clip rule checks the left side first, and has no exemption for short clips within the exon.
+    Adapter trimming cuts a read's 3' soft clip back to its mate's unclipped 5' end (IF18).
+- **Regions:**
+  - `-excluded_regions`, and each enriched gene (RN7SL1-5, RN7SK by default) with 1 kb either side, are skipped:
+    - the BAM is sliced around them, and a gene collection wholly within one is not read;
+    - a read whose mate or supplementary lies in one is skipped.
+  - `-specific_regions` filters mates and supplementaries too.
+  - Gene collections with an enriched gene are left out of the GC ratio distribution, and the enriched genes out of the
+    adjusted TPM total. The summary reports their collections' fragments as EnrichedGenePercent.
+  - The fragment length sampling skips enriched genes, genes overlapping an excluded region, and genes with more than
+    the maximum number of transcripts even with `-specific_regions`.
+- **Chimeric reads and fusions:**
+  - **Duplicates:** the known-splice-site test is skipped for duplicates. Duplicates join chimeric groups (without
+    intronic transcript data or depth), and a fusion read group holding a duplicate is dropped once complete.
+  - **Candidates and groups:**
+    - a realignment candidate needs a soft clip of 3 to 10 bases;
+    - a split read's junction comes from its mapped sections (IF14);
+    - only a three-read group with a supplementary can be an inversion;
+    - a fusion read group is complete with three reads, or two without supplementary data (IF16).
+  - **The fragment builder:** it takes the first two reads with supplementary data (2.1 the read with the longer soft
+    clip), never types a same-orientation pair as discordant within one gene collection, and makes realignment
+    candidates of two-read fragments only.
+  - **Junctions:**
+    - the junction bases are 10 long either side (2.1: 20 before the junction), and the soft-clip window is at most
+      10 bases;
+    - there is no homology position adjustment and no adjustment towards known exon boundaries;
+    - the junction types belong to the initial fragment: KNOWN from the exon validation, then CANONICAL from the
+      splice motif, using both genes' strands by position when both genes are known;
+    - the fusion keeps every transcript-exon of its initial fragment.
+  - **Filters:** the hard filter counts every fragment type and has no supplementary map quality filter. The pass
+    filter compares total fragments (2.1: split and discordant) with the requirement, and a short local fusion may have
+    any orientation.
+  - **Discordant fragments and fusion reads:** discordant fragments are always checked as DEL or DUP fragments, and a
+    fusion read takes the exon references of its best match rank.
+- **Novel junctions:**
+  - a read is an alt-SJ candidate if it has more than one mapped section, inferred ones included;
+  - its junction is the first gap between sections, whether a known splice site or not;
+  - homology is tested only when the read meets no exon boundary;
+  - retained introns are written comma-separated, as `retained_intron.csv`.
+- **Outputs:** `LowMapQual` (gene collections) and `LowMapQualFrags` (gene and transcript data) for 2.1's multi-mapped
+  columns, and the summary's EnrichedGenePercent before MedianGCRatio. The other files and columns are 2.1's.
+- **NEO_EPITOPES:** 2.0.1 reads NEO's file by `-sample` and has no `-tumor` option. In 2.0.1 mode the port takes
+  `-tumor` where given (as oncoanalyser passes it), else `-sample`.
+- **Options:**
+  - 2.0.1's: `-excluded_regions`, `-enriched_gene_ids`, and its write types;
+  - not ported: READ_COUNTS, `-write_chimeric_reads`, `-write_chimeric_frags` (each ends the run with an error);
+  - kept from 2.1: `-tumor` and `-log_read_ids`.
+
+### How it was checked
+
+- **Java runs:** the 2.0.1 jar with `-Xmx8g -XX:+UnlockExperimentalVMOptions -XX:hashCode=2`, one at a time.
+- **The port:** `-java_compat -isofox_version 2.0.1`.
+- **Comparison:** every output file byte for byte, and the exit code; time and peak RSS from `/usr/bin/time -l`.
+- **Inputs:** the same private slice, synthetic BAMs and NEO_FINDER outputs as section 2, and the pipeline's command
+  line (it passes no `-excluded_regions`). Two more cases:
+  - the slice with upstream oncoanalyser 2.0.1's `-excluded_regions` (the resource file);
+  - a synthetic case with excluded regions and enriched genes of its own.
+- **NEO_EPITOPES:** Java 2.0.1 needs `-sample` to name NEO's file, so the cases pass the DNA sample id there. The
+  port was also run with the pipeline's `-sample <rna id> -tumor <dna id>`, and its file compared with Java's.
+
+### Results (`-java_compat`, 2.0.1 mode)
+
+| Case | Threads (Java / Rust) | Java s, MB | Rust s, MB | Result |
+|---|---|---|---|---|
+| slice, pipeline command | 1 / 1 | 295.5, 6117 | 18.6, 1750 | 9 of 9 files identical |
+| slice, pipeline command | 2 / 2 | 163.3, 6140 | 12.5, 1868 | 9 of 9 identical to Java at 1 thread; Java at 2 threads reorders 5 files (IF7: equal sorted, fusions also renumbered and 2 inter-chromosomal fusions with another initial read) |
+| slice, plus upstream's `-excluded_regions` | 1 / 1 | 294.8, 6073 | 19.7, 1726 | 9 of 9 identical |
+| slice, the jar against the first delegate's 2.0.1 image run | 1 | 295.5 | | 9 of 9 identical |
+| synthetic, pipeline command | 1 / 1 | 202.9, 5171 | 8.8, 1131 | 9 of 9 identical |
+| synthetic, pipeline command | 1 / 2 | | 7.0, 1162 | 9 of 9 identical to Java at 1 thread |
+| synthetic, `-specific_regions` (3) | 1 / 2 | 14.0, 4482 | 4.7, 829 | 9 of 9 identical |
+| synthetic, `-specific_chr` (2) | 1 / 2 | 21.9, 4470 | 4.7, 837 | 9 of 9 identical |
+| synthetic, TRANSCRIPT_COUNTS only | 1 / 2 | 198.2, 4786 | 6.4, 1017 | 4 of 4 identical |
+| synthetic, FUSIONS only | 1 / 2 | 100.4, 2240 | 1.8, 255 | 2 of 2 identical |
+| synthetic, STATISTICS only | 1 / 2 | 88.7, 2163 | 1.6, 246 | 1 of 1 identical |
+| synthetic, ALT_SPLICE_JUNCTIONS and RETAINED_INTRONS | 1 / 2 | 100.9, 2625 | 2.3, 381 | 3 of 3 identical |
+| synthetic, no expected counts, GC ratios or cohorts | 1 / 2 | 189.9, 2499 | 2.2, 338 | 9 of 9 identical |
+| synthetic, options (as the 2.1 case) | 1 / 2 | 201.7, 4924 | 6.6, 1198 | 10 of 10 identical |
+| synthetic, fragment length weights, `-drop_dups`, `-gene_read_limit 300` | 1 / 2 | 201.6, 5171 | 6.9, 1163 | 9 of 9 identical |
+| synthetic, fragment lengths not matching the expected counts | 1 / 2 | 9.8, 3507 | 4.1, 609 | exit 1 in both; 6 of 6 identical (empty) |
+| synthetic, `-excluded_regions` (3 synthetic regions) and `-enriched_gene_ids` (2 genes) | 1 / 2 | 199.0, 5184 | 7.0, 1171 | 9 of 9 identical |
+| empty BAM | 1 / 2 | 181.3, 5418 | 7.6, 1490 | 9 of 9 identical |
+| synthetic BAM with a STAR `@PG` line, no `-isofox_version` | (Java: the synthetic case) / 1 | | | the port chose 2.0.1; 9 of 9 identical |
+| NEO_EPITOPES, HG008 neo-epitopes | 1 / 1 | 1.5, 1232 | 0.7, 140 | identical, 27 rows; also with `-sample <rna id> -tumor <dna id>` |
+| NEO_EPITOPES, private pair's neo-epitopes | 1 / 1 | 1.6, 1115 | 0.7, 140 | identical, 28 rows; also with `-tumor` |
+| NEO_EPITOPES, rows made at the slice's RNA fusions | 1 / 1 | 8.0, 2256 | 2.2, 173 | identical, 119 rows (28 with novel fragments); also with `-tumor` |
+
+- **Times:** the Rust times are from the final binary, on the shared machine (load average 4 to 6). Java's small
+  cases are mostly the loading of the resource files.
+- **Speed:** on the slice the port is 15.9 times faster than the jar at 1 thread and 13.0 times at 2, at 29% of its
+  memory. It is slower than in 2.1 mode (15.6 s), because 2.0.1 also reads the duplicates (984,216 fragments on the
+  slice) and the secondary alignments (268,158 records).
+- **The pipeline's whole-sample 2.0.1 run** (Google Batch, 16 threads, the biocontainers image, 39 min 49 s, 43.2 GB
+  peak) was checked against the port on the slice, where they share data: chromosome 22, which the slice holds
+  whole.
+  - The gene collection file's counts are equal for all 624 chromosome 22 collections, in every count column (total,
+    duplicate, supporting, unspliced, alternative, chimeric, LowMapQual and both strands).
+  - The 1,362 chromosome 22 unfiltered alt-SJ rows are the same junctions, with the same fragment counts and depths.
+  - 11 alt-SJ rows report another tied transcript, and 125 and 140 rows list their transcripts in another order. The
+    retained introns differ in 325 of 2,207 lines.
+  - These are identity-hash ties (IF13). The pipeline's JVM runs without `-XX:hashCode=2`, and the jar run that way
+    on the slice changes the same files by the same amounts (382 retained intron lines and 17 alt-SJ rows), and no
+    others.
+
+### The default mode in 2.0.1
+
+Each correction alone, on the slice, against the jar:
+
+| Finding | Changes on the slice |
+|---|---|
+| IF2 | IntronicLength of every multi-exon gene (gene_data) |
+| IF3 | 6 more unfiltered alt-SJ rows |
+| IF5 | 28 unfiltered alt-SJ lines change, and 2 more rows |
+| IF6 | 12 alt-SJ rows |
+| IF17 | 204 gene collection rows (unspliced 530,513 to 527,973, alternative 545,742 to 545,684), UnsplicedFragmentPerc 0.352 to 0.350 |
+
+IF1, IF4, IF8, IF9, IF11, IF14, IF16 and IF18 change neither the slice nor the synthetic cases. IF14, IF16 and IF18
+have unit tests in both modes.
+
+### The 2.1 mode is unchanged
+
+All of the first delegate's 2.1 cases were rerun with the final binary, in 2.1 mode (neither BAM names STAR): the
+slice at 1 and 2 threads, the 13 synthetic cases and the 3 NEO_EPITOPES cases. All 18 are identical to the 2.1 jar's
+outputs, as before.
+
+### The version effect on the whole sample
+
+The pipeline ran both versions on the same STAR BAM:
+
+| | 2.0.1 | 2.1 (2.1-beta.5) |
+|---|---|---|
+| total fragments | 72.1 M | 22.9 M |
+| duplicate fragments | 49.3 M (68%) | 0 |
+| spliced / unspliced / alternative / chimeric shares | 0.234 / 0.370 / 0.371 / 0.019 | 0.317 / 0.312 / 0.340 / 0.045 |
+| spliced genes | 20,778 | 20,607 |
+| median GC ratio | 0.405 | 0.425 |
+| unfiltered alt-SJ rows | 80,460 | 141,562 |
+| retained intron rows | 124,664 | 127,083 |
+| fusions | 38,074 | 20,837 |
+| passing fusions | 629 | 391 |
+
+### oncoanalyser
+
+- **Selecting the mode:** for `--rna_aligner star`, the ISOFOX and NEO_ANNOTATE_FUSIONS steps should pass
+  `-isofox_version 2.0.1`, and export `ISOFOX_VERSION=2.0.1` so that `isofox -version` (in versions.yml) reports it.
+  A STAR BAM selects 2.0.1 by itself, but `-version` cannot see the BAM.
+- **NEO_ANNOTATE_FUSIONS:** the step passes `-tumor <dna id>`, which Java 2.0.1 rejects (its parser stops at an
+  unregistered option). Java 2.0.1 also reads NEO's file by `-sample`. The port accepts `-tumor` in 2.0.1 mode.
+- **`-excluded_regions`:** upstream's 2.0.1 release passed `-excluded_regions`; the fork's ISOFOX module, written for
+  2.1, does not. The port handles both.

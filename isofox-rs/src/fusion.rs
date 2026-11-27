@@ -234,6 +234,29 @@ impl FusionReadData {
         if !f.frag_type.is_junction_type() {
             return;
         }
+        if crate::version::v201() {
+            // ISOFOX 2.0.1: 10 bases each side of the junction, and no soft-clip bases
+            let jbl = JUNCTION_BASE_LENGTH as i32;
+            let pos = self.junction_positions[se];
+            if self.junction_orientations[se] == ORIENT_FWD {
+                let b = refg.base_string(self.chromosomes[se], pos - jbl + 1, pos + jbl);
+                if b.len() != 2 * JUNCTION_BASE_LENGTH {
+                    return;
+                }
+                self.junction_ref_bases[se] = b[..JUNCTION_BASE_LENGTH].to_string();
+                self.post_junction_ref_bases[se] = b[JUNCTION_BASE_LENGTH..].to_string();
+                self.junction_splice_bases[se] = b[JUNCTION_BASE_LENGTH..JUNCTION_BASE_LENGTH + 2].to_string();
+            } else {
+                let b = refg.base_string(self.chromosomes[se], pos - jbl, pos + jbl - 1);
+                if b.len() != 2 * JUNCTION_BASE_LENGTH {
+                    return;
+                }
+                self.junction_ref_bases[se] = b[JUNCTION_BASE_LENGTH..].to_string();
+                self.junction_splice_bases[se] = b[JUNCTION_BASE_LENGTH - 2..JUNCTION_BASE_LENGTH].to_string();
+                self.post_junction_ref_bases[se] = b[..JUNCTION_BASE_LENGTH].to_string();
+            }
+            return;
+        }
         let rbl = (JUNCTION_BASE_LENGTH * 2) as i32;
         let pos = self.junction_positions[se];
         let sc = if f.frag_type == FragType::MatchedJunction { f.soft_clip_bases(pos, self.junction_orientations[se]) } else { String::new() };
@@ -388,7 +411,8 @@ impl FusionReadData {
     fn can_add_discordant_fragment(&self, frags: &[FusionFragment], f: &FusionFragment, max_dist: i32) -> bool {
         let mut implied = f.reads[0].read_base_length * 2;
         let mut del_dup = true;
-        if f.reads.len() >= 2 {
+        // ISOFOX 2.0.1 checks every discordant fragment as a DEL or DUP one
+        if f.reads.len() >= 2 && !crate::version::v201() {
             let (r1, r2) = (&f.reads[0], &f.reads[1]);
             if r1.chromosome != r2.chromosome || r1.orientation == r2.orientation {
                 del_dup = false;
@@ -519,7 +543,8 @@ impl FusionReadData {
             d.chromosomes[fs] = self.chromosomes[si];
             d.junction_positions[fs] = self.junction_positions[si];
             d.junction_orientations[fs] = self.junction_orientations[si];
-            d.junction_types[fs] = self.junction_types[si];
+            // ISOFOX 2.0.1 keeps the junction types on the initial fragment
+            d.junction_types[fs] = if crate::version::v201() { initial.junction_types[si] } else { self.junction_types[si] };
             if let Some(g) = self.fusion_genes[fs] {
                 d.gene_ids[fs] = g.gene_id.clone();
                 d.gene_names[fs] = g.gene_name.clone();
@@ -786,7 +811,10 @@ const AF_UNKNOWN_TIER: f64 = 0.05;
 const LOCAL_FUSION_THRESHOLD: i32 = 1_000_000;
 
 fn is_short_local_fusion(f: &FusionData) -> bool {
-    f.chromosomes[0] == f.chromosomes[1] && f.junction_orientations[0] != f.junction_orientations[1] && (f.junction_positions[1] - f.junction_positions[0]).abs() < LOCAL_FUSION_THRESHOLD
+    // ISOFOX 2.0.1 does not require opposite orientations
+    f.chromosomes[0] == f.chromosomes[1]
+        && (crate::version::v201() || f.junction_orientations[0] != f.junction_orientations[1])
+        && (f.junction_positions[1] - f.junction_positions[0]).abs() < LOCAL_FUSION_THRESHOLD
 }
 
 fn has_known_splice_site(f: &FusionData) -> bool {
@@ -821,7 +849,9 @@ fn is_passing_fusion(f: &mut FusionData, known_type: MixedKnownType, has_known_s
         f.filter = FilterType::AlleleFrequency;
         return false;
     }
-    if f.supporting_fragments() < frags {
+    // ISOFOX 2.0.1 counts the realigned fragments too, not the discordant only
+    let support = if crate::version::v201() { f.total_fragments() } else { f.supporting_fragments() };
+    if support < frags {
         f.filter = FilterType::FragmentCount;
         return false;
     }
@@ -1080,6 +1110,7 @@ pub struct FusionFinder {
     pub local_fusion_positions: std::collections::HashSet<String>,
     pub hard_filtered_count: i32,
     pub excluded_filtered_count: i32,
+    pub duplicate_filtered_count: i32,
     pub outputs: Vec<FusionBatchOutput>,
 }
 
@@ -1101,6 +1132,7 @@ impl FusionFinder {
             local_fusion_positions: Default::default(),
             hard_filtered_count: 0,
             excluded_filtered_count: 0,
+            duplicate_filtered_count: 0,
             outputs: Vec::new(),
         }
     }
@@ -1115,8 +1147,14 @@ impl FusionFinder {
             return;
         }
         let mut b = Batch { frags: Vec::new(), all: Vec::new(), candidates: SeqHashMap::new(), fusions: Vec::new(), by_location: HashMap::new(), discordant: SeqHashMap::new() };
+        let v201 = crate::version::v201();
         for g in groups {
-            if g.reads.iter().any(|r| r.is_read_paired() && ctx.filters.skip_read_start(r.mate_chromosome, r.mate_pos_start)) {
+            // ISOFOX 2.0.1: a group with a duplicate read is dropped once complete (not all reads are marked)
+            if v201 && g.has_duplicate_read() {
+                self.duplicate_filtered_count += 1;
+                continue;
+            }
+            if g.reads.iter().any(|r| (v201 || r.is_read_paired()) && ctx.filters.skip_read_start(r.mate_chromosome, r.mate_pos_start)) {
                 self.excluded_filtered_count += 1;
                 continue;
             }
@@ -1177,9 +1215,14 @@ impl FusionFinder {
         self.next_id += 1;
         let mut fusion = FusionReadData::new(id, &b.frags, fi);
         fusion.set_junction_bases_all(&b.frags, refg);
-        fusion.check_homology_position_adjustment(&b.frags);
-        self.set_gene_data(ctx, refg, &mut fusion, &mut b.frags);
-        fusion.set_homology_offsets();
+        if crate::version::v201() {
+            fusion.set_homology_offsets();
+            self.set_gene_data_201(ctx, &mut fusion, &mut b.frags);
+        } else {
+            fusion.check_homology_position_adjustment(&b.frags);
+            self.set_gene_data(ctx, refg, &mut fusion, &mut b.frags);
+            fusion.set_homology_offsets();
+        }
         b.fusions.push(Some(fusion));
         let idx = b.fusions.len() - 1;
         b.candidates.get_mut(&loc).unwrap().push(idx);
@@ -1198,13 +1241,23 @@ impl FusionFinder {
         }
         let mut fusion = FusionReadData::new(0, &b.frags, fi);
         fusion.set_junction_bases_all(&b.frags, refg);
-        self.set_gene_data(ctx, refg, &mut fusion, &mut b.frags);
-        fusion.set_homology_offsets();
+        if crate::version::v201() {
+            fusion.set_homology_offsets();
+            self.set_gene_data_201(ctx, &mut fusion, &mut b.frags);
+        } else {
+            self.set_gene_data(ctx, refg, &mut fusion, &mut b.frags);
+            fusion.set_homology_offsets();
+        }
         if !fusion.has_viable_genes() {
             return false;
         }
         if !ctx.known.has_known_fusion(fusion.gene_name(FS_UP), fusion.gene_name(FS_DOWN)) {
             return false;
+        }
+        if crate::version::v201() {
+            // the fragment's own junction types, set by setGeneData
+            let jt = b.frags[fi].junction_types;
+            return jt[FS_UP] == JunctionType::Known || jt[FS_DOWN] == JunctionType::Known;
         }
         fusion.junction_types[FS_UP] == JunctionType::Known || fusion.junction_types[FS_DOWN] == JunctionType::Known
     }
@@ -1281,6 +1334,84 @@ impl FusionFinder {
             }
         }
         check_fusion_position_adjustments_vs_canonical(fusion, frags, refg);
+    }
+
+    /// setGeneData in ISOFOX 2.0.1: no junction position adjustments; the fusion keeps every transcript-exon
+    /// of the initial fragment; the fragment's junction types are set (KNOWN by the exon validation, then
+    /// CANONICAL by the splice motif)
+    fn set_gene_data_201(&mut self, ctx: &FusionContext, fusion: &mut FusionReadData, frags: &mut [FusionFragment]) {
+        let fi = fusion.initial;
+        let mut genes_by_pos: [Vec<&'static GeneData>; 2] = [Vec::new(), Vec::new()];
+        let mut valid_lists: [Vec<&'static TranscriptData>; 2] = [Vec::new(), Vec::new()];
+        for se in [SE_START, SE_END] {
+            let mut list: Vec<&'static TranscriptData> = Vec::new();
+            let mut splice_gene_ids: JavaHashSet<String> = JavaHashSet::new();
+            let refs = frags[fi].trans_exon_refs[se].clone();
+            for te in refs {
+                let Some(t) = ctx.trans_by_id.get(&te.trans_id).copied() else { continue };
+                if !list.iter().any(|x| std::ptr::eq(*x, t)) {
+                    list.push(t);
+                }
+                fusion.trans_exon_refs[se].push(TransExonRef::new(t, te.exon_rank));
+                splice_gene_ids.insert(t.gene_id.clone());
+            }
+            frags[fi].validate_transcript_exons(&list, se);
+            if !splice_gene_ids.is_empty() {
+                genes_by_pos[se] = splice_gene_ids.iter().filter_map(|g| ctx.cache.gene_data_by_id(g)).collect();
+                valid_lists[se] = list.iter().copied().filter(|t| frags[fi].trans_exon_refs[se].iter().any(|y| y.trans_id == t.trans_id)).collect();
+            }
+        }
+        if genes_by_pos[0].len() > 1 || genes_by_pos[1].len() > 1 {
+            let mut matched = false;
+            'outer: for g1 in genes_by_pos[0].clone() {
+                for g2 in genes_by_pos[1].clone() {
+                    if ctx.known.has_known_fusion(&g1.gene_name, &g2.gene_name) || ctx.known.has_known_fusion(&g2.gene_name, &g1.gene_name) {
+                        matched = true;
+                        genes_by_pos[0] = vec![g1];
+                        genes_by_pos[1] = vec![g2];
+                        break 'outer;
+                    }
+                }
+            }
+            if !matched {
+                for se in [SE_START, SE_END] {
+                    if genes_by_pos[se].len() > 1 {
+                        prioritise_known_fusion_gene(ctx.known, &mut genes_by_pos[se]);
+                    }
+                }
+            }
+        }
+        let orients = fusion.junction_orientations;
+        let mut found_both = false;
+        let mut found_one = false;
+        for se in [SE_START, SE_END] {
+            let up_i = se;
+            let down_i = switch_index(se);
+            let mut up: Vec<&'static GeneData> = genes_by_pos[up_i].iter().copied().filter(|g| g.strand == orients[up_i]).collect();
+            let mut down: Vec<&'static GeneData> = genes_by_pos[down_i].iter().copied().filter(|g| g.strand == -orients[down_i]).collect();
+            prioritise_longest_coding_fusion_gene(&mut up, &valid_lists[up_i]);
+            prioritise_longest_coding_fusion_gene(&mut down, &valid_lists[down_i]);
+            if !up.is_empty() && !down.is_empty() {
+                if found_both {
+                    fusion.incomplete = true;
+                    break;
+                }
+                found_both = true;
+                fusion.set_stream_data(&up, &down, se == SE_START);
+            } else if !found_both && !found_one && (!up.is_empty() || !down.is_empty()) {
+                found_one = true;
+                fusion.set_stream_data(&up, &down, se == SE_START);
+            }
+        }
+        // getGeneStrands: the genes' strands by position, when both genes are known
+        let strands = if fusion.has_viable_genes() {
+            let (up, down) = (fusion.fusion_genes[FS_UP].unwrap().strand, fusion.fusion_genes[FS_DOWN].unwrap().strand);
+            Some(if fusion.stream_indices[FS_UP] == SE_START { [up, down] } else { [down, up] })
+        } else {
+            None
+        };
+        let splice = fusion.junction_splice_bases.clone();
+        frags[fi].set_junction_types_201(strands, &splice);
     }
 
     fn reconcile_fusions(&mut self, b: &mut Batch) {
@@ -1420,6 +1551,9 @@ impl FusionFinder {
     }
 
     fn hard_filter_fusions(&mut self, ctx: &FusionContext, b: &mut Batch) {
+        if crate::version::v201() && ctx.min_hard_filter_frags <= 1 {
+            return;
+        }
         for key in b.candidates.keys_vec() {
             let mut list = b.candidates.get(&key).cloned().unwrap();
             let mut i = 0;
@@ -1438,6 +1572,21 @@ impl FusionFinder {
     fn hard_filter_fusion(&self, ctx: &FusionContext, b: &Batch, fu: usize) -> bool {
         let f = b.fusions[fu].as_ref().unwrap();
         let (up, down) = (f.gene_name(FS_UP), f.gene_name(FS_DOWN));
+        if crate::version::v201() {
+            // ISOFOX 2.0.1: no map quality filter; all fragments count; the initial fragment's junction types
+            if ctx.min_hard_filter_frags <= 1 {
+                return false;
+            }
+            let total: i32 = f.frag_counts.iter().map(|x| x.1).sum();
+            if total >= ctx.min_hard_filter_frags {
+                return false;
+            }
+            if ctx.known.has_known_fusion(up, down) {
+                return false;
+            }
+            let jt = b.frags[f.initial].junction_types;
+            return jt[SE_START] != JunctionType::Known && jt[SE_END] != JunctionType::Known;
+        }
         let known_pair = ctx.known.has_known_fusion(up, down);
         let promiscuous = !known_pair && (ctx.known.has_promiscuous_five_gene(up) || ctx.known.has_promiscuous_three_gene(down));
         if !known_pair && !promiscuous {

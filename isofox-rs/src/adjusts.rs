@@ -322,6 +322,11 @@ pub fn calc_fragment_sizes(
 
     while current < genes.len() {
         current = find_next_overlapping_genes(genes, current, &mut overlapping);
+        let v201 = crate::version::v201();
+        // ISOFOX 2.0.1 skips the enriched genes
+        if v201 && overlapping.iter().any(|g| config.filters.enriched_gene_ids.iter().any(|x| *x == g.gene_id)) {
+            continue;
+        }
         trans_list.clear();
         tracker.clear();
         let mut range = [0, 0];
@@ -332,11 +337,15 @@ pub fn calc_fragment_sizes(
                 trans_list.extend(t.iter());
             }
         }
-        if !has_specific && (trans_list.is_empty() || trans_list.len() > MAX_GENE_TRANS) {
+        if (v201 || !has_specific) && (trans_list.is_empty() || trans_list.len() > MAX_GENE_TRANS) {
             continue;
         }
         let gene_length = range[1] - range[0];
         if !(MIN_GENE_LENGTH..=MAX_GENE_LENGTH).contains(&gene_length) {
+            continue;
+        }
+        // ISOFOX 2.0.1 skips genes overlapping an excluded region
+        if v201 && !config.filters.find_excluded_regions(chromosome, range[0], range[1]).is_empty() {
             continue;
         }
 
@@ -394,6 +403,10 @@ fn inferred_insert_size_abs(rec: &bam::Record) -> i32 {
 
 fn is_candidate_record(rec: &bam::Record, config: &IsofoxConfig, max_read_length: i32, range: [i32; 2], trans: &[&TranscriptData]) -> bool {
     let paired = rec.is_paired();
+    // ISOFOX 2.0.1 compares the mate's chromosome even for an unpaired read ("*"), so never takes one
+    if !paired && crate::version::v201() {
+        return false;
+    }
     let isize = inferred_insert_size_abs(rec);
     if isize > MAX_FRAGMENT_LENGTH {
         return false;

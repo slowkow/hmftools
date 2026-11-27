@@ -461,6 +461,9 @@ impl<'a> AltSpliceJunctionFinder<'a> {
         let coords = &read.mapped_coords.alignments;
         if read.mapped_coords.inferred(SE_START) {
             sj = [coords[1].end, coords[2].start];
+        } else if crate::version::v201() {
+            // ISOFOX 2.0.1 takes the first gap, known splice site or not
+            sj = [coords[0].end, coords[1].start];
         } else {
             let entries = read.mapped_regions.entries();
             for i in 0..coords.len().saturating_sub(1) {
@@ -490,6 +493,10 @@ impl<'a> AltSpliceJunctionFinder<'a> {
     fn check_junction_homology(&self, gc: &GeneCollection, refg: &mut RefSource, sj: &mut [i32; 2], read: &Read) {
         let regions = &gc.exon_regions;
         let keys = read.mapped_regions.keys();
+        // ISOFOX 2.0.1 only considers a junction whose read meets no exon boundary
+        if crate::version::v201() && read.mapped_regions.values().iter().any(|m| *m == RegionMatchType::ExonBoundary) {
+            return;
+        }
         let mut matched: Option<Vec<usize>> = None;
         let mut matches_both = false;
         'outer: for se in [SE_START, SE_END] {
@@ -762,6 +769,10 @@ fn is_candidate(read: &Read) -> bool {
     if read.trans_class.values_unordered().any(|t| *t == TransMatchType::SpliceJunction) {
         return false;
     }
+    if crate::version::v201() {
+        // the mapped sections with any inferred ones
+        return read.mapped_coords.alignment_count() != 1;
+    }
     read.mapped_coords.original_alignment_count() != 1
 }
 
@@ -928,6 +939,15 @@ impl RetainedIntron {
 
 pub const RETAINED_INTRON_HEADER: &str = "GeneId\tGeneName\tChromosome\tStrand\tPosition\tType\tFragCount\tSplicedFragCount\tTotalDepth\tTranscriptInfo";
 
+/// ISOFOX 2.0.1 writes the retained introns as CSV (retained_intron.csv)
+pub fn retained_intron_file_and_header() -> (&'static str, String) {
+    if crate::version::v201() {
+        ("retained_intron.csv", RETAINED_INTRON_HEADER.replace('\t', ","))
+    } else {
+        ("retained_intron.tsv", RETAINED_INTRON_HEADER.to_string())
+    }
+}
+
 #[derive(Default)]
 pub struct RetainedIntronFinder {
     pub enabled: bool,
@@ -997,7 +1017,7 @@ impl RetainedIntronFinder {
                     continue;
                 }
                 let depth = ri.depth.max(ri.fragment_count);
-                out.push(format!(
+                let line = format!(
                     "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                     g.gene.gene_id,
                     g.gene.gene_name,
@@ -1009,7 +1029,8 @@ impl RetainedIntronFinder {
                     ri.spliced_fragment_count,
                     depth,
                     ri.transcript_info
-                ));
+                );
+                out.push(if crate::version::v201() { line.replace('\t', ",") } else { line });
             }
         }
     }

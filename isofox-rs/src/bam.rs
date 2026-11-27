@@ -93,6 +93,27 @@ impl BamReader {
     }
 }
 
+/// the header text of a BAM (or CRAM), None if it cannot be opened
+pub fn header_text(path: &str) -> Option<String> {
+    let reader = bam::Reader::from_path(path).ok()?;
+    Some(String::from_utf8_lossy(reader.header().as_bytes()).to_string())
+}
+
+/// an integer tag's value as htsjdk's getAttribute gives it, for ISOFOX 2.0.1's secondary read ids
+pub fn aux_int_string(rec: &bam::Record, tag: &[u8]) -> String {
+    match rec.aux(tag) {
+        Ok(Aux::I8(v)) => v.to_string(),
+        Ok(Aux::U8(v)) => v.to_string(),
+        Ok(Aux::I16(v)) => v.to_string(),
+        Ok(Aux::U16(v)) => v.to_string(),
+        Ok(Aux::I32(v)) => v.to_string(),
+        Ok(Aux::U32(v)) => v.to_string(),
+        Ok(Aux::String(s)) => s.to_string(),
+        Ok(Aux::Char(c)) => (c as char).to_string(),
+        _ => "null".to_string(),
+    }
+}
+
 pub fn aux_string(rec: &bam::Record, tag: &[u8]) -> Option<String> {
     match rec.aux(tag) {
         Ok(Aux::String(s)) => Some(s.to_string()),
@@ -125,8 +146,17 @@ pub fn to_read(rec: &bam::Record) -> Read {
     let sa = aux_string(rec, b"SA");
     let xa = aux_string(rec, b"XA");
     let cr = aux_string(rec, b"CR");
+    // ISOFOX 2.0.1 (Read.from) names a secondary alignment <read name>_<HI tag>, so that a secondary pair
+    // (STAR gives the mates the same HI) forms its own fragment
+    let id201;
+    let id = if crate::version::v201() && rec.is_secondary() {
+        id201 = format!("{}_{}", record_name(rec), aux_int_string(rec, b"HI"));
+        id201.as_str()
+    } else {
+        record_name(rec)
+    };
     Read::new(
-        record_name(rec),
+        id,
         contig_name(rec.tid()),
         rec_start(rec),
         rec.flags(),

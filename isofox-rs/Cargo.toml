@@ -2,7 +2,7 @@
 name = "isofox-rs"
 version = "0.1.0"
 edition = "2024"
-description = "A port of hmftools ISOFOX 2.1 (RNA-seq transcript expression, novel splice junctions, retained introns and fusions) to Rust"
+description = "A port of hmftools ISOFOX 2.1 and 2.0.1 (RNA-seq transcript expression, novel splice junctions, retained introns and fusions) to Rust"
 
 [[bin]]
 name = "isofox-rs"

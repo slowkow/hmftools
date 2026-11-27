@@ -139,7 +139,14 @@ pub fn process_overlapping_regions(read: &mut Read, regions: &[RegionReadData], 
             trans_match = if trans_regions.len() > 1 { TransMatchType::SpliceJunction } else { TransMatchType::Exonic };
         }
 
-        if valid_transcript_type(trans_match) && read.contains_soft_clipping() && !read.likely_adapter_soft_clipping() {
+        if valid_transcript_type(trans_match) && read.contains_soft_clipping() && !read.likely_adapter_soft_clipping() && crate::version::v201() {
+            // ISOFOX 2.0.1: a soft clip not matched to the next exon makes the transcript ALT, left side first
+            if read.is_left_clipped() && !read.mapped_coords.is_soft_clip_region_matched(SE_START) {
+                trans_match = TransMatchType::Alt;
+            } else if read.is_right_clipped() && !read.mapped_coords.is_soft_clip_region_matched(SE_END) {
+                trans_match = TransMatchType::Alt;
+            }
+        } else if valid_transcript_type(trans_match) && read.contains_soft_clipping() && !read.likely_adapter_soft_clipping() {
             let side = if read.is_left_clipped() { SE_START } else { SE_END };
             if !read.mapped_coords.is_soft_clip_region_matched(side) && !short_clip_within_exon(read, side, regions, &trans_regions) {
                 trans_match = TransMatchType::Alt;

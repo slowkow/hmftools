@@ -455,7 +455,13 @@ fn process_fragment_reads(neo: &mut NeoData, group: &[usize], store: &[NeoRead],
 /// NeoEpitopeReader.calcFragmentSupport
 pub fn calc_fragment_support(config: &IsofoxConfig, cache: &'static EnsemblDataCache) -> Result<()> {
     let neo_dir = config.neo_dir.clone().unwrap_or_default();
-    let tumor = config.dna_tumor_id.clone().unwrap_or_else(|| "null".to_string());
+    // ISOFOX 2.1 names NEO's file by -tumor (the DNA sample). ISOFOX 2.0.1 names it by -sample and has no
+    // -tumor option; in its mode the port takes -tumor where given (as oncoanalyser passes it), else -sample.
+    let tumor = if crate::version::v201() {
+        config.dna_tumor_id.clone().unwrap_or_else(|| config.sample_id.clone())
+    } else {
+        config.dna_tumor_id.clone().unwrap_or_else(|| "null".to_string())
+    };
     let filename = format!("{}{}.neo.neo_data.tsv", hmf_common::config_builder::check_add_dir_separator(&neo_dir), tumor);
     let mut neos: Vec<NeoData> = Vec::new();
     match read_neo_epitope_file(&filename) {

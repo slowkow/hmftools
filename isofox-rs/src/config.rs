@@ -1,4 +1,5 @@
-//! IsofoxConfig, FusionConfig and GeneRegionFilters: the command line as Java ISOFOX 2.1 registers and reads it.
+//! IsofoxConfig, FusionConfig and GeneRegionFilters: the command line as Java ISOFOX 2.1 registers and reads it,
+//! or ISOFOX 2.0.1 in its mode (version.rs).
 
 use anyhow::{anyhow, bail, Context, Result};
 use hmf_common::config_builder::ConfigBuilder;
@@ -10,11 +11,16 @@ use hmf_common::{info, warn};
 use std::collections::HashMap;
 
 pub const APP_NAME: &str = "Isofox";
-pub const VERSION: &str = "2.1";
 
 pub const DEFAULT_MAX_FRAGMENT_SIZE: i32 = 550;
 pub const DEFAULT_FRAG_LENGTH_MIN_COUNT: i32 = 1_000_000;
 pub const DEFAULT_SINGLE_MAP_QUALITY: i32 = 60;
+/// ISOFOX 2.0.1's default: STAR gives uniquely mapped reads a map quality of 255
+pub const DEFAULT_SINGLE_MAP_QUALITY_201: i32 = 255;
+/// ISOFOX 2.0.1: multi-mapped fragments are given map quals of 3 or lower
+pub const MULTI_MAP_QUALITY_THRESHOLD: u8 = 3;
+/// ISOFOX 2.0.1: the buffer around each enriched gene excluded from the BAM slices
+pub const ENRICHED_GENE_BUFFER: i32 = 1000;
 pub const DEFAULT_EXPECTED_RATE_LENGTHS: &str = "50-1;75-1;100-1;125-1;150-1;200-1;250-1;300-1;400-1;550-1";
 pub const DEFAULT_HARD_FILTER_MIN_FRAGS: i32 = 2;
 
@@ -36,6 +42,8 @@ pub enum IsofoxFunction {
     Fusions,
     Statistics,
     NeoEpitopes,
+    /// ISOFOX 2.0.1 only (BamReadCounter); not ported
+    ReadCounts,
 }
 
 impl IsofoxFunction {
@@ -47,9 +55,13 @@ impl IsofoxFunction {
             IsofoxFunction::Fusions => "FUSIONS",
             IsofoxFunction::Statistics => "STATISTICS",
             IsofoxFunction::NeoEpitopes => "NEO_EPITOPES",
+            IsofoxFunction::ReadCounts => "READ_COUNTS",
         }
     }
     pub fn value_of(s: &str) -> Result<Self> {
+        if s == "READ_COUNTS" && crate::version::v201() {
+            return Ok(IsofoxFunction::ReadCounts);
+        }
         Ok(match s {
             "TRANSCRIPT_COUNTS" => IsofoxFunction::TranscriptCounts,
             "ALT_SPLICE_JUNCTIONS" => IsofoxFunction::AltSpliceJunctions,
@@ -75,10 +87,20 @@ pub enum WriteType {
     TransCombo,
     GcRatio,
     MultiMapLoci,
+    /// ISOFOX 2.0.1 only
+    ChimericRead,
 }
 
 impl WriteType {
     pub fn value_of(s: &str) -> Result<Self> {
+        if crate::version::v201() {
+            // ISOFOX 2.0.1's WriteType: CHIMERIC_READ in place of FUSION_FRAGMENT, and no MULTI_MAP_LOCI
+            match s {
+                "CHIMERIC_READ" => return Ok(WriteType::ChimericRead),
+                "FUSION_FRAGMENT" | "MULTI_MAP_LOCI" => bail!("No enum constant com.hartwig.hmftools.isofox.WriteType.{s}"),
+                _ => {}
+            }
+        }
         Ok(match s {
             "EXON" => WriteType::Exon,
             "SPLICE_JUNC" => WriteType::SpliceJunc,
@@ -106,6 +128,18 @@ impl WriteType {
         "TRANS_COMBO",
         "GC_RATIO",
         "MULTI_MAP_LOCI",
+    ];
+    pub const ALL_201: [&'static str; 10] = [
+        "EXON",
+        "SPLICE_JUNC",
+        "FRAG_LENGTH",
+        "FRAG_LENGTH_BY_GENE",
+        "READ",
+        "CHIMERIC_READ",
+        "CHIMERIC_POSITION_DATA",
+        "SPLICE_SITE",
+        "TRANS_COMBO",
+        "GC_RATIO",
     ];
 }
 
@@ -135,6 +169,16 @@ pub fn immune_regions(version: RefGenomeVersion) -> Vec<ChrBaseRegion> {
     }
 }
 
+/// the RN7SL and RN7SK genes ISOFOX 2.0.1 treats as enriched (IsofoxConstants.populateEnrichedGeneIds)
+pub fn default_enriched_gene_ids(version: RefGenomeVersion) -> Vec<String> {
+    let ids: [&str; 6] = if version == RefGenomeVersion::V38 {
+        ["ENSG00000276168", "ENSG00000274012", "ENSG00000278771", "ENSG00000263740", "ENSG00000283293", "ENSG00000265735"]
+    } else {
+        ["ENSG00000265150", "ENSG00000258486", "ENSG00000202198", "ENSG00000266037", "ENSG00000263740", "ENSG00000265735"]
+    };
+    ids.iter().map(|s| s.to_string()).collect()
+}
+
 /// GeneRegionFilters
 #[derive(Clone, Debug, Default)]
 pub struct GeneRegionFilters {
@@ -142,6 +186,11 @@ pub struct GeneRegionFilters {
     pub restricted_gene_ids: Vec<String>,
     pub immune_gene_regions: Vec<ChrBaseRegion>,
     has_specific_regions: bool,
+    /// ISOFOX 2.0.1: genes counted but not otherwise processed (EnrichedGeneIds)
+    pub enriched_gene_ids: Vec<String>,
+    /// ISOFOX 2.0.1: regions whose reads are skipped, from `-excluded_regions` plus each enriched gene with a
+    /// 1 kb buffer (ExcludedRegions), sorted by start per chromosome
+    pub excluded_regions: HashMap<String, Vec<hmf_common::regions::BaseRegion>>,
 }
 
 const READ_END_BUFFER: i32 = 150;
@@ -158,6 +207,24 @@ impl GeneRegionFilters {
         if !HumanChromosome::contains(chromosome) {
             return true;
         }
+        if crate::version::v201() {
+            // ISOFOX 2.0.1 applies the specific regions to mates and supplementaries too, and skips reads
+            // overlapping an excluded region
+            if self.has_specific_regions {
+                if self.specific_regions.exclude_chromosome(chromosome) {
+                    return true;
+                }
+                if !self.specific_regions.regions.iter().any(|r| r.overlaps(chromosome, read_start, read_end)) {
+                    return true;
+                }
+            }
+            if let Some(ex) = self.excluded_regions.get(chromosome) {
+                if ex.iter().any(|x| positions_overlap(x.start, x.end, read_start, read_end)) {
+                    return true;
+                }
+            }
+            return false;
+        }
         if !is_mate_or_supp && self.has_specific_regions {
             if self.specific_regions.exclude_chromosome(chromosome) {
                 return true;
@@ -168,6 +235,36 @@ impl GeneRegionFilters {
         }
         false
     }
+
+    /// findExcludedRegions (2.0.1): the excluded regions overlapping a region, in sorted order
+    pub fn find_excluded_regions(&self, chromosome: &str, start: i32, end: i32) -> Vec<hmf_common::regions::BaseRegion> {
+        match self.excluded_regions.get(chromosome) {
+            Some(l) => l.iter().copied().filter(|x| positions_overlap(x.start, x.end, start, end)).collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// buildGeneRegions (2.0.1): each enriched gene, with a buffer, becomes an excluded region
+    pub fn build_gene_regions(&mut self, cache: &hmf_common::ensembl::EnsemblDataCache) {
+        for id in self.enriched_gene_ids.clone() {
+            let Some(g) = cache.gene_data_by_id(&id) else {
+                warn!("enriched gene ID({}) missing from Ensembl cache", id);
+                continue;
+            };
+            self.excluded_regions
+                .entry(g.chromosome.clone())
+                .or_default()
+                .push(hmf_common::regions::BaseRegion::new(g.gene_start - ENRICHED_GENE_BUFFER, g.gene_end + ENRICHED_GENE_BUFFER));
+        }
+        // Collections.sort: by start (BaseRegion.compareTo), stable
+        for l in self.excluded_regions.values_mut() {
+            l.sort_by_key(|r| r.start);
+        }
+    }
+}
+
+fn positions_overlap(s1: i32, e1: i32, s2: i32, e2: i32) -> bool {
+    s1 <= e2 && e1 >= s2
 }
 
 /// FusionConfig
@@ -257,14 +354,16 @@ pub fn register(cb: &mut ConfigBuilder) {
     cb.add_integer("frag_length_min_count", "Fragment length measurement - min read fragments required", DEFAULT_FRAG_LENGTH_MIN_COUNT);
     cb.add_flag("frag_length_by_gene", "Write fragment lengths by gene");
     cb.add_path("bam_file", true, "RNA BAM file location");
-    cb.add_str_default("write_type", false, &format!("Write types: {}", WriteType::ALL.join(", ")), "");
+    let write_types = if crate::version::v201() { WriteType::ALL_201.join(", ") } else { WriteType::ALL.join(", ") };
+    cb.add_str_default("write_type", false, &format!("Write types: {write_types}"), "");
     cb.add_path("exp_counts_file", false, "File with generated expected expression rates per transcript");
     cb.add_path("exp_gc_ratios_file", false, "File with generated expected GC ratios per transcript");
     cb.add_path("neo_dir", false, "Path to Neo output");
     cb.add_str("tumor", false, "DNA tumor sample ID, used to read neoepitope file for annotation");
     cb.add_path("panel_tpm_norm_file", false, "Panel TPM normalisation file");
     cb.add_integer("read_length", "Sample sequencing read length, if 0 then is inferred from reads", 0);
-    cb.add_integer("single_map_qual", "Map quality for reads mapped to a single location", DEFAULT_SINGLE_MAP_QUALITY);
+    let v201 = crate::version::v201();
+    cb.add_integer("single_map_qual", "Map quality for reads mapped to a single location", if v201 { DEFAULT_SINGLE_MAP_QUALITY_201 } else { DEFAULT_SINGLE_MAP_QUALITY });
     cb.add_str_default(
         "exp_rate_frag_lengths",
         false,
@@ -278,7 +377,15 @@ pub fn register(cb: &mut ConfigBuilder) {
     cb.add_path("gene_id_file", false, "Restricted set of Gene IDs in CSV file");
     cb.add_str("specific_chr", false, "Optional: list of chromosomes separated by ;");
     cb.add_str("specific_regions", false, "Optional: list of regions in format chromosome:positionStart-positionEnd, separated by ;");
+    if v201 {
+        cb.add_str("enriched_gene_ids", false, "List of geneIds to treat as enriched");
+        cb.add_path("excluded_regions", false, "List of excluded regions");
+    }
     // FusionConfig
+    if v201 {
+        cb.add_flag("write_chimeric_reads", "Write chimeric read data");
+        cb.add_flag("write_chimeric_frags", "Write chimeric fragment data");
+    }
     cb.add_flag("fusion_skip_non_genic", "Skip non-genic fusion fragments");
     cb.add_flag("fusion_write_chimeric_only", "Write chimeric reads but no other fusion processing");
     cb.add_path("known_fusion_file", false, "Known fusion file");
@@ -353,6 +460,22 @@ impl IsofoxConfig {
             filters.restricted_gene_ids = load_gene_ids_file(&file)?;
             if !filters.restricted_gene_ids.is_empty() {
                 info!("file({}) loaded {} restricted genes", file, filters.restricted_gene_ids.len());
+            }
+        }
+        if crate::version::v201() {
+            filters.enriched_gene_ids = match cb.value("enriched_gene_ids") {
+                Some(v) if cb.has_value("enriched_gene_ids") => v.split(';').map(|s| s.to_string()).collect(),
+                _ => default_enriched_gene_ids(ref_genome_version),
+            };
+            if let Some(file) = cb.value("excluded_regions") {
+                let regions = hmf_common::regions::load_chr_base_regions(&file, false)?;
+                for (chr, list) in regions.iter_unordered() {
+                    filters.excluded_regions.insert(chr.clone(), list.clone());
+                }
+                info!("file({}) loaded {} excluded regions", file, filters.excluded_regions.len());
+            }
+            if cb.has_flag("write_chimeric_reads") || cb.has_flag("write_chimeric_frags") {
+                bail!("-write_chimeric_reads and -write_chimeric_frags (ISOFOX 2.0.1 debug output) are not ported");
             }
         }
         filters.specific_regions = SpecificRegions::from_java(cb.value("specific_regions").as_deref(), cb.value("specific_chr").as_deref())?;

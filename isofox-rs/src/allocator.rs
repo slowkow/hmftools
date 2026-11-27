@@ -22,28 +22,32 @@ use std::collections::{HashMap, HashSet};
 const NON_GENIC_BASE_DEPTH_WIDTH: i32 = 250_000;
 
 pub struct FragmentAllocator<'a> {
-    config: &'a IsofoxConfig,
-    reader: Option<BamReader>,
-    filter: SliceFilter,
+    pub(crate) config: &'a IsofoxConfig,
+    pub(crate) reader: Option<BamReader>,
+    pub(crate) filter: SliceFilter,
     pub reads: Vec<Read>,
-    tracker: SeqHashMap<String, usize>,
-    gene_read_count: i32,
+    pub(crate) tracker: SeqHashMap<String, usize>,
+    pub(crate) gene_read_count: i32,
     pub total_bam_read_count: i32,
-    valid_read_start: [i32; 2],
+    pub(crate) valid_read_start: [i32; 2],
     pub base_depth: BaseDepth,
-    run_fusions: bool,
-    fusions_only: bool,
-    stats_only: bool,
-    expression_enabled: bool,
+    pub(crate) run_fusions: bool,
+    pub(crate) fusions_only: bool,
+    pub(crate) stats_only: bool,
+    pub(crate) expression_enabled: bool,
     pub gc_ratio_counts: Option<GcRatioCounts>,
     pub gene_gc_ratio_counts: Option<GcRatioCounts>,
     pub trans_combo_data: Vec<CategoryCountsData>,
     pub chimeric: ChimericReadTracker,
     pub alt_sj: AltSpliceJunctionFinder<'a>,
     pub retained_introns: RetainedIntronFinder,
-    immune: Vec<ChrBaseRegion>,
-    known_splice_sites: &'a HashMap<String, HashSet<i32>>,
-    halted: bool,
+    pub(crate) immune: Vec<ChrBaseRegion>,
+    pub(crate) known_splice_sites: &'a HashMap<String, HashSet<i32>>,
+    pub(crate) halted: bool,
+    /// ISOFOX 2.0.1: the gene collection's fragments in its enriched gene's region
+    pub(crate) enriched_gene_fragments: i64,
+    /// a failure Java would end the run with (an exception in a chromosome task)
+    pub(crate) failure: Option<String>,
 }
 
 impl<'a> FragmentAllocator<'a> {
@@ -61,7 +65,11 @@ impl<'a> FragmentAllocator<'a> {
         Ok(FragmentAllocator {
             config,
             reader,
-            filter: SliceFilter { min_map_quality: 0, keep_duplicates: false, keep_supplementaries: keep_supps, keep_secondaries: false },
+            filter: if crate::version::v201() {
+                crate::allocator201::slice_filter_201(config)
+            } else {
+                SliceFilter { min_map_quality: 0, keep_duplicates: false, keep_supplementaries: keep_supps, keep_secondaries: false }
+            },
             reads: Vec::new(),
             tracker: SeqHashMap::new(),
             gene_read_count: 0,
@@ -81,6 +89,8 @@ impl<'a> FragmentAllocator<'a> {
             immune: config.filters.immune_gene_regions.clone(),
             known_splice_sites,
             halted: false,
+            enriched_gene_fragments: 0,
+            failure: None,
         })
     }
 
@@ -93,7 +103,7 @@ impl<'a> FragmentAllocator<'a> {
         self.reads.clear();
     }
 
-    fn set_expression_gene_data(&mut self) {
+    pub(crate) fn set_expression_gene_data(&mut self) {
         if let Some(g) = &mut self.gene_gc_ratio_counts {
             g.clear_counts();
         }
@@ -102,6 +112,9 @@ impl<'a> FragmentAllocator<'a> {
 
     /// processBam
     pub fn process_bam(&mut self, gc: &mut GeneCollection, region: [i32; 2], refg: &mut RefSource) -> Result<()> {
+        if crate::version::v201() {
+            return self.process_bam_201(gc, region, refg);
+        }
         self.clear_cache();
         self.gene_read_count = 0;
         let depth_range = [region[0].max(gc.region_bounds[0] - NON_GENIC_BASE_DEPTH_WIDTH), region[1].min(gc.region_bounds[1] + NON_GENIC_BASE_DEPTH_WIDTH)];
@@ -205,7 +218,7 @@ impl<'a> FragmentAllocator<'a> {
         }
     }
 
-    fn mark_gene_data_regions(&mut self, ri: usize, gc: &GeneCollection) {
+    pub(crate) fn mark_gene_data_regions(&mut self, ri: usize, gc: &GeneCollection) {
         let overlapping = find_overlapping_regions(&gc.exon_regions, None, &self.reads[ri]);
         if !overlapping.is_empty() {
             process_overlapping_regions(&mut self.reads[ri], &gc.exon_regions, &overlapping);
@@ -224,11 +237,11 @@ impl<'a> FragmentAllocator<'a> {
         self.immune = immune;
     }
 
-    fn frag_reads(&self, frag: &[usize]) -> Vec<&Read> {
+    pub(crate) fn frag_reads(&self, frag: &[usize]) -> Vec<&Read> {
         frag.iter().map(|r| &self.reads[*r]).collect()
     }
 
-    fn frag_reads_mut(&mut self, frag: &[usize]) -> Vec<&mut Read> {
+    pub(crate) fn frag_reads_mut(&mut self, frag: &[usize]) -> Vec<&mut Read> {
         if frag.len() == 1 {
             return vec![&mut self.reads[frag[0]]];
         }
@@ -236,7 +249,7 @@ impl<'a> FragmentAllocator<'a> {
         vec![a, b]
     }
 
-    fn two_reads(&mut self, a: usize, b: usize) -> (&mut Read, &mut Read) {
+    pub(crate) fn two_reads(&mut self, a: usize, b: usize) -> (&mut Read, &mut Read) {
         assert!(a != b);
         if a < b {
             let (x, y) = self.reads.split_at_mut(b);
@@ -421,7 +434,7 @@ impl<'a> FragmentAllocator<'a> {
     }
 
 
-    fn find_gene_strand(&self, ri: usize, gc: &GeneCollection, transcripts: &[i32]) -> Option<bool> {
+    pub(crate) fn find_gene_strand(&self, ri: usize, gc: &GeneCollection, transcripts: &[i32]) -> Option<bool> {
         let keys = self.reads[ri].mapped_regions.keys();
         for &t in transcripts {
             for &reg in &keys {
@@ -438,7 +451,7 @@ impl<'a> FragmentAllocator<'a> {
 
 
     /// ExpressionReadTracker.processValidTranscript
-    fn process_valid_transcript(&self, t: i32, frag: &[usize], gc: &mut GeneCollection, unique: bool) {
+    pub(crate) fn process_valid_transcript(&self, t: i32, frag: &[usize], gc: &mut GeneCollection, unique: bool) {
         let mut processed: Vec<usize> = Vec::new();
         for &ri in frag {
             let read = &self.reads[ri];
@@ -476,7 +489,7 @@ impl<'a> FragmentAllocator<'a> {
     }
 
     /// ExpressionReadTracker.getCategoryCountsData: the index of the category
-    fn category_counts(&mut self, transcripts: &[i32], genes: &[String]) -> usize {
+    pub(crate) fn category_counts(&mut self, transcripts: &[i32], genes: &[String]) -> usize {
         let gene_refs: Vec<&str> = genes.iter().map(|s| s.as_str()).collect();
         if let Some(i) = self.trans_combo_data.iter().position(|c| c.matches(transcripts, &gene_refs)) {
             return i;
@@ -533,7 +546,7 @@ impl<'a> FragmentAllocator<'a> {
         self.process_chimeric_novel_junctions(gc, refg);
     }
 
-    fn process_chimeric_novel_junctions(&mut self, gc: &mut GeneCollection, refg: &mut RefSource) {
+    pub(crate) fn process_chimeric_novel_junctions(&mut self, gc: &mut GeneCollection, refg: &mut RefSource) {
         if !self.alt_sj.enabled || self.chimeric.local_chimeric_reads.is_empty() {
             return;
         }

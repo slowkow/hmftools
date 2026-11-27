@@ -121,13 +121,25 @@ impl FusionRead {
 
     fn extract_read_trans_exon_refs(&mut self, read: &Read, regions: &[RegionReadData]) {
         if !read.mapped_regions.is_empty() {
+            let v201 = crate::version::v201();
             for (ri, mt) in read.mapped_regions.entries() {
-                if !possibly_exonic(mt) && possibly_exonic(self.region_match_type) {
-                    continue;
-                }
-                if possibly_exonic(mt) && !possibly_exonic(self.region_match_type) {
-                    self.region_match_type = mt;
-                    self.trans_exon_refs.clear();
+                if v201 {
+                    // ISOFOX 2.0.1 keeps the regions of the best match rank
+                    if mt.match_rank() < self.region_match_type.match_rank() {
+                        continue;
+                    }
+                    if mt.match_rank() > self.region_match_type.match_rank() {
+                        self.region_match_type = mt;
+                        self.trans_exon_refs.clear();
+                    }
+                } else {
+                    if !possibly_exonic(mt) && possibly_exonic(self.region_match_type) {
+                        continue;
+                    }
+                    if possibly_exonic(mt) && !possibly_exonic(self.region_match_type) {
+                        self.region_match_type = mt;
+                        self.trans_exon_refs.clear();
+                    }
                 }
                 let refs: Vec<FusionTransExon> = regions[ri].trans_exon_refs.iter().map(|t| FusionTransExon { trans_id: t.trans_id, exon_rank: t.exon_rank }).collect();
                 merge_unique(&mut self.trans_exon_refs, &refs);
@@ -169,6 +181,16 @@ impl FusionRead {
     }
     pub fn is_mate_unmapped(&self) -> bool {
         self.flags & FLAG_MATE_UNMAPPED != 0
+    }
+    pub fn is_duplicate(&self) -> bool {
+        self.flags & crate::read::FLAG_DUPLICATE != 0
+    }
+    /// hasRealignableSoftClip(read, se, checkMax) in ISOFOX 2.0.1
+    pub fn has_realignable_soft_clip_201(&self, se: usize, check_max: bool) -> bool {
+        above_threshold(self.soft_clip_lengths[se]) && (!check_max || self.soft_clip_lengths[se] <= crate::chimeric::REALIGN_MAX_SOFT_CLIP_BASE_LENGTH_201)
+    }
+    pub fn is_realigned_fragment_candidate_201(&self) -> bool {
+        self.has_realignable_soft_clip_201(SE_START, true) || self.has_realignable_soft_clip_201(SE_END, true)
     }
     pub fn trans_exon_refs(&self, se: usize) -> Option<&Vec<FusionTransExon>> {
         if self.spans_gene_collections() {
@@ -316,9 +338,13 @@ impl FusionReadGroup {
     pub fn has_supp_alignment(&self) -> bool {
         self.reads.iter().any(|r| r.has_supp_alignment)
     }
+    pub fn has_duplicate_read(&self) -> bool {
+        self.reads.iter().any(|r| r.is_duplicate())
+    }
     pub fn find_other_chromosome(&self, chromosome: &str) -> Option<String> {
+        let v201 = crate::version::v201();
         for r in &self.reads {
-            if r.is_read_paired() && r.mate_chromosome != chromosome {
+            if (v201 || r.is_read_paired()) && r.mate_chromosome != chromosome {
                 return Some(r.mate_chromosome.to_string());
             }
             if let Some(s) = &r.supp_data {
@@ -328,6 +354,12 @@ impl FusionReadGroup {
         None
     }
     fn group_complete(&self) -> bool {
+        if crate::version::v201() && crate::compat::java("IF16") {
+            // ISOFOX 2.0.1: three reads, or two without a supplementary alignment, so a fragment with two
+            // supplementary alignments (four reads) never completes (IF16); corrected, the reads are counted
+            // as 2.1 does
+            return self.reads.len() == 3 || (self.reads.len() == 2 && !self.has_supp_alignment());
+        }
         let mut supp = 0;
         let mut non_supp = 0;
         let mut exp_supp = 0;
@@ -395,6 +427,8 @@ pub struct FusionFragment {
     pub location_ids: [String; 2],
     pub region_match_types: [RegionMatchType; 2],
     pub trans_exon_refs: [Vec<FusionTransExon>; 2],
+    /// ISOFOX 2.0.1 keeps the junction types on the fragment (2.1 on the fusion)
+    pub junction_types: [crate::fusion::JunctionType; 2],
 }
 
 impl FusionFragment {
@@ -413,6 +447,7 @@ impl FusionFragment {
             location_ids: [String::new(), String::new()],
             region_match_types: [RegionMatchType::None, RegionMatchType::None],
             trans_exon_refs: [Vec::new(), Vec::new()],
+            junction_types: [crate::fusion::JunctionType::Unknown, crate::fusion::JunctionType::Unknown],
         };
         set_fragment_properties(&mut f);
         if f.frag_type != FragType::Unknown {
@@ -508,10 +543,36 @@ impl FusionFragment {
             };
             let exon = t.exons.iter().find(|x| (orient == 1 && x.end == pos) || (orient == -1 && x.start == pos));
             match exon {
-                Some(e) if e.rank == te.exon_rank => i += 1,
+                Some(e) if e.rank == te.exon_rank => {
+                    self.junction_types[se] = crate::fusion::JunctionType::Known;
+                    i += 1
+                }
                 _ => {
                     self.trans_exon_refs[se].remove(i);
                 }
+            }
+        }
+    }
+
+    /// setJunctionTypes (ISOFOX 2.0.1): canonical splice motifs, with the genes' strands by position when
+    /// both genes are known, else either strand
+    pub fn set_junction_types_201(&mut self, strands: Option<[i8; 2]>, splice_bases: &[String; 2]) {
+        use crate::fusion::JunctionType;
+        for se in [SE_START, SE_END] {
+            if self.junction_types[se] == JunctionType::Known || self.junction_positions[se] <= 0 {
+                continue;
+            }
+            let b = splice_bases[se].as_str();
+            let o = self.junction_orientations[se];
+            let canonical = match strands {
+                Some(st) => {
+                    let donor = o == st[se];
+                    (donor && canonical_donor(b, st[se])) || (!donor && canonical_acceptor(b, st[se]))
+                }
+                None => canonical_donor(b, o) || canonical_acceptor(b, -o),
+            };
+            if canonical {
+                self.junction_types[se] = JunctionType::Canonical;
             }
         }
     }
@@ -559,7 +620,17 @@ fn set_fragment_properties(f: &mut FusionFragment) {
             set_split_read_junction_data(f, si);
             return;
         }
-        if f.reads.iter().any(has_candidate_junction_soft_clips) && !f.reads.iter().any(|r| r.spans_gene_collections()) {
+        if crate::version::v201() {
+            // ISOFOX 2.0.1: a two-read fragment with a soft clip of 3 to 10 bases
+            if f.reads.len() == 2
+                && f.reads.iter().any(|r| r.is_realigned_fragment_candidate_201())
+                && !f.reads.iter().any(|r| r.spans_gene_collections())
+                && f.reads[0].gene_collections[0] == f.reads[1].gene_collections[1]
+            {
+                set_single_soft_clip_junction_data(f);
+                return;
+            }
+        } else if f.reads.iter().any(has_candidate_junction_soft_clips) && !f.reads.iter().any(|r| r.spans_gene_collections()) {
             if f.reads.len() == 1 && !f.reads[0].is_read_paired() {
                 set_single_soft_clip_junction_data(f);
                 return;
@@ -581,6 +652,7 @@ fn set_supp_align_junction_data(f: &mut FusionFragment) {
     let mut pi = 0;
     let mut longest_first = false;
     let mut longest = 0;
+    let v201 = crate::version::v201();
     for r in &f.reads {
         if !r.is_supplementary() && r.has_supp_alignment {
             let m = r.soft_clip_lengths[0].max(r.soft_clip_lengths[1]);
@@ -591,7 +663,8 @@ fn set_supp_align_junction_data(f: &mut FusionFragment) {
         }
     }
     for r in &f.reads {
-        if !r.has_supp_alignment || r.is_first_of_pair() != longest_first {
+        // ISOFOX 2.0.1 takes the first two reads with supplementary data, whichever primary they belong to
+        if !r.has_supp_alignment || (!v201 && r.is_first_of_pair() != longest_first) {
             continue;
         }
         chrs[pi] = r.chromosome;
@@ -645,9 +718,11 @@ fn set_single_soft_clip_junction_data(f: &mut FusionFragment) {
     let mut realign: Option<usize> = None;
     let mut max_sc = 0;
     let mut side = 0;
+    let v201 = crate::version::v201();
     for (i, r) in f.reads.iter().enumerate() {
         for se in [SE_START, SE_END] {
-            if !above_threshold(r.soft_clip_lengths[se]) {
+            let candidate = if v201 { r.has_realignable_soft_clip_201(se, true) } else { above_threshold(r.soft_clip_lengths[se]) };
+            if !candidate {
                 continue;
             }
             if r.soft_clip_lengths[se] > max_sc {
@@ -701,7 +776,7 @@ fn set_non_junction_data(f: &mut FusionFragment) {
     }
     if groups.len() == 1 {
         f.gene_collections = [gene_collections[0], gene_collections[0]];
-        if f.reads.len() == 2 && f.reads[0].orientation == f.reads[1].orientation {
+        if !crate::version::v201() && f.reads.len() == 2 && f.reads[0].orientation == f.reads[1].orientation {
             f.frag_type = FragType::Discordant;
             f.orientations = [f.reads[0].orientation, f.reads[0].orientation];
         } else {
@@ -769,7 +844,7 @@ pub fn soft_clipped_read_supports_junction(read: &FusionRead, junc_se: usize, po
             return false;
         }
         let sc = read.soft_clip_lengths[SE_END];
-        if sc < REALIGN_MIN_SOFT_CLIP_BASE_LENGTH {
+        if sc < REALIGN_MIN_SOFT_CLIP_BASE_LENGTH || (crate::version::v201() && sc > crate::chimeric::REALIGN_MAX_SOFT_CLIP_BASE_LENGTH_201) {
             return false;
         }
         let Some(jb) = junction_bases else { return true };
@@ -790,7 +865,7 @@ pub fn soft_clipped_read_supports_junction(read: &FusionRead, junc_se: usize, po
             return false;
         }
         let sc = read.soft_clip_lengths[SE_START];
-        if sc < REALIGN_MIN_SOFT_CLIP_BASE_LENGTH {
+        if sc < REALIGN_MIN_SOFT_CLIP_BASE_LENGTH || (crate::version::v201() && sc > crate::chimeric::REALIGN_MAX_SOFT_CLIP_BASE_LENGTH_201) {
             return false;
         }
         let Some(jb) = junction_bases else { return true };

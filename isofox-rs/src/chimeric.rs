@@ -12,6 +12,8 @@ use hmf_common::known_fusion::KnownFusionType;
 use std::collections::{HashMap, HashSet};
 
 const CHIMERIC_SHORT_INV_MIN_LENGTH: i32 = 2000;
+/// ISOFOX 2.0.1: realignment candidates have soft clips of at most this length
+pub const REALIGN_MAX_SOFT_CLIP_BASE_LENGTH_201: i32 = 10;
 
 #[derive(Clone, Debug, Default)]
 pub struct ChimericStats {
@@ -110,7 +112,8 @@ pub fn set_has_multiple_known_splice_genes(reads: &[usize], store: &mut [Read], 
     for &ri in reads {
         let read = &store[ri];
         if read.has_split {
-            if let Some(j) = crate::fusion_frag::read_split_junction(read) {
+            let junction = if crate::version::v201() { read_split_junction_201(read) } else { crate::fusion_frag::read_split_junction(read) };
+            if let Some(j) = junction {
                 refs[0].extend(junction_matching_trans_refs(read, gc, j[0], true));
                 refs[1].extend(junction_matching_trans_refs(read, gc, j[1], false));
                 split_read = Some(ri);
@@ -154,13 +157,41 @@ pub fn set_has_multiple_known_splice_genes(reads: &[usize], store: &mut [Read], 
     false
 }
 
+/// ChimericUtils.findSplitReadJunction in ISOFOX 2.0.1: the gap between consecutive mapped sections (the
+/// inferred ones included) equal to the longest N-split. None where no gap equals it (an N beside a D).
+pub fn read_split_junction_201(read: &Read) -> Option<[i32; 2]> {
+    if !read.has_split {
+        return None;
+    }
+    let max_split = read.cigar.iter().filter(|e| e.op == OP_N).map(|e| e.len as i32).max().unwrap_or(0);
+    let c = &read.mapped_coords.alignments;
+    for i in 0..c.len().saturating_sub(1) {
+        if c[i + 1].start - c[i].end - 1 == max_split {
+            return Some([c[i].end, c[i + 1].start]);
+        }
+    }
+    None
+}
+
+/// ChimericUtils.isRealignedFragmentCandidate in ISOFOX 2.0.1: a soft clip of 3 to 10 bases not matched to an exon
+pub fn is_realigned_fragment_candidate_201(read: &Read) -> bool {
+    [SE_START, SE_END].iter().any(|se| {
+        has_candidate_junction_soft_clips_read(read, *se) && (if *se == SE_START { read.left_clip_length() } else { read.right_clip_length() }) <= REALIGN_MAX_SOFT_CLIP_BASE_LENGTH_201
+    })
+}
+
 /// ChimericUtils.isInversion
 fn is_inversion(reads: &[usize], store: &[Read]) -> bool {
-    if reads.len() == 2 && !reads.iter().any(|r| store[*r].is_supplementary()) {
+    if crate::version::v201() {
+        // ISOFOX 2.0.1: only a three-read group with a supplementary can be an inversion
+        if !reads.iter().any(|r| store[*r].has_supp_alignment()) || reads.len() != 3 {
+            return false;
+        }
+    } else if reads.len() == 2 && !reads.iter().any(|r| store[*r].is_supplementary()) {
         let (r1, r2) = (&store[reads[0]], &store[reads[1]]);
         return r1.chromosome == r2.chromosome && r1.orient() == r2.orient() && (r1.pos_start - r2.pos_start).abs() >= CHIMERIC_SHORT_INV_MIN_LENGTH;
     }
-    if !reads.iter().any(|r| store[*r].has_supp_alignment()) || reads.iter().filter(|r| store[**r].is_supplementary()).count() != 1 {
+    if !crate::version::v201() && (!reads.iter().any(|r| store[*r].has_supp_alignment()) || reads.iter().filter(|r| store[**r].is_supplementary()).count() != 1) {
         return false;
     }
     let mut existing_orient = 0i8;
@@ -279,8 +310,8 @@ pub struct ChimericReadTracker {
     candidate_realigned_groups: Vec<Vec<usize>>,
     supplementary_junctions: HashMap<i32, Vec<SuppJunction>>,
     pub hard_filtered_read_ids: HashMap<String, HashSet<String>>,
-    post_gene_read_map: HashMap<String, Vec<(Box<str>, u16)>>,
-    previous_post_gene_read_map: HashMap<String, Vec<(Box<str>, u16)>>,
+    post_gene_read_map: HashMap<String, Vec<PostGeneRead>>,
+    previous_post_gene_read_map: HashMap<String, Vec<PostGeneRead>>,
     pub stats: ChimericStats,
     gc_region_bounds: [i32; 2],
     gc_end_of_chromosome: bool,
@@ -289,6 +320,31 @@ pub struct ChimericReadTracker {
     skip_non_genic: bool,
     write_chimeric_only: bool,
     run_validations: bool,
+    /// a failure Java would end the run with
+    pub failure: Option<String>,
+}
+
+/// a read processed after its gene collection (Read.matches: id and flags in 2.1; id, cigar and positions in 2.0.1)
+#[derive(Clone, Debug)]
+struct PostGeneRead {
+    id: Box<str>,
+    flags: u16,
+    cigar: String,
+    start: i32,
+    end: i32,
+}
+
+impl PostGeneRead {
+    fn of(r: &Read) -> Self {
+        PostGeneRead { id: r.id.clone(), flags: r.flags, cigar: r.cigar_str_201(), start: r.pos_start, end: r.pos_end }
+    }
+    fn matches(&self, r: &Read) -> bool {
+        if crate::version::v201() {
+            r.matches_201(&(self.id.clone(), self.cigar.clone(), self.start, self.end))
+        } else {
+            r.matches(&self.id, self.flags)
+        }
+    }
 }
 
 impl ChimericReadTracker {
@@ -317,6 +373,7 @@ impl ChimericReadTracker {
             skip_non_genic: config.fusions.skip_non_genic,
             write_chimeric_only: config.fusions.write_chimeric_only,
             run_validations: config.run_validations,
+            failure: None,
         }
     }
 
@@ -360,6 +417,49 @@ impl ChimericReadTracker {
             return set_has_multiple_known_splice_genes(reads, store, gc, &self.known_pair_gene_ids);
         }
         false
+    }
+
+    /// isChimeric(read1, read2, isDuplicate, isMultiMapped) in ISOFOX 2.0.1
+    pub fn is_chimeric_201(&self, reads: &[usize], store: &mut [Read], gc: &GeneCollection, is_duplicate: bool, multi_mapped: bool) -> bool {
+        if reads.iter().any(|r| store[*r].is_chimeric() || !store[*r].within_gene_collection()) {
+            return true;
+        }
+        if !is_duplicate && !multi_mapped && self.enabled && reads.iter().any(|r| store[*r].has_split) {
+            return set_has_multiple_known_splice_genes(reads, store, gc, &self.known_pair_gene_ids);
+        }
+        false
+    }
+
+    /// addChimericReadPair in ISOFOX 2.0.1: duplicates are kept (without intronic transcript data) until the
+    /// group is complete; a pair whose id is already in the map replaces that group
+    pub fn add_chimeric_read_pair_201(&mut self, reads: &[usize], store: &mut [Read], gc: &GeneCollection, immune: &[hmf_common::regions::ChrBaseRegion]) {
+        if reads.iter().any(|r| self.in_immune_region(&store[*r], immune)) {
+            return;
+        }
+        if !reads.iter().any(|r| store[*r].is_duplicate()) {
+            for r in reads {
+                Self::add_intronic_transcript_data(&mut store[*r], &gc.transcripts);
+            }
+        }
+        let id = store[reads[0]].id.to_string();
+        // IF16: a fragment whose reads both have supplementary alignments forms two 'pairs' (each primary with
+        // a supplementary, as they come); Java's second replaces the first group, losing two reads.
+        // Corrected, the second pair joins the group.
+        let merge = self.chimeric_read_map.contains_key(&id) && (self.run_validations || !compat::java("IF16"));
+        if merge {
+            if self.run_validations {
+                hmf_common::error!("overriding chimeric read({})", id);
+            }
+            let g = self.chimeric_read_map.get_mut(&id).unwrap();
+            for r in reads {
+                g.add_read(*r, store);
+            }
+        } else {
+            let g = ChimericReadGroup::new(reads.to_vec(), store);
+            if !self.write_chimeric_only {
+                self.chimeric_read_map.insert(id, g);
+            }
+        }
     }
 
     fn in_immune_region(&self, read: &Read, immune: &[hmf_common::regions::ChrBaseRegion]) -> bool {
@@ -452,17 +552,31 @@ impl ChimericReadTracker {
         immune: &[hmf_common::regions::ChrBaseRegion],
         known_splice_sites: &HashMap<String, HashSet<i32>>,
     ) {
+        let v201 = crate::version::v201();
         for &ri in lone_reads {
             let r = &store[ri];
-            if r.is_duplicate() || r.is_mate_unmapped() || self.in_immune_region(r, immune) {
-                continue;
+            if v201 {
+                // ISOFOX 2.0.1: lone duplicates join their groups (without depth or intronic data); secondaries
+                // are dropped. Their depth is counted here only, so IF12 does not arise.
+                if r.is_mate_unmapped() || self.in_immune_region(r, immune) || r.is_secondary() {
+                    continue;
+                }
+                if !r.is_duplicate() {
+                    let coords = store[ri].mapped_coords.alignments.clone();
+                    depth.process_read(&coords);
+                    Self::add_intronic_transcript_data(&mut store[ri], &gc.transcripts);
+                }
+            } else {
+                if r.is_duplicate() || r.is_mate_unmapped() || self.in_immune_region(r, immune) {
+                    continue;
+                }
+                // IF12: these reads' depth was counted already (processIncompleteReads); Java counts it twice
+                if compat::java("IF12") {
+                    let coords = store[ri].mapped_coords.alignments.clone();
+                    depth.process_read(&coords);
+                }
+                Self::add_intronic_transcript_data(&mut store[ri], &gc.transcripts);
             }
-            // IF12: these reads' depth was counted already (processIncompleteReads); Java counts it twice
-            if compat::java("IF12") {
-                let coords = store[ri].mapped_coords.alignments.clone();
-                depth.process_read(&coords);
-            }
-            Self::add_intronic_transcript_data(&mut store[ri], &gc.transcripts);
             let id = store[ri].id.to_string();
             match self.chimeric_read_map.get_mut(&id) {
                 None => {
@@ -585,7 +699,7 @@ impl ChimericReadTracker {
             let id = store[pre[0]].id.to_string();
             if let Some(prev) = self.previous_post_gene_read_map.get(&id) {
                 for p in &pre {
-                    if prev.iter().any(|(pid, pflags)| store[*p].matches(pid, *pflags)) {
+                    if prev.iter().any(|x| x.matches(&store[*p])) {
                         reads.retain(|x| x != p);
                     }
                 }
@@ -596,7 +710,7 @@ impl ChimericReadTracker {
         }
         if !post.is_empty() {
             let id = store[reads[0]].id.to_string();
-            self.post_gene_read_map.insert(id, post.iter().map(|r| (store[*r].id.clone(), store[*r].flags)).collect());
+            self.post_gene_read_map.insert(id, post.iter().map(|r| PostGeneRead::of(&store[*r])).collect());
         }
         false
     }
@@ -611,9 +725,23 @@ impl ChimericReadTracker {
     fn collect_candidate_junctions(&mut self, reads: &[usize], store: &mut [Read], gc: &GeneCollection) {
         let split = reads.iter().copied().find(|r| store[*r].has_split && (store[*r].spans_gene_collections() || store[*r].has_inter_gene_split));
         if let Some(sr) = split {
-            if let Some(j) = read_split_junction(&store[sr]) {
-                self.add_junction(sr, store, SE_START, j[0], ORIENT_FWD);
-                self.add_junction(sr, store, SE_END, j[1], ORIENT_REV);
+            let junction = if crate::version::v201() { read_split_junction_201(&store[sr]) } else { read_split_junction(&store[sr]) };
+            match junction {
+                Some(j) => {
+                    self.add_junction(sr, store, SE_START, j[0], ORIENT_FWD);
+                    self.add_junction(sr, store, SE_END, j[1], ORIENT_REV);
+                }
+                None if crate::version::v201() && compat::java("IF14") => {
+                    // IF14: ISOFOX 2.0.1 dereferences the missing junction (a NullPointerException ends the run)
+                    if self.failure.is_none() {
+                        self.failure = Some(format!(
+                            "read({}) cigar({}): no split junction matches the longest N (ISOFOX 2.0.1 NullPointerException, IF14)",
+                            store[sr].id,
+                            store[sr].cigar_str()
+                        ));
+                    }
+                }
+                None => {}
             }
             return;
         }

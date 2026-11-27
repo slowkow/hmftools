@@ -9,9 +9,9 @@ use crate::config::*;
 use crate::expression::*;
 use crate::fusion::{CohortFusions, FusionContext, FusionData};
 use crate::fusion_frag::{FusionReadGroup, JunctionRacFragments};
-use crate::novel::{alt_sj_unfiltered_header, AltSjCohortCache, ALT_SJ_HEADER, RETAINED_INTRON_HEADER};
+use crate::novel::{alt_sj_unfiltered_header, retained_intron_file_and_header, AltSjCohortCache, ALT_SJ_HEADER};
 use crate::refgen::RefSource;
-use crate::task::{extract_incomplete_read_groups, run_chromosome, ChromosomeResult, Shared, GENE_COLLECTION_HEADER};
+use crate::task::{extract_incomplete_read_groups, gene_collection_header, run_chromosome, ChromosomeResult, Shared};
 use anyhow::{Context, Result};
 use hmf_common::ensembl::{EnsemblDataCache, GeneData, TranscriptData};
 use hmf_common::java_hash::JavaHashMap;
@@ -222,7 +222,7 @@ pub fn run(cb: &hmf_common::config_builder::ConfigBuilder) -> Result<i32> {
     // output files Java creates at the start
     let gene_collection_writer = if config.run_function(IsofoxFunction::TranscriptCounts) {
         let mut w = Writer::create(&config.form_output_file("gene_collection.tsv"))?;
-        w.line(GENE_COLLECTION_HEADER)?;
+        w.line(&gene_collection_header())?;
         Some(w)
     } else {
         None
@@ -238,8 +238,9 @@ pub fn run(cb: &hmf_common::config_builder::ConfigBuilder) -> Result<i32> {
         None
     };
     let retained_writer = if not_fusions_only && config.run_function(IsofoxFunction::RetainedIntrons) {
-        let mut w = Writer::create(&config.form_output_file("retained_intron.tsv"))?;
-        w.line(RETAINED_INTRON_HEADER)?;
+        let (file, header) = retained_intron_file_and_header();
+        let mut w = Writer::create(&config.form_output_file(file))?;
+        w.line(&header)?;
         Some(w)
     } else {
         None
@@ -251,6 +252,9 @@ pub fn run(cb: &hmf_common::config_builder::ConfigBuilder) -> Result<i32> {
     ens.set_required_data(true, false, false, config.canonical_only);
     ens.load(false)?;
     let cache: &'static EnsemblDataCache = Box::leak(Box::new(ens));
+    if crate::version::v201() {
+        config.filters.build_gene_regions(cache);
+    }
 
     let expected = if config.exp_counts_file.is_some() || config.apply_gc_bias_adjust() { Some(ExpectedCountsCache::new(&mut config)?) } else { None };
     let mut gc_calc = if config.apply_gc_bias_adjust() { Some(GcTranscriptCalculator::new(&config)?) } else { None };
@@ -299,6 +303,11 @@ pub fn run(cb: &hmf_common::config_builder::ConfigBuilder) -> Result<i32> {
     let chr_genes = chromosome_gene_lists(&config, cache);
     if chr_genes.is_empty() {
         hmf_common::error!("no chromosome tasks created");
+        return Ok(1);
+    }
+
+    if config.run_function(IsofoxFunction::ReadCounts) {
+        hmf_common::error!("function READ_COUNTS (ISOFOX 2.0.1's BAM read counter) is not ported");
         return Ok(1);
     }
 
@@ -536,8 +545,10 @@ fn process_bam_fragments(
 ) -> Result<()> {
     let mut total = FragmentTypeCounts::default();
     let mut gc_counts = GcRatioCounts::new();
+    let mut enriched_gene_frag_count: i64 = 0;
     for r in results.iter() {
         total.combine(&r.combined_counts);
+        enriched_gene_frag_count += r.enriched_genes_fragment_count;
         gc_counts.merge_ratio_counts(&r.non_enriched_gc.counts);
     }
     if let Some(calc) = gc_calc {
@@ -565,7 +576,8 @@ fn process_bam_fragments(
     }
 
     let all: Vec<&GeneCollectionSummary> = results.iter().flat_map(|r| r.summaries.iter()).collect();
-    let factors = calc_tpm_factors(&all);
+    let enriched: &[String] = if crate::version::v201() { &config.filters.enriched_gene_ids } else { &[] };
+    let factors = calc_tpm_factors(&all, enriched);
     let panel = PanelTpmNormaliser::new(config.panel_tpm_norm_file.as_deref())?;
     let mut splice_gene_count = 0;
     let mut gene_writer: Option<Writer> = None;
@@ -623,7 +635,7 @@ fn process_bam_fragments(
             spliced_thr = (cov * 17000.0) as i32;
         }
         let read_length = if max_read_length > 0 { max_read_length } else { config.read_length };
-        write_summary(config, &total, splice_gene_count, median_gc, fragment_lengths, read_length, low_cov, spliced_thr)?;
+        write_summary(config, &total, enriched_gene_frag_count, splice_gene_count, median_gc, fragment_lengths, read_length, low_cov, spliced_thr)?;
     }
     Ok(())
 }
@@ -643,7 +655,17 @@ fn parallel_for_each<T: Send, F: Fn(&mut T) + Sync>(threads: usize, items: &mut 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn write_summary(config: &IsofoxConfig, c: &FragmentTypeCounts, splice_genes: i32, median_gc: f64, fl: &[FragmentSize], read_length: i32, low_cov: i32, spliced_thr: i32) -> Result<()> {
+fn write_summary(
+    config: &IsofoxConfig,
+    c: &FragmentTypeCounts,
+    enriched_gene_frags: i64,
+    splice_genes: i32,
+    median_gc: f64,
+    fl: &[FragmentSize],
+    read_length: i32,
+    low_cov: i32,
+    spliced_thr: i32,
+) -> Result<()> {
     use hmf_common::fmt::java_fixed;
     let total = c.type_count(FragmentType::Total);
     let dups = c.type_count(FragmentType::Duplicate);
@@ -668,7 +690,9 @@ fn write_summary(config: &IsofoxConfig, c: &FragmentTypeCounts, splice_genes: i3
         }
     }
     let pick = |i: usize| if lengths.is_empty() { 0.0 } else { lengths[i] };
-    let line = [
+    let v201 = crate::version::v201();
+    let enriched_perc = if total > 0 { enriched_gene_frags as f64 / denom } else { 0.0 };
+    let mut line = [
         config.sample_id.clone(),
         qc.join(";"),
         total.to_string(),
@@ -685,9 +709,16 @@ fn write_summary(config: &IsofoxConfig, c: &FragmentTypeCounts, splice_genes: i3
         java_fixed(median_gc, 3),
         java_fixed(fwd_perc, 3),
     ]
-    .join("\t");
+    .to_vec();
+    let mut header = "SampleId\tQcStatus\tTotalFragments\tDuplicateFragments\tSplicedFragmentPerc\tUnsplicedFragmentPerc\tAltFragmentPerc\tChimericFragmentPerc\tSplicedGeneCount\tReadLength\tFragLength5th\tFragLength50th\tFragLength95th\tMedianGCRatio\tForwardStrandPercent".to_string();
+    if v201 {
+        // ISOFOX 2.0.1's summary has EnrichedGenePercent before MedianGCRatio
+        line.insert(13, java_fixed(enriched_perc, 3));
+        header = header.replace("\tMedianGCRatio", "\tEnrichedGenePercent\tMedianGCRatio");
+    }
+    let line = line.join("\t");
     let mut w = Writer::create(&config.form_output_file("summary.tsv"))?;
-    w.line("SampleId\tQcStatus\tTotalFragments\tDuplicateFragments\tSplicedFragmentPerc\tUnsplicedFragmentPerc\tAltFragmentPerc\tChimericFragmentPerc\tSplicedGeneCount\tReadLength\tFragLength5th\tFragLength50th\tFragLength95th\tMedianGCRatio\tForwardStrandPercent")?;
+    w.line(&header)?;
     w.line(&line)?;
     w.close()
 }

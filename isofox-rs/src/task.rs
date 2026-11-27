@@ -100,6 +100,8 @@ pub struct ChromosomeResult {
     pub summaries: Vec<GeneCollectionSummary>,
     pub combined_counts: FragmentTypeCounts,
     pub non_enriched_gc: GcRatioCounts,
+    /// ISOFOX 2.0.1: the fragments of gene collections with an enriched gene
+    pub enriched_genes_fragment_count: i64,
     pub gc_ratio_counts: Option<GcRatioCounts>,
     pub total_reads: i32,
     pub out: ChrOutput,
@@ -133,6 +135,7 @@ pub fn run_chromosome(shared: &Shared, chromosome: &'static str, genes: &[&'stat
         summaries: Vec::new(),
         combined_counts: FragmentTypeCounts::default(),
         non_enriched_gc: GcRatioCounts::new(),
+        enriched_genes_fragment_count: 0,
         gc_ratio_counts: None,
         total_reads: 0,
         out: ChrOutput::default(),
@@ -162,6 +165,9 @@ pub fn run_chromosome(shared: &Shared, chromosome: &'static str, genes: &[&'stat
         }
         let mut gc = GeneCollection::new(collection_id, gene_list);
         collection_id += 1;
+        if crate::version::v201() {
+            gc.mark_enriched_genes(&config.filters.enriched_gene_ids, shared.cache);
+        }
         if !genes_filtered {
             gc.non_genic_positions[SE_START] = last_end;
             if idx < genes.len() {
@@ -260,7 +266,16 @@ fn post_bam_read_transcript_counts(shared: &Shared, alloc: &mut FragmentAllocato
             t.raw_fit_allocation = t.fit_allocation;
         }
     }
-    if let Some(g) = &alloc.gene_gc_ratio_counts {
+    let enriched = &config.filters.enriched_gene_ids;
+    let enriched_frags = if crate::version::v201() && gc.genes.iter().any(|g| enriched.iter().any(|x| *x == g.gene.gene_id)) {
+        gc.fragment_counts.type_count(FragmentType::Total)
+    } else {
+        0
+    };
+    if enriched_frags > 0 {
+        // ISOFOX 2.0.1 leaves enriched gene collections out of the GC ratio distribution
+        result.enriched_genes_fragment_count += enriched_frags;
+    } else if let Some(g) = &alloc.gene_gc_ratio_counts {
         result.non_enriched_gc.merge_ratio_counts(&g.counts);
     }
     result.combined_counts.combine(&gc.fragment_counts);
@@ -296,6 +311,11 @@ fn gene_collection_line(gc: &GeneCollection) -> String {
 
 pub const GENE_COLLECTION_HEADER: &str =
     "GeneSetId\tGeneCount\tChromosome\tRangeStart\tRangeEnd\tTotalFragments\tDuplicates\tSupportingTrans\tUnspliced\tAltSJ\tChimeric\tMultiMapped\tForwardStrand\tReverseStrand\tGenes";
+
+/// the gene collection file's header: ISOFOX 2.0.1 names the multi-mapped column LowMapQual
+pub fn gene_collection_header() -> String {
+    if crate::version::v201() { GENE_COLLECTION_HEADER.replace("\tMultiMapped\t", "\tLowMapQual\t") } else { GENE_COLLECTION_HEADER.to_string() }
+}
 
 /// ChromosomeFusions.onGeneCollectionComplete
 fn on_gene_collection_complete(

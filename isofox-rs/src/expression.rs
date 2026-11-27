@@ -522,7 +522,7 @@ impl TranscriptResult {
             "UniqueSJFragments",
             "UniqueNonSJFragments",
             "DiscordantFragments",
-            "MultiMappedFragments",
+            if crate::version::v201() { "LowMapQualFrags" } else { "MultiMappedFragments" },
         ]
         .join("\t")
     }
@@ -615,7 +615,7 @@ impl GeneResult {
             "AdjTPM",
             "RawTPM",
             "FitResiduals",
-            "MultiMappedFragments",
+            if crate::version::v201() { "LowMapQualFrags" } else { "MultiMappedFragments" },
             "MedianTpmCancer",
             "PercentileCancer",
             "MedianTpmCohort",
@@ -846,7 +846,7 @@ impl<'a> TranscriptExpression<'a> {
 }
 
 /// TranscriptExpression.calcTpmFactors: raw and adjusted (capping any gene at 1% of the total)
-pub fn calc_tpm_factors(summaries: &[&GeneCollectionSummary]) -> [f64; 2] {
+pub fn calc_tpm_factors(summaries: &[&GeneCollectionSummary], enriched_gene_ids: &[String]) -> [f64; 2] {
     let mut set: Vec<f64> = Vec::with_capacity(200_000);
     let mut max_fpkb = 0.0f64;
     let mut total = 0.0;
@@ -855,6 +855,10 @@ pub fn calc_tpm_factors(summaries: &[&GeneCollectionSummary]) -> [f64; 2] {
         for t in &s.transcript_results {
             let f = t.fragments_per_kb();
             raw_total += f;
+            // ISOFOX 2.0.1 leaves the enriched genes out of the adjusted TPM total
+            if enriched_gene_ids.iter().any(|x| *x == t.trans.gene_id) {
+                continue;
+            }
             if f < 0.5 {
                 total += f;
             } else {

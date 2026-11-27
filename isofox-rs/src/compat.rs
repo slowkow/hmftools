@@ -17,7 +17,7 @@ thread_local! {
 }
 
 /// The number of findings in REPORT.md, IF1 to IF<FINDINGS>; raise it when a finding is added.
-pub const FINDINGS: u32 = 13;
+pub const FINDINGS: u32 = 18;
 
 fn valid_id(id: &str) -> bool {
     numbered_id(id, "IF", FINDINGS) || hmf_common::compat::common_id(id)
