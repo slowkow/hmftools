@@ -1,7 +1,7 @@
 //! ORANGE's findings (OR1 to OR<FINDINGS>, NOTES.md): `java("ORn")` is true where the port reproduces Java.
 
 /// The number of findings with a switch
-pub const FINDINGS: u32 = 12;
+pub const FINDINGS: u32 = 16;
 
 pub fn valid_id(id: &str) -> bool {
     hmf_common::compat::numbered_id(id, "OR", FINDINGS)

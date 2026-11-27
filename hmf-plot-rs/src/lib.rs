@@ -10,18 +10,33 @@
 //! - [`circos`]: a Circos ring engine driven by Circos configuration files: karyotype, ideograms, highlights,
 //!   scatter, histogram, heatmap and text tracks, axes, backgrounds, links.
 //!
-//! BUI is used only through `bui` and `raster`: the plotting code builds display lists.
+//! - [`pdf`] (feature "pdf"): a PDF writer (pages, vector shapes, text in embedded font subsets, PNG images,
+//!   outlines) and a table layout engine that reproduces boxable's (the Java tables library ORANGE uses).
+//!
+//! BUI is used only through `bui` and `raster`: the plotting code builds display lists. Everything that needs
+//! BUI is behind the default feature "raster"; without it (`default-features = false, features = ["pdf"]`)
+//! the crate is pure Rust and builds without CMake or a C compiler.
 
+#[cfg(feature = "raster")]
 pub mod bui;
 pub mod color;
+#[cfg(feature = "raster")]
 pub mod display;
 pub mod fmath;
 pub mod png_out;
+#[cfg(feature = "raster")]
 pub mod raster;
+#[cfg(feature = "raster")]
 pub mod text;
+#[cfg(feature = "raster")]
 pub mod circos;
+#[cfg(feature = "raster")]
 pub mod gg;
+#[cfg(feature = "pdf")]
+pub mod pdf;
 
 pub use color::Rgba;
+#[cfg(feature = "raster")]
 pub use display::{Figure, Item, LineCap, Stroke};
+#[cfg(feature = "raster")]
 pub use text::Font;

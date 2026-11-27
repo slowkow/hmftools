@@ -7,7 +7,7 @@ use hmf_common::config_builder::{ConfigBuilder, ItemType};
 pub const APP_NAME: &str = "Orange";
 pub const VERSION: &str = "5.1";
 
-/// (display_sample_id and add_disclaimer are used only by the PDF, which the port does not write)
+/// (display_sample_id and add_disclaimer are used only by the PDF)
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct OrangeConfig {
@@ -46,7 +46,7 @@ pub struct OrangeConfig {
     pub virus_dir: Option<String>,
     pub isofox_dir: Option<String>,
     pub add_disclaimer: bool,
-    /// the port's -no_pdf (the PDF is never written; accepted for clarity)
+    /// the port's -no_pdf: no PDF report (only the JSON)
     pub no_pdf: bool,
 }
 
@@ -118,7 +118,7 @@ pub fn register(cb: &mut ConfigBuilder) {
     cb.add_path("purple_rna_append_vcf", false, "Purple somatic VCF appended with RNA");
     cb.add_flag("add_disclaimer", "Prints a disclaimer on each page");
     cb.add_logging_options();
-    cb.add(ItemType::Flag, "no_pdf", false, "Port option: do not write the PDF (the port never writes it)", None);
+    cb.add(ItemType::Flag, "no_pdf", false, "Port option: do not write the PDF report (only the JSON)", None);
 }
 
 /// FileWriterUtils.checkAddDirSeparator (null and "" unchanged)

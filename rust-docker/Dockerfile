@@ -50,7 +50,7 @@ COPY orange-rs orange-rs
 # test fails the image build
 RUN rustc --version \
     && (cd hmf-common-rs && cargo test --release --locked && cargo test --release --locked --features bwa) \
-    && (cd hmf-plot-rs && cargo test --release --locked) \
+    && (cd hmf-plot-rs && cargo test --release --locked --all-features) \
     && for crate in sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs \
             sigs-rs virus-interpreter-rs peach-rs chord-rs neo-rs cuppa-rs qsee-rs orange-rs; do \
         (cd $crate && cargo build --release --locked && cargo test --release --locked) || exit 1; \

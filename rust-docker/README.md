@@ -70,7 +70,7 @@ subcommands:
 | `com.hartwig.hmftools.neo.epitope.NeoEpitopeFinder` (or none), `com.hartwig.hmftools.neo.score.NeoScorer` | `neo-rs` (it takes the classes itself) |
 | `com.hartwig.hmftools.cup.prep.CuppaDataPrep`, `cup.cli.PredictionRunner` (or none) | `cuppa-rs` (it takes the classes itself) |
 | `com.hartwig.hmftools.qsee.QseeApplication` (or none) and qsee's other entry points | `qsee-rs` (it takes the classes itself; without Rscript on PATH the wrapper adds `-skip_plot`) |
-| `com.hartwig.hmftools.orange.OrangeApplication` (or none) | `orange-rs` (the JSON report and the plot copies; no PDF, an optional output of oncoanalyser's ORANGE step) |
+| `com.hartwig.hmftools.orange.OrangeApplication` (or none) | `orange-rs` (the JSON report, the plot copies and the PDF report) |
 
 The image also has a `python` that runs only `python -m cuppa.predict` (as `cuppa-rs predict`), the second
 command of oncoanalyser's CUPPA task; there is no Python in the image.

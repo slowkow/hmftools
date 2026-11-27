@@ -103,4 +103,5 @@
 !orange-rs/Cargo.toml
 !orange-rs/Cargo.lock
 !orange-rs/src
+!orange-rs/resources
 !rust-docker/bin

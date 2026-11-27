@@ -12,11 +12,34 @@ path = "src/lib.rs"
 [dependencies]
 # BUI (Blender's UI kit as a C library): only its software raster and text engine are used, through the
 # raw bindings; no window, no layout. Pinned: see README.md.
-blenderui-sys = { git = "https://github.com/ppmpreetham/BUI", rev = "1af5d5084d92e8ed30c637076bc964c3769386ca", default-features = false, features = ["freetype"] }
+blenderui-sys = { git = "https://github.com/ppmpreetham/BUI", rev = "1af5d5084d92e8ed30c637076bc964c3769386ca", default-features = false, features = ["freetype"], optional = true }
 png = "0.17"
 libm = "0.2"
+# The PDF backend (feature "pdf"): pure Rust, no system libraries. pdf-writer (typst's low-level PDF writer) for the
+# file structure, subsetter (typst's) to embed font subsets, ttf-parser for font metrics and cmaps, miniz_oxide for
+# Flate streams.
+pdf-writer = { version = "0.15", optional = true }
+subsetter = { version = "0.2.6", optional = true, default-features = false }
+ttf-parser = { version = "0.25", optional = true, default-features = false, features = ["std"] }
+miniz_oxide = { version = "0.8", optional = true }
+
+[features]
+# "raster": BUI's software raster and text engine (builds BUI's C kit with CMake): every module that draws pixels.
+# "pdf": the PDF backend (`pdf`), which needs neither BUI nor a C compiler; ORANGE's report uses only this one.
+default = ["raster"]
+raster = ["dep:blenderui-sys"]
+pdf = ["dep:pdf-writer", "dep:subsetter", "dep:ttf-parser", "dep:miniz_oxide"]
 
 [dev-dependencies]
+
+# the examples draw with BUI
+[[example]]
+name = "circos"
+required-features = ["raster"]
+
+[[example]]
+name = "side_by_side"
+required-features = ["raster"]
 
 [profile.release]
 debug = 1

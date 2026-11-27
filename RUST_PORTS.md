@@ -219,7 +219,10 @@ Second batch, merged on 2026-11-27:
   alone). Findings OR1-OR11: `-primary_tumor_doids` never resolves (OR1), CUPPA's `simpleDups32To200B` read from the
   20 kb-1 Mb deletion feature (OR5: HG008 5 instead of 1), TAPBP misspelt "TABBP" in the immune escape genes (OR9),
   and every tumor/normal run without CHORD, so every targeted tumor/normal run, failing in the PDF writer before
-  the JSON is written (OR10). The PDF is not drawn yet.
+  the JSON is written (OR10). Since 2026-11-27 orange-rs also draws the PDF (hmf-plot-rs's PDF writer, on
+  pdf-writer): in Java mode equal to Java's on all 29 cases where Java writes one, in text, every word's position,
+  embedded images and rendered pixels; 0.5-1.0 s and 110-150 MB against 4-12 s and 0.5-0.9 GB. Findings OR13-OR16
+  (layout faults of the PDF: values broken inside cells, titles left alone at a page's foot).
 
 For the R and Python parts, the first version keeps calling the same scripts, so plots and
 predictions stay identical. Replacing them is a separate decision per program: a random forest or a

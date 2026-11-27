@@ -11,6 +11,7 @@ mod model;
 mod others;
 mod plots;
 mod purple;
+mod report;
 
 #[cfg(test)]
 mod tests;
@@ -35,26 +36,17 @@ fn run() -> Result<i32> {
     }
     let cfg = config::OrangeConfig::from_builder(&cb)?;
     let record = algo::run(&cfg)?;
-    // ReportWriter.write: the PDF is not written by the port (out of scope; see NOTES.md). OR10: Java writes the
-    // PDF first, and its front page reads the CHORD record of every run with a reference sample, so a tumor/normal
-    // run without CHORD (targeted, or no -chord_dir) fails there and writes no JSON.
-    if compat::java("OR10") && record.reference_id.is_some() && record.chord.is_none() {
-        anyhow::bail!(
-            "java.lang.NullPointerException: Cannot invoke \"com.hartwig.hmftools.datamodel.chord.ChordRecord.hrStatus()\" because \"chord\" is null (FrontPageTables.hrDeficiencyString)"
-        );
-    }
-    // OR11: the PDF's fusion table shows RNA support once any fusion has it, and reads it for every fusion, so
-    // a run with RNA where one reported fusion has RNA support and another has none fails there
-    let fusions = &record.linx.fusions;
-    if compat::java("OR11") && fusions.iter().any(|f| f.rna_support.is_some()) && fusions.iter().any(|f| f.rna_support.is_none()) {
-        anyhow::bail!(
-            "java.lang.NullPointerException: Cannot invoke \"AllelicDepth.alleleReadCount()\" because the return value of \"LinxFusion.rnaSupport()\" is null (DnaFusionTable.build)"
-        );
-    }
+    // ReportWriter.write: the PDF first (its failures, e.g. OR10 and OR11 in Java mode, end the run before the JSON
+    // is written), then the JSON
     let mut name = format!("{}{}.orange.", cfg.output_dir, record.sample_id);
     if let Some(id) = &cfg.output_id {
         name.push_str(id);
         name.push('.');
+    }
+    if cfg.no_pdf {
+        hmf_common::info!("not writing the PDF report (-no_pdf)");
+    } else {
+        report::write_pdf(&record, &cfg, &format!("{name}pdf"))?;
     }
     name.push_str("json");
     hmf_common::info!("writing JSON report to {name} ");

@@ -3,9 +3,11 @@
 This report covers how `orange-rs` was checked against Java ORANGE 5.1, the faults found in the Java code, and the
 timings. Finding ids: OR. Options, outputs and tests are in [README.md](README.md).
 
-`orange-rs` writes ORANGE's JSON report (`<tumor>.orange.json`) and copies the plots into `plot/`, as the jar does.
-Under `-java_compat` the JSON was byte-identical to the jar's in every case run (52 comparisons: 38 identical JSONs,
-and 14 runs where both exit 1, at the same point). The PDF is not written; section "PDF (not ported)" lists what Java draws and from what.
+`orange-rs` writes ORANGE's PDF report (`<tumor>.orange.pdf`) and JSON report (`<tumor>.orange.json`) and copies the
+plots into `plot/`, as the jar does. Under `-java_compat` the JSON was byte-identical to the jar's in every case run
+(52 comparisons: 38 identical JSONs, and 14 runs where both exit 1, at the same point), and the PDF equal to the jar's
+in every case where Java writes one (29 cases and a synthetic layout: the same pages, text, word positions, images and
+page pixels); section "PDF" says how it is drawn and checked.
 
 ## How it was checked
 
@@ -107,6 +109,8 @@ tenth of the memory or less. Of the port's time, 85-93% is reading PURPLE's soma
 0.22 s of 0.28 s; decompression is 0.02 s, the rest the parse of each PASS record's INFO and genotypes); LINX's files
 take 0.03 s, everything else (interpretation, plot copies, JSON) about 0.01 s. Filtered records are skipped before
 parsing in the PASS-only somatic read (as sigs-rs does); a malformed filtered record would fail in Java and not here.
+These are the times of the port before it wrote the PDF (now the same with `-no_pdf`); with the PDF, see section
+"PDF".
 
 ## Run-dependent values in the JSON, and how Java is made defined
 
@@ -158,10 +162,12 @@ Corrected by default, Java's behaviour with `-java_compat` (unless said otherwis
 - OR10: every tumor/normal run without a CHORD result fails: the PDF front page calls `hrStatus()` on the null CHORD
   record (FrontPageTables.hrDeficiencyString). That is every targeted (`-experiment_type PANEL`) tumor/normal run
   (CHORD is not loaded in targeted mode) and every run without `-chord_dir`. As the PDF is written before the JSON, no
-  JSON is written either. The port writes no PDF; in Java mode it fails at the same point (exit 1).
+  JSON is written either. Corrected: "NA" as the HR deficiency score. Java mode fails at the same point (exit 1, no
+  file written).
 - OR11: with RNA, a run where one reported DNA fusion has RNA support and another has none fails: the PDF's fusion
   table adds the RNA column once any fusion has support and then reads `rnaSupport()` of every fusion
-  (DnaFusionTable.build). No JSON is written. Java mode fails the same way.
+  (DnaFusionTable.build). No JSON is written. Corrected: "NA" in the RNA Frags column for a fusion without RNA support.
+  Java mode fails the same way.
 - OR12 (upstream f5f660cc9f; not corrected, Java's behaviour in both modes): Virus Interpreter's blacklisted viruses
   are no longer left out. ORANGE 5.1 at ca04e6c39d dropped them from both lists (VirusInterpreter
   .filterBlacklistedViruses, which also failed on a file without the `blacklisted` column); the new conversion to
@@ -171,6 +177,31 @@ Corrected by default, Java's behaviour with `-java_compat` (unless said otherwis
   third virus is marked blacklisted (and, impossibly for Virus Interpreter, reported): it is in both lists now.
   The commit says Virus Interpreter's file loads "as before", which suggests the drop was not intended, but Viridian
   itself has no blacklist and lists every virus group it profiles, so the intent is unclear: kept as Java.
+- OR13: in the germline variants table a variant without a gnomAD frequency shows "  nu": the column is
+  `String.format("%4.2e", gnomadFrequency())`, and Formatter prints a null argument as "null" cut to the precision (2)
+  and padded to the width (4) (FormatCheck harness: `String.format("%4.2e", (Double) null)` is "  nu"). No case has
+  such a variant (the germline variants of the cases have frequencies). Corrected: "NA".
+- OR14: the scaled tables (variants, gains and deletions, fusions, disruptions) size their columns to their widest text
+  (TableCommon.scaleTableWidths, aiming at 450 pt) and stretch them to the table's width (530 pt), but leave out the
+  cells' padding (2 + 2 pt). When the text is wider than about 450 pt, the columns shrink below their text plus
+  padding, and boxable breaks values inside their cells: in the synthetic cases (Java's own PDFs) the germline allele
+  frequencies are drawn as "1." over "00" and "0." over "00", and the fusion table's headers as "JC" over "N" and
+  "DRIVE" over "R". Corrected, only for a table where Java breaks a value (a column that may not wrap is narrower than
+  its text plus padding): widths of text plus padding, the space left shared as the text widths, the wrappable
+  columns (HGVS, a header with WrapAtPercent) giving up width first. HG008's and the private pair's tables are
+  unchanged.
+- OR15: a title is left alone at the end of a page. A table's title is an ordinary first row before the header row,
+  so boxable's rule that keeps the header rows with the first data row (getMinimumHeight, which here counts the header
+  row twice) moves the header and rows to the next page and leaves the title (private pair, page 2: the Signature
+  Allocations title, with its table on page 3); likewise the "Structural Driver Plots (n)" title, when the plots move
+  to a new page because the first row does not fit (synthetic page 4, private pair tumor-only page 2). Corrected: a
+  table starts on a new page when its title, header row and first data row (or its title and one row) do not fit
+  together; the plots' title moves with the first row of plots.
+- OR16: the pages in the middle of a table over three or more pages have no header (ORANGE title, logo) and no side
+  panel (the sample id): DocumentContext.addTable runs the page events only for the page the table ends on, and
+  addTableNoAdvance (the front page's two tables side by side) for none. No case has such a table; the Java harness
+  LayoutStress (a table of 150 rows, a row taller than a page) gives five such pages of nine. Corrected: every page a
+  table adds gets the header and side panel.
 
 Not corrected (a data model change, or the intent is unclear), as Java:
 - A germline aberration TERTRASOMY_9 in PURPLE's QC (hmf-common has it, the data model's PurpleGermlineAberration
@@ -207,11 +238,31 @@ Not corrected (a data model change, or the intent is unclear), as Java:
 - An allele without a LILAC QC line for its gene class, a breakend outside every cytoband, two SV annotations with
   one svId, a PEACH allele count other than 1 or 2, or a CUPPA cancer type without the main classifier's probability
   end the run (NullPointerException, IllegalStateException, IllegalArgumentException), in both.
+- PDF: when the front page's two side-by-side tables do not fit on the page, the left one continues on a new page and
+  the right one is then drawn on that page, from the height it had on the first (LayoutStress only; the front page
+  has room for them in every case). Kept.
+- PDF: the counts in the titles are not the rows below them: "Small Variants (n)" counts the reported transcript
+  impacts while the table lists every impact of each variant (canonical and other, reported or not); "Signature
+  Allocations (n)" counts all allocations while the table lists those of at least 8% and 8 variants; "Disruptions (n)"
+  counts structural variants (a row can show both breakends of one). The intent is unclear; kept.
+- PDF: the immune escape table is commented out in ImmunologyChapter (so not drawn); HLA class II alleles only for
+  whole genomes; `purpleVariantCopyNumberPlot` (somatic.png) is copied but not drawn.
+- PDF: a character Nimbus Sans L has no glyph for (a tab, most non-Latin letters) ends the run in PDFBox
+  (IllegalArgumentException "No glyph for U+...") and in the port. Text that boxable reads as markup (`<b>`, `<i>`,
+  `<p>`, `<br>`, lists, headings) would be formatted by Java (in Helvetica); the port draws it as text and logs a
+  warning (no data has it). A null `biallelicProbability` or, tumor-only, `somaticLikelihood` would end Java's run
+  (unboxing); PURPLE always gives both, and the port fails the same way.
 - Other failures inside Java's PDF writer than OR10 and OR11 are not reproduced (none was met).
 
 ## Tests
 
-- 37 tests in `orange-rs` (`cargo test --release`): the Java unit tests of the ported classes, and tests of the port.
+- 49 tests in `orange-rs` (`cargo test --release`): the Java unit tests of the ported classes, and tests of the port.
+  For the PDF: PlotPathResolverTest, TableDataTest (scaleTableWidths), SignatureAllocationTableTest, MiscUtilsTest
+  (zeroPrefixed), ExpressionsTest, QcStatusInterpretationTest and ReportWriterTest (targeted, tumor-only and
+  tumor/normal reports from the Java tests' run, in memory); the fonts' metrics and every character width checked
+  against PDFBox's (FontMetricsDump harness), the number formats against Java's (FormatCheck harness: DecimalFormat
+  "#'%'", "0'%'", "0.0", "0.00", String.format "%.1f", "%.0f", "%4.2e" with null), and `layout_stress_pages`, the
+  synthetic layout the Java harness LayoutStress draws (written to `LAYOUT_STRESS_PDF` for the comparison).
   For f5f660cc9f: ViridianInterpreterTest (its two tests), PipelineToolDirectoriesTest.canLoadFromCompleteFile with
   the layouts' virus directories, the VirusReport JSON as `minimally.populated.orange.json` writes it, and the
   loading of either tool's file (both files, neither, no directory). VirusInterpreterTest and OrangeConversionTest's
@@ -246,46 +297,105 @@ All additions; no existing behaviour changed.
 - `rna`: RnaStatisticFile, GeneExpressionFile, RnaFusionFile and NovelSpliceJunctionFile readers.
 - `lib.rs`: the new modules and their line in the crate documentation.
 
-## PDF (not ported): what Java draws
+## PDF
 
-`orange/report` (PDFBox with boxable; about 5,500 lines). A4 pages; each page has a header (the "ORANGE Report" title
-in orange shades and the ORANGE circos logo, resource `orange_circos.png`), a side panel and a footer with page numbers
-(second pass) and, with `-add_disclaimer`, a disclaimer; `-display_sample` replaces the tumor id there. Chapters, in
-order (from the JSON record, `plots.*` resolved against the output directory):
+### How it is drawn
 
-1. **Front Page**: Sample summary (Samples, Primary Tumor, Date Analysed, Pipeline Version, Genome Version, Sequencing
-   Type) and Technical summary (QC, Fit Method, Purity, Ploidy); Driver Summary (somatic variant, copy number and
-   disruption drivers, germline variant, copy number and disruption drivers, fusion drivers, viral presence, whole
-   genome duplicated, DPYD status) beside Genome Wide Biomarkers (MSI indels per Mb, TMB per Mb, TML, HR deficiency
-   score from CHORD (OR10), LOH proportion, number of SVs, CUPPA cancer type); the final PURPLE circos plot
-   (`purpleFinalCircosPlot`).
-2. **Somatic Findings**: Small Variants (SomaticVariantTable: variant, HGVS, copies, AF, clonal, somatic likelihood,
-   biallelic, hotspot, driver, RNA depth when present, the SAGE vis page names), Amplifications and Deletions
-   (GainDeletionTable: location, gene, range, min/max/arm/relative CN, TPM, percentile and fold change with RNA),
-   Fusions (DnaFusionTable: fusion, junctions, JCN, phasing, type, RNA support (OR11), driver), Disruptions
-   (DisruptionTable: location, gene, range, type, JCN, undisrupted CN), Viruses (ViralPresenceTable, the reportable
-   ones of `viridian`: virus, QC status, type, integrations, % covered, mean coverage, copies per cell; since
-   f5f660cc9f no expected clonal coverage, driver column or shading of low-likelihood rows; not tumor-only), Arm Copy
-   Number Aberrations (ChrArmCopyNumberTable), Signature Allocations (not tumor-only), and the Structural Driver Plots
-   (`linxDriverPlots`, two per row with their titles).
-3. **Germline Findings** (not tumor-only): Small Variants (GermlineVariantTable: with ClinVar and gnomAD), Amplifications
-   and Deletions, Disruptions, Chromosomal Aberrations (the germline aberrations), Pharmacogenetics (PEACH).
-4. **Immunology**: HLA Class I Alleles and, for whole genomes, Class II (HLAAlleleTable: allele, QC, tumor CN,
-   reference/tumor/RNA fragments, somatic mutation counts), Genetic Immune Escape (ImmuneEscapeTable).
-5. **RNA Findings** (with ISOFOX): QC (RnaStatisticsTable), High Gene Expression (ExpressionTable), Fusions Detected In
-   RNA, Not In DNA (RnaFusionTable), Novel Splice Junctions (NovelSpliceJunctionTable).
-6. **Tissue of Origin** (not tumor-only): the CUPPA summary plot (`cuppaSummaryPlot`), or "not available".
-7. **Quality Control** (when `qSeePlot` exists): the QSee report plot.
-8. **Purity and Ploidy**: six PURPLE plots, landscape, 3 x 2: input circos, copy number, somatic clonality, purity
-   range, minor allele map, somatic rainfall (`purple*Plot`). `purpleVariantCopyNumberPlot` (somatic.png) is copied
-   but not drawn.
+`src/report/` follows `orange/report` (PDFBox 3.0.6 with boxable 1.8.2; about 5,500 lines) class by class:
+DocumentContext (cursor, spacing, page breaks, images scaled to fit, never above their size), PageEventHandler with
+Header (logo, "ORANGE Report" in six orange shades, "(Research Use Only)" with `-add_disclaimer`), SidePanel (the
+sample id, `-display_sample` replacing the tumor id, shrunk by 0.1 pt until 120 pt wide), Footer (page numbers in a
+second pass, the disclaimer), the chapters and the tables, from the record and the copied plots only (as Java).
 
-Data used: only the JSON record and the copied plots (`plot/`), plus the config's display id and disclaimer flag. The
-QSee report PDF (`qsee/<tumor>.qsee.vis.report.pdf`) is not used; its PNG is.
+The PDF itself is written by `hmf_plot::pdf` (hmf-plot-rs, feature "pdf", pure Rust): the tables are laid out by its
+port of boxable (`pdf::table`), with the metrics PDFBox computes for ORANGE's fonts (Nimbus Sans L Regular and Bold,
+embedded as subsets: widths rounded to 1000 units, ascent, descent and x-height from the font tables, boxable's line
+height (ascent - descent) / 1000), in the same float arithmetic: the same column widths, line breaks (wrap points after
+space , . - @ : ;, words wider than their cell broken), row heights, page breaks with the header row repeated, rows
+split across pages. The content streams use PDFBox's operators and number format (5 decimals) and, in tables,
+boxable's text handling (one text object per run of rows, each token placed at an offset from the one before), so a
+viewer computes the same positions as from Java's file. Images are the PNGs as PDFBox embeds them (a soft mask for
+any transparency; 8-bit RGB data passed through without recompression).
+
+### How it was checked
+
+Each case ran the port in Java mode and compared its PDF with Java's (the jar of 883ab11bba): page count and
+sizes, `pdftotext -layout` page by page (and the words without spacing), every word's box (`pdftotext -bbox`),
+the images (`pdfimages -list`: page, pixel size, colour space, soft masks), the JSON, and the pages rendered at
+100 dpi (`pdftoppm`), shown side by side and their pixels compared (ImageMagick, fuzz 2%).
+Three Java harnesses gave references beyond the cases: PDFBox's font metrics (FontMetricsDump), Java's number
+formats (FormatCheck), and a layout stress test drawn with ORANGE's own table classes (LayoutStress).
+
+Java mode, the 29 cases where Java writes a PDF (time and peak RSS of the whole run, `/usr/bin/time -l`, arm64 Mac):
+
+| Case | Pages | Words (all at the same place) | Images | Java | Rust |
+|---|---|---|---|---|---|
+| hg008 | 9 | 1,078 | 34 | 9.14 s, 778 MB | 0.65 s, 131 MB |
+| hg008_doids | 9 | 1,077 | 34 | 9.55 s, 742 MB | 0.66 s, 138 MB |
+| hg008_format_file_v2 | 8 | 813 | 27 | 6.42 s, 678 MB | 0.64 s, 135 MB |
+| hg008_location | 9 | 1,077 | 34 | 9.38 s, 751 MB | 0.65 s, 130 MB |
+| hg008_minimal (no disclaimer) | 5 | 524 | 19 | 4.12 s, 541 MB | 0.57 s, 110 MB |
+| hg008_no_virus | 9 | 1,072 | 34 | 9.27 s, 741 MB | 0.66 s, 131 MB |
+| hg008_options (`-display_sample`, `-output_id`, SBX ...) | 9 | 1,084 | 34 | 9.19 s, 753 MB | 0.65 s, 134 MB |
+| hg008_panel_tumor_only | 7 | 827 | 29 | 7.70 s, 696 MB | 0.60 s, 128 MB |
+| hg008_root | 8 | 768 | 27 | 6.45 s, 675 MB | 0.65 s, 139 MB |
+| hg008_root_format | 8 | 792 | 31 | 8.20 s, 738 MB | 0.65 s, 139 MB |
+| hg008_root_viridian | 8 | 813 | 27 | 6.37 s, 676 MB | 0.65 s, 135 MB |
+| hg008_root_viridian_oa_v3_0 | 8 | 774 | 27 | 6.49 s, 691 MB | 0.64 s, 133 MB |
+| hg008_sample_data_dir | 9 | 799 | 34 | 9.17 s, 757 MB | 0.66 s, 143 MB |
+| hg008_tumor_only | 7 | 890 | 29 | 7.73 s, 689 MB | 0.61 s, 123 MB |
+| hg008_viridian | 9 | 1,078 | 34 | 9.38 s, 755 MB | 0.68 s, 139 MB |
+| hg008_viridian_dir_vi | 9 | 1,078 | 34 | 9.51 s, 765 MB | 0.66 s, 134 MB |
+| synthetic_both_files | 12 | 1,440 | 44 | 11.29 s, 897 MB | 0.65 s, 130 MB |
+| synthetic_both_options | 12 | 1,440 | 44 | 11.25 s, 896 MB | 0.65 s, 131 MB |
+| synthetic_no_rna | 12 | 1,440 | 44 | 11.59 s, 878 MB | 0.67 s, 119 MB |
+| synthetic_viridian_extra | 12 | 1,452 | 44 | 11.47 s, 892 MB | 0.66 s, 141 MB |
+| synthetic_viridian_extra_tumor_only | 8 | 1,039 | 35 | 10.05 s, 754 MB | 0.59 s, 134 MB |
+| synthetic_viridian_no_rna | 12 | 1,440 | 44 | 11.55 s, 888 MB | 0.65 s, 141 MB |
+| synthetic_virus_dir_viridian | 12 | 1,452 | 44 | 11.12 s, 876 MB | 0.66 s, 129 MB |
+| t0 (the private pair) | 8 | 847 | 29 | 7.39 s, 655 MB | 0.54 s, 138 MB |
+| t0_tumor_only | 6 | 654 | 24 | 6.02 s, 529 MB | 0.49 s, 116 MB |
+| testrun_panel | 6 | 532 | 23 | 5.17 s, 899 MB | 0.88 s, 143 MB |
+| testrun_viridian | 8 | 637 | 28 | 6.27 s, 896 MB | 0.95 s, 150 MB |
+| testrun_virus_dir_viridian | 8 | 637 | 28 | 6.24 s, 913 MB | 0.95 s, 144 MB |
+| testrun_wgts | 8 | 637 | 28 | 6.31 s, 913 MB | 0.96 s, 145 MB |
+
+In every one: the same page count and page sizes, `pdftotext -layout` output identical, every word at the same place
+(largest difference 0.0000 pt), the same images on the same pages (pixel size, colour space, soft masks), the rendered
+pages identical, the JSON byte-identical, the same chapter bookmarks and document title and author. The five cases
+where Java fails in its PDF writer (hg008_panel, hg008_minimal_reference, testrun_rna_tumor_id: OR10; synthetic,
+synthetic_viridian: OR11) fail in Java mode at the same point, with nothing written. The synthetic layout of the Java
+harness LayoutStress (ORANGE's own DocumentContext, Tables and Cells: a scaled table of 150 rows with wrapped and broken
+words over four pages, a row taller than a page, a wrapped header, side-by-side tables across a page break, empty
+tables to the page end) is equal in the same way (9 pages, 2,960 words).
+
+Not the same: the files' bytes (PDFBox's object layout, compression and subset tags; the port's HG008 file is 10.2 MB
+against 9.2 MB, as decoded images are compressed at a faster level), and the PDF version is written as PDFBox's (1.6).
+
+Default mode: the PDFs differ from Java's only by the corrections: the LINX plots in file name order (OR3), the fusion
+junction copy numbers (OR8), the configured primary tumor (OR1, test run), a title moved to the next page with its
+table or plots (OR15: private pair, synthetic), the synthetic tables' values and headers no longer broken (OR14), and
+PDFs where Java fails (OR10: "NA" as HR deficiency score; OR11: "NA" as RNA fragments). The default-mode HG008 PDF
+equals the one Hartwig's ORANGE image (5.1-beta.1) wrote in the pipeline (`data/public/hg008/pipeline_full/orange`):
+the same text, word positions, images and rendered pages (the image lists the LINX plots in file name order, as OR3
+does); in Java mode the order is this Mac's directory order (OR3).
+
+Determinism: two runs give the same bytes, and the Linux arm64 build (`rust:1.97-bookworm`, without CMake) gives the
+macOS one's bytes for HG008.
+
+### Speed
+
+The PDF takes 0.36 s of the port's 0.65 s for HG008 (reading the data takes 0.26 s): 0.34 s for the pages, nearly all
+of it the images (reading 8 MB of PNGs, and decoding the three with transparency for their soft masks: the header logo
+and two 3000 x 3000 Circos plots), 4 ms to make the file, 14 ms to write its 10 MB. Java takes 4-12 s and 530-910 MB
+for the whole run, mostly in its PDF writer (without it, about 1 s); the port 0.5-1.0 s and 110-150 MB: 6-18 times
+faster, in 13-22% of the memory. Both run on one thread. The port's memory is mostly the plots held for the file
+(their data is written at the end) and the decoded images with transparency while their masks are made.
 
 ## Open points
 
-- The PDF: to be drawn natively from the JSON and the copied plots, with the shared drawing crate the plot ports use.
+- The PDF's fonts and header image are embedded from `orange-rs/resources/` (copied from `orange/src/main/resources`):
+  the image's build context needs `!orange-rs/resources` in `rust-docker/Dockerfile.dockerignore`.
 - In the pipeline, oncoanalyser runs ORANGE only when PURPLE's `plot/<tumor>.circos.png` exists. Until purple-rs draws
   its plots, a run with purple-rs skips ORANGE, and orange-rs runs only beside the Java PURPLE.
 - `small_variant` in hmf-common-rs repeats code that purple-rs has in `src/variant.rs` (VariantImpact, the pathogenic

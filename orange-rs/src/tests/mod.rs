@@ -16,6 +16,11 @@ use crate::purple::PurpleData;
 
 const EPSILON: f64 = 1e-2;
 
+/// The Java tests' resource directory, when present
+pub fn java_test_resources() -> Option<String> {
+    resources()
+}
+
 fn resources() -> Option<String> {
     let dir = std::env::var("ORANGE_TEST_RESOURCES")
         .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../hmftools/orange/src/test/resources").to_string());
