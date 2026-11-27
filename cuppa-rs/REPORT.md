@@ -217,3 +217,12 @@ Used from hmf-common-rs: `config_builder`, `compat`, `log`, `fmt` (Java's %.nf /
 (the reportable signatures' HashMap order), `variant_context` (record parsing), `sv` (StructuralVariantFactory,
 EnrichedStructuralVariantFactory, StructuralVariantData), `purple_files` (driver catalog), `gz` (zlib-rs
 inflating), `regions`, `ref_coords`, `sigs`.
+
+## In the pipeline (GIAB HG008, 2026-11-27)
+
+HG008 rerun 11 on Google Batch ran CUPPA as the port (the image's `cuppa`, and its `python` stand-in for
+`python -m cuppa.predict`), in Java mode, with every other step from the cache. The features file is identical
+to the first run's. The prediction summary and vis data differ from the pipeline's pycuppa (Linux x86-64) only in
+the last digits: 10 and 247 values, at most 2.4e-13 relative. ORANGE, which ran again on them, carried those
+digits into its JSON and reported no CUPPA plot (the port draws none); everything else in the JSON was unchanged.
+CUPPA took 1.7 s and 21 MB, against Java and pycuppa's 16 s and 494 MB. The rerun's tasks cost $0.02.

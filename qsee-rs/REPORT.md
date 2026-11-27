@@ -392,3 +392,10 @@ Additions only; no existing behaviour changed. `cargo test --release` in hmf-com
   not with real SBX or Ultima REDUX output (none at hand).
 - Math.log10 on x86-64 (see above): the Java reference here is aarch64; a Linux x86-64 Java run could differ
   in the last bit of an MS indel score, which the 8-decimal output would show only rarely.
+
+## In the pipeline (GIAB HG008, 2026-11-27)
+
+HG008 rerun 11 on Google Batch ran qsee as the port, in Java mode, with every other step from the cache. The
+image has no R, so its wrapper added `-skip_plot`. The three data files (gene limit of detection, status, vis
+data) are identical to the first run's (qsee 1.1-beta.1); the R report was not drawn. ORANGE ran on them and
+reported no qsee plot. qsee took 2.6 s and 21 MB, against Java's 38 s and 1.1 GB (with R).
