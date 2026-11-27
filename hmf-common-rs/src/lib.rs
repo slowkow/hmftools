@@ -12,9 +12,15 @@
 //! - `java_fastmath`: commons-math3 FastMath.log, which COBALT applies before segmenting.
 //! - `segmentation`: per-arm piecewise constant segmentation and the segments file (AMBER, COBALT), and
 //!   the .pcf readers (PURPLE).
+//! - `ensembl`: the Ensembl data cache (genes, transcripts, exons); `driver_panel`: the driver gene panel
+//!   and its gene regions; `metrics`: the BamTools metrics files (summary, coverage, fragment lengths,
+//!   flag counts, gene and exon depth), writers and readers; `java_text`: Java's number parsing and
+//!   String.split as the file readers need them.
 
 pub mod args;
 pub mod compat;
+pub mod driver_panel;
+pub mod ensembl;
 pub mod faidx;
 pub mod fmt;
 pub mod java_fastmath;
@@ -22,7 +28,9 @@ pub mod java_hash;
 pub mod java_id_hash;
 pub mod java_math;
 pub mod java_sort;
+pub mod java_text;
 pub mod log;
+pub mod metrics;
 pub mod refgenome;
 pub mod regions;
 pub mod segmentation;

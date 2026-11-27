@@ -1,7 +1,8 @@
-//! commons-math3 3.6.1 `FastMath.log(double)` and `FastMath.log(double, double)`, which COBALT applies to
-//! its ratios before segmenting them. FastMath's logarithm is a table-driven algorithm of its own whose
+//! commons-math3 3.6.1 `FastMath.log(double)`, `FastMath.log(double, double)` and `FastMath.exp(double)`.
+//! COBALT applies the logarithm to its ratios before segmenting them; AMBER's Poisson and binomial
+//! distributions (commons-math3 PoissonDistribution, BinomialDistribution) take both. FastMath's logarithm is a table-driven algorithm of its own whose
 //! result differs from `Math.log` (and Rust's `ln`) in the last bit for some inputs, so it is ported
-//! operation by operation, with the library's tables copied as bit patterns.
+//! operation by operation, with the library's tables copied as bit patterns. The same holds for exp.
 
 /// FastMath.log(x): the path without the high-precision output array.
 pub fn log(x: f64) -> f64 {
@@ -1152,6 +1153,53 @@ pub(crate) const LN_MANT: [[u64; 2]; 1024] = [
     [0x3fe62a42c0000000, 0xbe20b1be62caa3b0],
 ];
 
+
+#[path = "java_fastmath_exp_tables.rs"]
+mod tables;
+
+const EXP_INT_TABLE_MAX_INDEX: i32 = 750;
+
+/// FastMath.exp(x): exp(x, 0.0, null)
+pub fn exp(x: f64) -> f64 {
+    // Java's (int) cast: truncation towards zero, NaN to 0, saturating
+    let mut int_val = x as i32;
+    if x < 0.0 {
+        if x < -746.0 {
+            return 0.0;
+        }
+        if int_val < -709 {
+            // a subnormal result
+            return exp(x + 40.19140625) / 285040095144011776.0;
+        }
+        if int_val == -709 {
+            // exp(1.494140625) is nearly a machine number
+            return exp(x + 1.494140625) / 4.455505956692756620;
+        }
+        int_val -= 1;
+    } else if int_val > 709 {
+        return f64::INFINITY;
+    }
+    let i = (EXP_INT_TABLE_MAX_INDEX + int_val) as usize;
+    let int_part_a = f64::from_bits(tables::EXP_INT_TABLE_A[i]);
+    let int_part_b = f64::from_bits(tables::EXP_INT_TABLE_B[i]);
+    let int_frac = ((x - int_val as f64) * 1024.0) as i32;
+    let frac_part_a = f64::from_bits(tables::EXP_FRAC_TABLE_A[int_frac as usize]);
+    let frac_part_b = f64::from_bits(tables::EXP_FRAC_TABLE_B[int_frac as usize]);
+    let epsilon = x - (int_val as f64 + int_frac as f64 / 1024.0);
+    let mut z = 0.04168701738764507;
+    z = z * epsilon + 0.1666666505023083;
+    z = z * epsilon + 0.5000000000042687;
+    z = z * epsilon + 1.0;
+    z = z * epsilon + -3.940510424527919E-20;
+    let temp_a = int_part_a * frac_part_a;
+    let temp_b = int_part_a * frac_part_b + int_part_b * frac_part_a + int_part_b * frac_part_b;
+    let temp_c = temp_b + temp_a;
+    if temp_c == f64::INFINITY {
+        return f64::INFINITY;
+    }
+    temp_c * z + temp_b + temp_a
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1170,5 +1218,17 @@ mod tests {
         // FastMath.log(2, 3.0) printed by Java: 1.5849625007211563 (Java's Math.log(3) / Math.log(2) is
         // 1.584962500721156)
         assert_eq!(log_base(2.0, 3.0), 1.5849625007211563);
+    }
+
+    #[test]
+    fn exp_values() {
+        assert_eq!(exp(0.0), 1.0);
+        assert_eq!(exp(-800.0), 0.0);
+        assert_eq!(exp(800.0), f64::INFINITY);
+        assert!(exp(f64::NAN).is_nan());
+        for x in [-745.0, -720.5, -709.3, -100.25, -2.0, -0.001, 0.5, 1.0, 3.7, 700.0] {
+            let (a, b) = (exp(x), x.exp());
+            assert!(((a - b) / b).abs() < 1e-15 || (a == 0.0 && b < 1e-320), "{x}: {a} {b}");
+        }
     }
 }

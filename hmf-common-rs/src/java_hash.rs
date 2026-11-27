@@ -120,6 +120,15 @@ impl<K: JavaHash + Eq + Hash + Clone, V> JavaHashMap<K, V> {
         self.entries.clear();
         self.index.clear();
     }
+    /// keeps the entries `f` accepts, in their order; the table keeps its size, as Java's does on removal
+    /// (Collection.retainAll / removeIf)
+    pub fn retain(&mut self, mut f: impl FnMut(&K, &V) -> bool) {
+        self.entries.retain(|(k, v)| f(k, v));
+        self.index.clear();
+        for (i, (k, _)) in self.entries.iter().enumerate() {
+            self.index.insert(k.clone(), i);
+        }
+    }
     fn order(&self) -> Vec<usize> {
         let mask = (self.capacity - 1) as u32;
         let mut order: Vec<usize> = (0..self.entries.len()).collect();
@@ -194,6 +203,10 @@ impl<K: JavaHash + Eq + Hash + Clone> JavaHashSet<K> {
     }
     pub fn clear(&mut self) {
         self.map.clear()
+    }
+    /// retainAll / removeIf: keeps the keys `f` accepts; the table keeps its size
+    pub fn retain(&mut self, mut f: impl FnMut(&K) -> bool) {
+        self.map.retain(|k, _| f(k))
     }
     /// keys in Java iteration order
     pub fn iter(&self) -> impl Iterator<Item = &K> {

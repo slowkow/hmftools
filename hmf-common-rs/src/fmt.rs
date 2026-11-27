@@ -795,3 +795,74 @@ mod tests {
         }
     }
 }
+
+/// Double.toString as Java 19 and later print it: the shortest digits that round-trip; plain notation
+/// with at least one fraction digit for magnitudes from 1e-3 up to 1e7, else d.dddE<exponent>.
+/// (Added 2026-11-26 for the driver gene panel writer; `java_double_digits` gives the older form.)
+pub fn java_double_to_string(d: f64) -> String {
+    if d.is_nan() {
+        return "NaN".into();
+    }
+    if d.is_infinite() {
+        return if d > 0.0 { "Infinity".into() } else { "-Infinity".into() };
+    }
+    if d == 0.0 {
+        return if d.is_sign_negative() { "-0.0".into() } else { "0.0".into() };
+    }
+    let neg = d < 0.0;
+    let (ds, exp) = digits(d.abs()); // value = 0.ds x 10^exp
+    let mut s = String::new();
+    if neg {
+        s.push('-');
+    }
+    let a = d.abs();
+    if (1e-3..1e7).contains(&a) {
+        if exp <= 0 {
+            s.push_str("0.");
+            s.extend(std::iter::repeat_n('0', (-exp) as usize));
+            s.extend(ds.iter().map(|x| (x + b'0') as char));
+        } else {
+            let e = exp as usize;
+            for i in 0..e {
+                s.push(if i < ds.len() { (ds[i] + b'0') as char } else { '0' });
+            }
+            s.push('.');
+            if ds.len() > e {
+                s.extend(ds[e..].iter().map(|x| (x + b'0') as char));
+            } else {
+                s.push('0');
+            }
+        }
+    } else {
+        s.push((ds[0] + b'0') as char);
+        s.push('.');
+        if ds.len() > 1 {
+            s.extend(ds[1..].iter().map(|x| (x + b'0') as char));
+        } else {
+            s.push('0');
+        }
+        s.push('E');
+        s.push_str(&(exp - 1).to_string());
+    }
+    s
+}
+
+#[cfg(test)]
+mod double_to_string_tests {
+    use super::java_double_to_string as t;
+
+    #[test]
+    fn java_19_double_to_string() {
+        assert_eq!(t(3.0), "3.0");
+        assert_eq!(t(0.6), "0.6");
+        assert_eq!(t(-2.5), "-2.5");
+        assert_eq!(t(0.001), "0.001");
+        assert_eq!(t(0.0001), "1.0E-4");
+        assert_eq!(t(1e7), "1.0E7");
+        assert_eq!(t(1234567.0), "1234567.0");
+        assert_eq!(t(2e-3), "0.002");
+        assert_eq!(t(1.0E23), "1.0E23");
+        assert_eq!(t(123.456), "123.456");
+        assert_eq!(t(-0.0), "-0.0");
+    }
+}
