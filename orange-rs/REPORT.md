@@ -214,8 +214,20 @@ QSee report PDF (`qsee/<tumor>.qsee.vis.report.pdf`) is not used; its PNG is.
 
 ## Open points
 
+- Upstream's change of 2026-11-23 (f5f660cc9f): the virus section is `viridian`, and ORANGE also reads Viridian's
+  files. The pipeline's ORANGE image already has it.
 - The PDF: to be drawn natively from the JSON and the copied plots, with the shared drawing crate the plot ports use.
 - In the pipeline, oncoanalyser runs ORANGE only when PURPLE's `plot/<tumor>.circos.png` exists. Until purple-rs draws
   its plots, a run with purple-rs skips ORANGE, and orange-rs runs only beside the Java PURPLE.
 - `small_variant` in hmf-common-rs repeats code that purple-rs has in `src/variant.rs` (VariantImpact, the pathogenic
   summary); purple-rs could use the shared module.
+
+## In the pipeline (GIAB HG008, 2026-11-27)
+
+HG008 rerun 12 on Google Batch ran ORANGE as the port, in Java mode, on the inputs of rerun 11 (every other step
+from the cache; PURPLE in Java, which draws the plots ORANGE needs). The JSON equals the one Hartwig's ORANGE image
+(5.1-beta.1) wrote from the same inputs but for one key: the image names the virus section `viridian`, while the
+5.1 jar this port follows (hmftools ca04e6c39d) and the port name it `virusInterpreter`. Upstream renamed it on
+2026-11-23 (f5f660cc9f, "support loading Viridian and VirusInterpreter files"); following that is an open point.
+The LINX driver plots came in the same order (in Java mode both take Linux's directory order). ORANGE took 5.3 s
+and 42 MB, against Java's 18 s and 419 MB.
