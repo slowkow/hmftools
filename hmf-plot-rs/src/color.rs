@@ -345,6 +345,8 @@ impl CircosColours {
         let lower = spec.trim().to_ascii_lowercase();
         let spec = lower.as_str();
         if spec.contains(',') {
+            // "(r,g,b,a)": Circos's validate_rgb accepts the components in parentheses (LINX's data files)
+            let spec = spec.strip_prefix('(').and_then(|x| x.strip_suffix(')')).unwrap_or(spec);
             let parts: Vec<&str> = spec.split(',').map(|s| s.trim()).collect();
             if parts.len() == 3 || parts.len() == 4 {
                 let ch = |s: &str| s.parse::<f64>().ok().map(|v| v.clamp(0.0, 255.0).round() as u8);

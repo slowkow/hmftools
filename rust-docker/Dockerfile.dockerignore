@@ -71,6 +71,7 @@
 !linx-rs/Cargo.lock
 !linx-rs/src
 !linx-rs/resources
+!linx-rs/.cargo
 !sigs-rs/Cargo.toml
 !sigs-rs/Cargo.lock
 !sigs-rs/src

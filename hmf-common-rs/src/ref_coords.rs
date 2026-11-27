@@ -21,6 +21,31 @@ pub fn chromosome_length(chromosome: &str, v37: bool) -> Option<i32> {
     Some(if v37 { LENGTHS_37[i] } else { LENGTHS_38[i] })
 }
 
+/// RefGenomeCoordinates' centromeres (resources refgenome/centromeres.37.tsv and centromeres.38.tsv), in the
+/// order of NAMES. (Added for the LINX visualiser.)
+const CENTROMERES_37: [i32; 24] = [
+    123035434, 93826171, 92004854, 51160117, 47905641, 60330166, 59554331, 45338887, 48867679, 40754935, 53144205, 36356694,
+    17500000, 17500000, 18500000, 36835801, 23763006, 16960898, 26181782, 27869569, 12788129, 14500000, 60132012, 11604553,
+];
+
+const CENTROMERES_38: [i32; 24] = [
+    123605523, 93139351, 92214016, 50726026, 48272854, 59191911, 59498944, 44955505, 44377363, 40640102, 52751711, 35977330,
+    17025624, 17086762, 18362627, 37295920, 24849830, 18161053, 25844927, 28237290, 11890184, 14004553, 60509061, 10430492,
+];
+
+/// The centromere position of a human chromosome given without a "chr" prefix, or None.
+pub fn centromere(chromosome: &str, v37: bool) -> Option<i32> {
+    let i = NAMES.iter().position(|n| *n == chromosome)?;
+    Some(if v37 { CENTROMERES_37[i] } else { CENTROMERES_38[i] })
+}
+
+/// RefGenomeCoordinates.readCentromereGaps: the lines of refgenome/centromere_gaps.<version>.tsv
+/// ("hs<chromosome>", start, end; tab-separated), as BufferedReader.lines() gives them.
+pub fn centromere_gap_lines(v37: bool) -> Vec<&'static str> {
+    let text = if v37 { include_str!("../resources/refgenome/centromere_gaps.37.tsv") } else { include_str!("../resources/refgenome/centromere_gaps.38.tsv") };
+    text.lines().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -32,5 +57,16 @@ mod tests {
         assert_eq!(chromosome_length("Y", false), Some(57227415));
         assert_eq!(chromosome_length("M", false), None);
         assert_eq!(chromosome_length("x", false), None);
+    }
+
+    #[test]
+    fn centromeres() {
+        assert_eq!(centromere("1", false), Some(123605523));
+        assert_eq!(centromere("Y", true), Some(11604553));
+        assert_eq!(centromere("chr1", false), None);
+        assert_eq!(centromere_gap_lines(false)[0], "hs1\t125184587\t143184587");
+        // the GRCh38 file ends without a newline
+        assert_eq!(centromere_gap_lines(false).len(), 33);
+        assert_eq!(centromere_gap_lines(true).len(), 31);
     }
 }

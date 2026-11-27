@@ -16,6 +16,10 @@ use crate::fmath::FMath;
 
 pub mod conf;
 pub mod expr;
+pub mod glyph;
+pub mod label_expr;
+pub mod units;
+mod tracks_ext;
 
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -146,6 +150,10 @@ pub struct Circos<'a> {
     radius_outer: f64,
     radius_inner: f64,
     fig: Figure,
+    /// see `with_gd_fill_extent`
+    gd_fill_extent: bool,
+    /// see `with_gd_text_bounds`
+    gd_text_bounds: bool,
 }
 
 impl<'a> Circos<'a> {
@@ -185,6 +193,8 @@ impl<'a> Circos<'a> {
             radius_outer: 0.0,
             radius_inner: 0.0,
             fig,
+            gd_fill_extent: false,
+            gd_text_bounds: false,
         };
         c.layout()?;
         Ok(c)
@@ -291,6 +301,10 @@ impl<'a> Circos<'a> {
         match Unit::parse(v) {
             Some(Unit::R(x)) => Ok(x * if x < 1.0 { self.radius_inner } else { self.radius_outer }),
             Some(u) => Ok(u.value()),
+            None if units::has_unit_terms(v) => {
+                let cu = self.conf.get("chromosomes_units").and_then(|u| u.parse().ok()).unwrap_or(1.0);
+                expr::eval(&units::substitute(v, self.radius_inner, self.radius_outer, cu), &DimsResolver { c: self })
+            }
             None => expr::eval(v, &DimsResolver { c: self }),
         }
     }
@@ -402,13 +416,15 @@ impl<'a> Circos<'a> {
                 continue;
             }
             let n = |s: &str| s.parse::<i64>().map_err(|_| format!("{file}: bad position in '{line}'"));
-            let value = f.get(3).map(|s| s.to_string()).unwrap_or_default();
+            // four fields whose last holds '=': coordinates and options, no value (IO.pm)
+            let options_only = f.len() == 4 && f[3].contains('=');
+            let value = if options_only { String::new() } else { f.get(3).map(|s| s.to_string()).unwrap_or_default() };
             if skip_run && !self.opts.ignore_skip_run && f.len() > 3 {
                 if prev_value.as_deref() == Some(value.as_str()) {
                     continue;
                 }
             }
-            if f.len() > 3 {
+            if f.len() > 3 && !options_only {
                 prev_value = Some(value.clone());
             }
             data.push(Datum {
@@ -416,7 +432,7 @@ impl<'a> Circos<'a> {
                 start: n(f[1])?,
                 end: n(f[2])?,
                 value,
-                params: f.get(4).map(|o| conf::parse_options(o)).unwrap_or_default(),
+                params: (if options_only { f.get(3) } else { f.get(4) }).map(|o| conf::parse_options(o)).unwrap_or_default(),
                 hidden: false,
             });
         }
@@ -431,7 +447,7 @@ impl<'a> Circos<'a> {
         for d in data.iter_mut() {
             for rule in &rules {
                 let Some(cond) = rule.get("condition") else { continue };
-                let pass = expr::eval(cond, &DatumResolver { d }).map_err(|e| format!("rule '{cond}': {e}"))? != 0.0;
+                let pass = expr::eval(cond, &DatumResolver { d, conf: Some(&self.conf) }).map_err(|e| format!("rule '{cond}': {e}"))? != 0.0;
                 if pass {
                     for (k, v) in &rule.params {
                         if k == "condition" || k == "flow" {
@@ -442,7 +458,7 @@ impl<'a> Circos<'a> {
                             continue;
                         }
                         let value = if v.starts_with("eval(") {
-                            let x = expr::eval(v, &DatumResolver { d })?;
+                            let x = expr::eval(v, &DatumResolver { d, conf: Some(&self.conf) })?;
                             format_number(x)
                         } else {
                             v.clone()
@@ -496,7 +512,9 @@ impl<'a> Circos<'a> {
         if let Some(hs) = self.conf.block("highlights") {
             for h in hs.blocks("highlight") {
                 let Some(file) = h.get("file") else { continue };
-                let (data, _) = self.read_data(file, false, false)?;
+                let (mut data, _) = self.read_data(file, false, false)?;
+                self.apply_rules(h, &mut data)?;
+                data.retain(|d| !d.hidden);
                 out.push((h.clone(), data));
             }
         }
@@ -533,6 +551,7 @@ impl<'a> Circos<'a> {
                 let fill = self.colour(seek(p, track, "highlight.bg", "fill_color"));
                 let edge = self.colour(seek(p, track, "highlight.bg", "stroke_color"));
                 let width = seek(p, track, "highlight.bg", "stroke_thickness").and_then(Unit::parse).map(|u| u.value()).unwrap_or(0.0);
+                let (r0, r1) = self.gd_extent(r0, r1, fill.is_some());
                 self.slice(&id.chr, s as f64, e as f64, r0, r1, fill, edge, width);
             }
         }
@@ -548,12 +567,24 @@ impl<'a> Circos<'a> {
         let font = Font::circos(ideo.get("label_font").unwrap_or("default")).unwrap_or(Font::CircosBold);
         let size = ideo.get("label_size").and_then(Unit::parse).map(|u| u.value()).unwrap_or(12.0);
         let mut label = id.label.clone();
+        if let Some(fmt) = ideo.get("label_format") {
+            let var = |n: &str| match n {
+                "chr" => Some(id.chr.clone()),
+                "label" => Some(id.label.clone()),
+                "start" => Some(id.start.to_string()),
+                "end" => Some(id.end.to_string()),
+                _ => None,
+            };
+            if let Some(l) = label_expr::eval(fmt, &var) {
+                label = l;
+            }
+        }
         if ideo.get("label_case") == Some("upper") {
             label = label.to_uppercase();
         } else if ideo.get("label_case") == Some("lower") {
             label = label.to_lowercase();
         }
-        let (w, h) = Self::label_size(font, size, &label);
+        let (w, h) = self.text_size(font, size, &label);
         let parallel = ideo.flag("label_parallel").unwrap_or(false);
         let mut radius = match ideo.get("label_radius") {
             Some(v) => self.radius(v)?,
@@ -574,7 +605,7 @@ impl<'a> Circos<'a> {
     fn draw_text(&mut self, label: &str, font: Font, size_pt: f64, color: Rgba, angle: f64, radius: f64, rotated: bool, parallel: bool) {
         let q = angle_quadrant(angle);
         let text_angle = text_angle_2(angle, rotated, parallel);
-        let (w, h) = Self::label_size(font, size_pt, label);
+        let (w, h) = self.text_size(font, size_pt, label);
         let mut angle_offset = 0.0;
         if !parallel {
             let offset = RAD2DEG * h / 2.0 / radius;
@@ -601,6 +632,7 @@ impl<'a> Circos<'a> {
         for track in &tracks {
             let Some(file) = track.get("file") else { continue };
             let (_, links) = self.read_data(file, true, false)?;
+            let links = self.apply_link_rules(track, links)?;
             for l in &links {
                 let p = Some(l.params.as_slice());
                 let (Some(i1), Some(i2)) = (self.ideogram_of(&l.a.0, l.a.1), self.ideogram_of(&l.b.0, l.b.1)) else { continue };
@@ -731,6 +763,7 @@ impl<'a> Circos<'a> {
                 "histogram" => self.draw_histogram(track, data, plot_min, plot_max)?,
                 "heatmap" => self.draw_heatmap(track, data, plot_min, plot_max)?,
                 "highlight" => self.draw_highlight_track(track, data)?,
+                "connector" => self.draw_connector_track(track, data)?,
                 "text" => self.draw_text_track(track, data)?,
                 _ => {}
             }
@@ -759,25 +792,9 @@ impl<'a> Circos<'a> {
                     (Some(a), Some(b)) => (a, b),
                     _ => (r0, r1),
                 };
-                // Circos::Division::make_divisions: spacing ("<x>r" of the range), positions from min to max
-                let mut divisions: Vec<(f64, f64, &Block)> = Vec::new();
-                for axis in axes.blocks("axis") {
-                    let spacing = match axis.get("spacing") {
-                        Some(s) if s.ends_with('r') => s[..s.len() - 1].trim().parse::<f64>().unwrap_or(0.0) * (max - min),
-                        Some(s) => s.parse::<f64>().unwrap_or(0.0),
-                        None => 0.0,
-                    };
-                    if spacing <= 0.0 {
-                        continue;
-                    }
-                    let tol = spacing / 1000.0;
-                    let mut y = min;
-                    while y <= max + tol {
-                        divisions.push((spacing, y, axis));
-                        y += spacing;
-                    }
-                }
-                for (_, pos, axis) in divisions {
+                // Circos::Division::make_divisions: positions from `position` lists and `spacing` ("<x>r" of the range)
+                let divisions = tracks_ext::make_divisions(axes, min, max);
+                for (pos, axis) in divisions {
                     let color = self.colour(axis.get("color").or(track_default("axis", "color")));
                     let thickness = axis.get("thickness").or(track_default("axis", "thickness")).and_then(Unit::parse).map(|u| u.value()).unwrap_or(1.0);
                     let f = if max - min != 0.0 { (pos - min) / (max - min) } else { min };
@@ -872,6 +889,14 @@ impl<'a> Circos<'a> {
             let (x, y) = self.xy(angle, radius);
             let stroke_w = seek(p, track, "scatter", "stroke_thickness").and_then(Unit::parse).map(|u| u.value()).unwrap_or(0.0);
             let stroke = if stroke_w > 0.0 { self.colour(seek(p, track, "scatter", "stroke_color")).map(|c| Stroke::solid(c, stroke_w)) } else { None };
+            let glyph = seek(p, track, "scatter", "glyph").unwrap_or("circle");
+            if glyph != "circle" {
+                let shift = seek(p, track, "scatter", "angle_shift").or(seek(p, track, "scatter", "glyph_rotation")).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                if let Some(pts) = glyph::polygon(glyph, x, y, size, angle, self.angle_offset, shift) {
+                    self.fig.polygon(pts, colour, stroke);
+                }
+                continue;
+            }
             // GD's filledArc of width w covers w + 1 pixels: radius (w + 1) / 2
             self.fig.circle(x, y, (size + 1.0) / 2.0, colour, stroke);
         }
@@ -883,6 +908,8 @@ impl<'a> Circos<'a> {
         let r0 = self.radius(seek(None, track, "histogram", "r0").unwrap_or("0r"))?;
         let r1 = self.radius(seek(None, track, "histogram", "r1").unwrap_or("0r"))?;
         let orientation_in = seek(None, track, "histogram", "orientation") == Some("in");
+        // extend_bin = no: bins are joined only when they touch (within one base), else each run ends at the floor
+        let no_extend = seek(None, track, "histogram", "extend_bin").is_some_and(|v| !conf::is_true(v));
         // (ideogram, start, end, radius, radius of the floor, fill, outline colour, outline width)
         let mut bins: Vec<(usize, f64, f64, f64, f64, Option<Rgba>, Option<Rgba>, f64)> = Vec::new();
         for d in &data {
@@ -903,7 +930,7 @@ impl<'a> Circos<'a> {
         while k < bins.len() {
             let i = bins[k].0;
             let mut end = k;
-            while end + 1 < bins.len() && bins[end + 1].0 == i {
+            while end + 1 < bins.len() && bins[end + 1].0 == i && !(no_extend && bins[end + 1].1 - bins[end].2 > 1.0) {
                 end += 1;
             }
             let chr = self.ideograms[i].chr.clone();
@@ -975,6 +1002,7 @@ impl<'a> Circos<'a> {
             let edge = self.colour(seek(p, track, "highlight", "stroke_color").or(seek(p, track, "highlight", "color")));
             let width = seek(p, track, "highlight", "stroke_thickness").and_then(Unit::parse).map(|u| u.value()).unwrap_or(0.0);
             let fill = self.colour(seek(p, track, "highlight", "fill_color"));
+            let (r0, r1) = self.gd_extent(r0, r1, fill.is_some());
             self.slice(&chr, s as f64, e as f64, r0, r1, fill, edge, width);
         }
         Ok(())
@@ -992,7 +1020,7 @@ impl<'a> Circos<'a> {
             let Some((_, s, e)) = self.place(d) else { continue };
             let p = Some(d.params.as_slice());
             let size = seek(p, track, "text", "label_size").and_then(Unit::parse).map(|u| u.value()).unwrap_or(12.0);
-            let (w, h) = Self::label_size(font, size, &d.value);
+            let (w, h) = self.text_size(font, size, &d.value);
             let radius = self.radius(seek(p, track, "text", "r0").unwrap_or("0r"))?;
             let rpadding = match seek(p, track, "text", "rpadding").and_then(Unit::parse) {
                 Some(Unit::R(x)) => x * w,
@@ -1277,6 +1305,8 @@ impl expr::Resolver for DimsResolver<'_, '_> {
 
 struct DatumResolver<'a> {
     d: &'a Datum,
+    /// the configuration, for conf() (rules comparing with `current_frame` in LINX's configurations)
+    conf: Option<&'a Block>,
 }
 
 impl expr::Resolver for DatumResolver<'_> {
@@ -1292,8 +1322,12 @@ impl expr::Resolver for DatumResolver<'_> {
     fn dims(&self, _: &[&str]) -> Option<f64> {
         None
     }
-    fn conf(&self, _: &[&str]) -> Option<f64> {
-        None
+    fn conf(&self, args: &[&str]) -> Option<f64> {
+        let mut b = self.conf?;
+        for a in &args[..args.len().saturating_sub(1)] {
+            b = b.block(a)?;
+        }
+        Unit::parse(b.get(args.last()?)?).map(|u| u.value())
     }
 }
 

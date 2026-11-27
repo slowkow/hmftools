@@ -30,8 +30,11 @@ pub fn java(id: &'static str) -> bool {
 /// The number of findings, LX1 to LX<FINDINGS>; raise it when a finding is added.
 pub const FINDINGS: u32 = 5;
 
+/// The visualiser's findings, LV1 to LV<VIS_FINDINGS>.
+pub const VIS_FINDINGS: u32 = 4;
+
 fn valid_id(id: &str) -> bool {
-    numbered_id(id, "LX", FINDINGS) || hmf_common::compat::common_id(id)
+    numbered_id(id, "LX", FINDINGS) || numbered_id(id, "LV", VIS_FINDINGS) || hmf_common::compat::common_id(id)
 }
 
 /// Takes `-java_compat` and `-java_compat_except <ids>` out of the arguments and sets the mode.

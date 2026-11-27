@@ -18,6 +18,8 @@ pub enum Font {
     CircosBold,
     /// CMU Sans Serif Demi Condensed: Circos's `condensed` (text tracks).
     CircosCondensed,
+    /// CMU Bright Roman: Circos's `default`, `sans`, `normal` and `light` (LINX's labels).
+    CircosRoman,
 }
 
 impl Font {
@@ -26,14 +28,16 @@ impl Font {
             Font::Sans => "hmfplot-dejavu-sans",
             Font::CircosBold => "hmfplot-cmu-bright-bold",
             Font::CircosCondensed => "hmfplot-cmu-sans-demicondensed",
+            Font::CircosRoman => "hmfplot-cmu-bright-roman",
         }
     }
 
-    fn data(&self) -> &'static [u8] {
+    pub(crate) fn data(&self) -> &'static [u8] {
         match self {
             Font::Sans => include_bytes!("../fonts/DejaVuSans.ttf"),
             Font::CircosBold => include_bytes!("../fonts/cmunbbx.otf"),
             Font::CircosCondensed => include_bytes!("../fonts/cmunssdc.otf"),
+            Font::CircosRoman => include_bytes!("../fonts/cmunbmr.ttf"),
         }
     }
 
@@ -46,6 +50,7 @@ impl Font {
         match name {
             "bold" => Some(Font::CircosBold),
             "condensed" | "condensedbold" | "boldcondensed" => Some(Font::CircosCondensed),
+            "default" | "sans" | "sans_serif" | "sansserif" | "normal" | "light" => Some(Font::CircosRoman),
             _ => None,
         }
     }
@@ -59,7 +64,7 @@ static TEXT_LOCK: Mutex<()> = Mutex::new(());
 pub(crate) fn engine() -> MutexGuard<'static, ()> {
     let guard = TEXT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     REGISTER.call_once(|| {
-        for font in [Font::Sans, Font::CircosBold, Font::CircosCondensed] {
+        for font in [Font::Sans, Font::CircosBold, Font::CircosCondensed, Font::CircosRoman] {
             let data = font.data();
             let family = font.c_family();
             // SAFETY: BUI copies the font data; the family string outlives the call.

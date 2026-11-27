@@ -31,6 +31,7 @@ mod output;
 mod types;
 mod utils;
 mod vis;
+mod visualiser;
 #[cfg(test)]
 mod tests;
 
@@ -141,6 +142,18 @@ fn is_jvm_option(a: &str) -> bool {
 
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).filter(|a| !is_jvm_option(a) && !a.is_empty()).collect();
+    // the main class as the image's `linx` wrapper (java -cp linx.jar <class> ...) passes it
+    if argv.iter().any(|a| a == visualiser::MAIN_CLASS) {
+        let rest: Vec<String> = argv.into_iter().filter(|a| a != visualiser::MAIN_CLASS).collect();
+        std::process::exit(match compat::take_options(&rest).and_then(|r| visualiser::run(&r)) {
+            Ok(code) => code,
+            Err(e) => {
+                error!("{e:#}");
+                1
+            }
+        });
+    }
+    let argv: Vec<String> = argv.into_iter().filter(|a| a != "com.hartwig.hmftools.linx.LinxApplication").collect();
     std::process::exit(match run(&argv) {
         Ok(code) => code,
         Err(e) => {

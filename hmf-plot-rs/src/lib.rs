@@ -9,6 +9,8 @@
 //!   scripts use.
 //! - [`circos`]: a Circos ring engine driven by Circos configuration files: karyotype, ideograms, highlights,
 //!   scatter, histogram, heatmap and text tracks, axes, backgrounds, links.
+//! - [`gviz`], [`compose`], [`gdtext`], [`rpdf`]: Gviz's ideogram strip, placing rendered images on a canvas,
+//!   GD's string boxes, and R's `pdf()` device text metrics (LINX's visualiser).
 //!
 //! - [`pdf`] (feature "pdf"): a PDF writer (pages, vector shapes, text in embedded font subsets, PNG images,
 //!   outlines) and a table layout engine that reproduces boxable's (the Java tables library ORANGE uses).
@@ -30,6 +32,16 @@ pub mod raster;
 pub mod text;
 #[cfg(feature = "raster")]
 pub mod circos;
+#[cfg(feature = "raster")]
+pub mod compose;
+#[cfg(feature = "raster")]
+pub mod gdtext;
+#[cfg(feature = "raster")]
+pub mod gviz;
+#[cfg(feature = "raster")]
+pub mod rpdf;
+#[cfg(feature = "raster")]
+mod rpdf_helvetica;
 #[cfg(feature = "raster")]
 pub mod gg;
 #[cfg(feature = "pdf")]

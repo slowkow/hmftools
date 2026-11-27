@@ -43,8 +43,36 @@ Options, as in Java:
 Port options: `-java_compat` (or `LINX_JAVA_COMPAT=1`) reproduces every Java fault;
 `-java_compat_except LX2,LX5` (or `LINX_JAVA_COMPAT_EXCEPT`) all but those listed.
 
-Not ported: the visualiser (a separate main class), RNA fusion matching (`-rna_fusions_file` is
-refused), cohort and batch outputs, and the diagnostic files.
+Not ported: RNA fusion matching (`-rna_fusions_file` is refused), cohort and batch outputs, and the
+diagnostic files.
+
+## The visualiser
+
+```
+linx-rs com.hartwig.hmftools.linx.visualiser.SvVisualiser -sample <id> -vis_file_dir <linx output> \
+    -amber_dir <dir> -cobalt_dir <dir> -purple_dir <dir> -ref_genome_version 38 -ensembl_data_dir <dir> \
+    -circos [path] -threads <n> -plot_out <dir> -data_out <dir> [-plot_reportable]
+```
+
+With LINX's visualiser class on the command line (as `java -cp linx.jar <class>` and oncoanalyser's
+LINX_VISUALISER pass it), linx-rs runs the visualiser: per cluster, chromosome and driver gene CNV it writes the
+Circos configuration and data files Java writes (`-data_out`) and draws the plot (`-plot_out`,
+`<id>.<plot>.<frame>.png`) natively with hmf-plot-rs: the Circos image, the fusion panels of `fusionPlot.R` and the
+chromosome range strip of `chromosomeRangePlot.R`, composed as Java's R scripts compose them. No Java, R or Circos is
+needed; `-circos` is accepted with or without a path and not run.
+
+Options as in Java: `-plot_reportable`, `-clusterId`, `-chainId`, `-chromosome` (`All` for every chromosome),
+`-gene`, `-plot_cluster_genes`, `-restrict_cluster_by_gene`, `-include_fragile_sites`, `-include_line_elements`,
+`-germline`, `-debug`, `-threads`, and CircosConfig's (`-max_plot_svs`, `-outer_radius`, `-inner_radius`,
+`-gap_radius`, `-exon_rank_radius`, `-fusion_height`, `-fusion_legend_rows`, `-fusion_legend_height_per_row`,
+`-chr_range_height`, `-chr_range_columns`, `-gene_relative_size`, `-segment_relative_size`, `-cna_relative_size`,
+`-min_label_size`, `-max_label_size`, `-max_distance_labels`, `-max_position_labels`, `-max_gene_characters`,
+`-min_line_size`, `-max_line_size`, `-glyph_size`, `-interpolate_cna_positions`, `-interpolate_exon_positions`,
+`-exact_position`, `-show_sv_id`, `-step`). Port options: `-no_plots`, `-no_data_files`, `-perf_debug`,
+`-java_compat`. Not ported: `-load_cohort_files` and `-specific_regions` (refused).
+
+With `-java_compat` the data files equal Java's byte for byte and the images are drawn as Java draws them; by default
+four faults of the Java and R code are corrected (REPORT.md section 7, LV1-LV4).
 
 ## Outputs
 
@@ -68,7 +96,9 @@ In `<output_dir>`, for sample `<id>` (germline: `<id>.linx.germline.*`):
 The code follows Java's packages: `types` (SVs, breakends, links, clusters, chains), `analysis`
 (clustering, classification, double minutes, cluster annotations), `chaining`, `cn` (copy number
 segments, LOH and JCN), `gene` (breakend genes and transcripts), `fusion` (fusions, disruptions,
-neo-epitopes), `drivers`, `vis` and `output`. Java's object graph is kept: each object sits behind an
+neo-epitopes), `drivers`, `vis`, `output` and `visualiser` (SvVisualiser: `files`, `genome`, `data`,
+`circos_data` for Java's visualiser data and Circos files; `plot` and `fusion` for the drawing).
+Java's object graph is kept: each object sits behind an
 `Rc` handle compared by identity, with its mutable fields in cells. Java's HashMaps and HashSets whose
 iteration order reaches the output are reproduced: with string or integer keys by `JavaHashMap`, with
 object keys (identity hashes) by `idmap.rs`, which follows a JVM with `-XX:hashCode=2` under
@@ -81,5 +111,5 @@ CARGO_BUILD_JOBS=2 cargo test --release
 ```
 
 runs LINX's Java unit tests, ported with their synthetic fixtures (clustering, chaining, classification,
-copy number, LINE, double minutes, fusions, disruptions, drivers, germline), and tests of the corrected
-faults. The comparisons with Java are described in [REPORT.md](REPORT.md).
+copy number, LINE, double minutes, fusions, disruptions, drivers, germline, and the visualiser's), and tests
+of the corrected faults. The build needs cmake and a C compiler for hmf-plot-rs (BUI). The comparisons with Java are described in [REPORT.md](REPORT.md).

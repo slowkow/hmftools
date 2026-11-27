@@ -128,7 +128,7 @@ than faults:
 
 ## 3. Tests
 
-`cargo test --release` runs 104 tests. They are LINX's Java unit tests, ported with their synthetic
+`cargo test --release` runs 122 tests. They are LINX's Java unit tests, ported with their synthetic
 fixtures:
 - clustering: SimpleMergeRuleTest, ComplexMergeRuleTest;
 - chaining: ChainingSimpleTest, ChainingComplexTest, ChainRoutinesTest, LinkingTest;
@@ -138,12 +138,14 @@ fixtures:
 - gene: GeneCollectionTest;
 - drivers: AmpDriversTest, HomDisruptionsTest;
 - germline: GermlineDisruptionTest;
-- misc: MiscTest, JcnCalcsTest.
+- misc: MiscTest, JcnCalcsTest;
+- visualiser: CircosConfigWriterTest, CircosDataWriterTest, ColorPickerTest, ProteinDomainColorsTest,
+  ScaleContigTest, ScaleIntronsTest, DisruptedExonsTest, FusedExonsTest, SegmentsTest (with 9 tests of the
+  port's own: Java's HashMap orders, COBALT centring, downsampling, R's collation).
 
 Tests of LX2 and LX5 cover both modes.
 
 Left out:
-- the visualiser tests (the visualiser is not ported);
 - RnaFusionTest (RNA fusion matching is not ported);
 - ChainingActualTest, whose fixtures (`sample_data/`) are real sample data.
 
@@ -185,22 +187,10 @@ reader could shorten).
   - several samples per run, sample id files, and the cohort and batch outputs (`-write_cohort`);
   - RNA fusion matching (`-rna_fusions_file` is refused);
   - the diagnostic logging (chain diagnostics, `-log_verbose`);
-  - the visualiser and LINXREPORT (below).
+  - LINXREPORT (below).
 - **No unit tests yet for LX3 and LX4.** No comparison sample reaches LX2 to LX5 (LX5, for example,
   needs an AMP driver on an acrocentric chromosome).
-- **The visualiser** (`com.hartwig.hmftools.linx.visualiser.SvVisualiser`, in the same jar) reads:
-  - a sample's vis_sv_data, vis_segments, vis_copy_number, vis_gene_exon, vis_protein_domain and
-    vis_fusion files (all written by the port), or the cohort LNX_VIS_*.tsv files;
-  - the Ensembl data;
-  - when given, the AMBER BAF and COBALT ratio files.
-
-  Per cluster or chromosome it:
-  - writes Circos configuration and data files: `<id>.circos.NNN.conf`, with its karyotype, link,
-    segment and histogram text files;
-  - runs Circos for `<id>.NNN.png`;
-  - runs R (`r/fusionPlot.R`, `r/chromosomeRangePlot.R`) for the fusion and chromosome range images.
-
-  In oncoanalyser it stays on the Java image, reading the port's files, until it is drawn natively.
+- **The visualiser** is ported: section 7.
 - **LINXREPORT** (an R package) reads the same vis files plus the svs, clusters, links, breakend,
   fusion, drivers and driver catalog files, and writes an HTML report.
 
@@ -227,3 +217,52 @@ LINX added to `hmf-common-rs`:
   - findGeneRegions, findGenesByRegion, getProteinDomainPositions and getExonRankings;
   - the biotype constants;
   - in-memory caches for tests.
+
+## 7. The visualiser
+
+`linx-rs com.hartwig.hmftools.linx.visualiser.SvVisualiser ...` runs LINX's visualiser: the plan of plots, the
+Circos configuration and data files Java writes, and the images drawn natively with hmf-plot-rs (the Circos image,
+`fusionPlot.R`'s fusion panels and `chromosomeRangePlot.R`'s Gviz strip, composed as the R scripts compose them).
+
+### How it was checked
+
+Java's visualiser (this repository's LINX 2.4 jar) ran with Circos 0.69-8 and R 4.5 from the pipeline's image
+(`quay.io/biocontainers/hmftools-linx:2.3.1--hdfd78af_0`, docker, 2 CPUs, 2 threads); the port ran with
+`-java_compat` at 2 threads. Data files were compared byte for byte, images by pixel statistics and side by side.
+Cases: GIAB HG008 (all plots; `-plot_reportable`), HG008 with all fusions written to the vis files (13 fusion plots,
+`-clusterId` and `-plot_reportable`), HG008 with empty vis files, six option sets (`-chromosome` with fragile sites
+and LINE elements, `-gene`, no AMBER/COBALT, `-exact_position -show_sv_id`, `-step`, `-plot_cluster_genes`), and the
+private pair (all plots; `-plot_reportable`).
+
+- **Data files:** all 5,219 identical.
+- **Images:** all 222 with Java's names and pixel sizes; per case 0.7-2.1% of pixels differ by more than 32 levels
+  (anti-aliased shapes where GD draws aliased ones; text glyphs rendered by FreeType through BUI rather than by
+  GD; labels within 0-2 pixels of Java's). The Circos part uses Circos's geometry, the strip Gviz's, the fusion
+  panels ggplot2's (with the layout metrics of cowplot's pdf(NULL) device).
+- **Determinism:** the same bytes on a second run, with 1 or 2 threads, and on macOS arm64 and Linux arm64.
+
+| Case | Port (2 threads) | Java + Circos + R (emulated amd64, 2 CPUs) |
+|---|---|---|
+| HG008, all (49 plots) | 11.8 s, 0.49 GB | 582 s, 5.4 GB |
+| HG008, reportable (8 plots) | 3.3 s, 0.37 GB | 101 s, 5.2 GB |
+| Private pair, all (94 plots) | 23.3 s, 0.62 GB | 1210 s, 5.7 GB |
+
+In the pipeline, Java's LINX_VISUALISER on HG008 (both calls, 8 CPUs, native) took 5-6.5 min at 10.5-12.2 GB.
+Rasterising (6 s of 16.6 s at 1 thread) is serialised by BUI's global text engine; PNG encoding (6-7 s) runs in
+parallel.
+
+### Findings (corrected by default, kept with `-java_compat`)
+
+- **LV1:** `VisProteinDomain.name()` tests the 5' UTR twice and never the 3' UTR, so 3' UTRs are drawn as a protein
+  domain (own colour, legend entry "3-Prime UTR") rather than as UTR. Corrected: UTR/Non-coding.
+- **LV2:** chromosomeRangePlot.R stacks the image over the strip assuming it square (`rel_heights =
+  c(circosWidth, chromosomeHeight)`); with fusion panels the image is taller, so the Circos image and the fusion
+  panels are shrunk to 91% and centred. Corrected: the image's own height.
+- **LV3:** fusionPlot.R's protein domain legend is drawn on a black row (R 4.5.3, ggplot2 4.0.3, cowplot 1.2.0): the
+  domain names are hidden. Corrected: the legend on white, its row as tall as the legend.
+- **LV4:** links get the frame after their segments', and the template greys out everything past the current frame:
+  in the final image the links (and connectors) of the last segment, and all links of plots without segment tracks
+  (chromosome plots of simple SVs, LINE clusters), are drawn faint grey. 23 of HG008's 49 plots. Corrected: the
+  last frame shows everything in colour.
+
+Not ported: cohort vis files (`-load_cohort_files`) and `-specific_regions`.

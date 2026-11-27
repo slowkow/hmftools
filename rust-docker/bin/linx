@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# `linx` as oncoanalyser calls the Java tool for LINX_SOMATIC and LINX_GERMLINE, run by linx-rs: JVM options
-# are dropped (linx-rs also ignores them) and the jar's default main class, LinxApplication, runs. The
-# visualiser (com.hartwig.hmftools.linx.visualiser.SvVisualiser, which draws with Circos and R) is not
-# ported: oncoanalyser's LINX_VISUALISER keeps the Java image. -java_compat or LINX_JAVA_COMPAT=1 selects
-# Java's behaviour.
+# `linx` as oncoanalyser calls the Java tool, run by linx-rs: JVM options are dropped (linx-rs also ignores
+# them). Without a main class the jar's default, LinxApplication, runs (LINX_SOMATIC, LINX_GERMLINE);
+# com.hartwig.hmftools.linx.visualiser.SvVisualiser (LINX_VISUALISER) is passed on, and linx-rs draws the
+# Circos, chromosome-strip and fusion plots natively; `-circos $(which circos)` is accepted with or without a
+# path and never run. -java_compat or LINX_JAVA_COMPAT=1 selects Java's behaviour.
 set -euo pipefail
 args=()
 for a in "$@"; do
     case "$a" in
         -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
         com.hartwig.hmftools.linx.LinxApplication) ;;
+        com.hartwig.hmftools.linx.visualiser.SvVisualiser) args+=("$a") ;;
         com.hartwig.*) echo "linx (Rust port): main class $a is not ported" >&2; exit 2 ;;
         *) args+=("$a") ;;
     esac

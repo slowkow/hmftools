@@ -171,7 +171,10 @@ pipeline's plotting steps keep their Java images):
   whole-genome pair (14 and 6 files) and on 14 small and option cases; 2.6-3.5 times faster at one
   thread, in a quarter to a third of the memory (0.2-0.3 GB against 0.8-1.1 GB). Java's output order
   depends on identity hashes (LX1); two of the faults are chromosome-name checks that never match on
-  GRCh38 (LX2, LX5). Findings LX1-LX5. The visualiser (Circos and R) and LINXREPORT are not ported.
+  GRCh38 (LX2, LX5). Findings LX1-LX5. The visualiser (Circos and R in Java) is ported too and draws natively with hmf-plot-rs:
+  all 5,219 data files of 13 cases byte-identical to Java's, the plots differing in rendering only; 12 s and 0.5 GB
+  for HG008's 49 plots against about 5 min and 11 GB for Java in the pipeline. Findings LV1-LV4 (a 3' UTR drawn as
+  a protein domain, links drawn grey). LINXREPORT (gpgr, R) is not ported.
   Inside the pipeline on HG008 (rerun 7): identical to the port run locally, and to the Java run apart
   from LX1's ids and order; ORANGE's JSON unchanged.
 

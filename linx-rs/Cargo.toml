@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.104"
 hmf-common = { path = "../hmf-common-rs" }
+hmf-plot = { package = "hmf-plot-rs", path = "../hmf-plot-rs" }
 mimalloc = { version = "0.1.52", default-features = false, optional = true }
 
 [features]

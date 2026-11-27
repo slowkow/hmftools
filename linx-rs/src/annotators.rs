@@ -16,6 +16,15 @@ const FRAGILE_SITES_38: &str = include_str!("../resources/fragile_sites.38.csv")
 const LINE_ELEMENTS_37: &str = include_str!("../resources/line_elements.37.csv");
 const LINE_ELEMENTS_38: &str = include_str!("../resources/line_elements.38.csv");
 
+/// The bundled fragile site and LINE element files (for the visualiser's Highlights)
+pub fn fragile_sites_resource(v37: bool) -> &'static str {
+    if v37 { FRAGILE_SITES_37 } else { FRAGILE_SITES_38 }
+}
+
+pub fn line_elements_resource(v37: bool) -> &'static str {
+    if v37 { LINE_ELEMENTS_37 } else { LINE_ELEMENTS_38 }
+}
+
 fn resource_or_file(filename: Option<&str>, v37: &'static str, v38: &'static str, what: &str) -> Vec<String> {
     match filename {
         Some(f) => match hmf_common::java_text::read_lines(f) {
