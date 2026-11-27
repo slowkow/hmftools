@@ -12,6 +12,7 @@
 !hmf-plot-rs/src
 !hmf-plot-rs/fonts
 !hmf-plot-rs/resources
+!hmf-plot-rs/examples
 !hmf-common/src/test/resources/segmentation
 !hmf-common/src/test/resources/pcf
 !sage-rs/Cargo.toml
