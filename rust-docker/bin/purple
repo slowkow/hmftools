@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# `purple` as oncoanalyser calls the Java tool, run by purple-rs: JVM options are dropped (purple-rs also
+# ignores them) and the jar's default main class, PurpleApplication, runs. oncoanalyser passes
+# `-circos $(which circos)`; without a Circos binary on PATH that leaves `-circos` with no value, which is
+# dropped here, so the data files are written and no Circos plot is drawn. purple-rs does not draw the R
+# plots either (ORANGE needs them). -java_compat or PURPLE_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+prev=""
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) continue ;;
+        com.hartwig.hmftools.purple.PurpleApplication) continue ;;
+        com.hartwig.*) echo "purple (Rust port): main class $a is not ported" >&2; exit 2 ;;
+    esac
+    if [ "$prev" = "-circos" ] && [[ "$a" == -* ]]; then
+        unset 'args[${#args[@]}-1]'
+    fi
+    args+=("$a")
+    prev="$a"
+done
+if [ "$prev" = "-circos" ]; then
+    unset 'args[${#args[@]}-1]'
+fi
+exec purple-rs ${args[@]+"${args[@]}"}

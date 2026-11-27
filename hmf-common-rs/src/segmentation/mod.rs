@@ -62,8 +62,23 @@ impl HumanChromosome {
     /// HumanChromosome.fromString: an optional "chr" prefix in any case, then exactly "1".."22", "X" or "Y"
     /// (Java throws for anything else).
     pub fn from_name(name: &str) -> Option<HumanChromosome> {
-        let bare = if name.len() >= 3 && name[..3].eq_ignore_ascii_case("chr") { &name[3..] } else { name };
-        SHORT_NAMES.iter().position(|s| *s == bare).map(|i| HumanChromosome(i as u8))
+        let b = name.as_bytes();
+        let bare = if b.len() >= 3 && b[..3].eq_ignore_ascii_case(b"chr") { &b[3..] } else { b };
+        let digit = |c: u8| c.is_ascii_digit();
+        let i = match bare {
+            [b'X'] => 22,
+            [b'Y'] => 23,
+            [d] if digit(*d) && *d != b'0' => d - b'1',
+            [t, u] if digit(*t) && digit(*u) && *t != b'0' => {
+                let n = (t - b'0') * 10 + (u - b'0');
+                if n > 22 {
+                    return None;
+                }
+                n - 1
+            }
+            _ => return None,
+        };
+        Some(HumanChromosome(i))
     }
 
     /// HumanChromosome.fromString, with Java's exception as an error.

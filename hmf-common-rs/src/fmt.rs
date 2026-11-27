@@ -209,6 +209,59 @@ pub fn decimal_format_fixed(v: f64, places: usize) -> String {
     s
 }
 
+/// java.text.DecimalFormat with English symbols, no grouping, at least one integer digit and between
+/// `min_fraction` and `max_fraction` digits after the point: "0.0000" is (4, 4), "0.0#" is (1, 2),
+/// "#.###" is (0, 3) (as `decimal_format`). Rounding as `decimal_format` (HALF_EVEN on the
+/// FloatingDecimal digits); "-0.0000" for negative values that round to zero.
+pub fn decimal_format_min(v: f64, min_fraction: usize, max_fraction: usize) -> String {
+    if v.is_nan() {
+        return "NaN".into();
+    }
+    let negative = v < 0.0 || (v == 0.0 && v.is_sign_negative());
+    if v.is_infinite() {
+        return if negative { "-\u{221e}".into() } else { "\u{221e}".into() };
+    }
+    let a = v.abs();
+    let (digits, mut decimal_at) = if a == 0.0 { (Vec::new(), 0) } else { digit_list(a, max_fraction as i32) };
+    if digits.is_empty() {
+        decimal_at = 0;
+    }
+    let mut out = String::new();
+    if negative {
+        out.push('-');
+    }
+    let count = decimal_at.max(1);
+    let mut index = 0usize;
+    for i in (0..count).rev() {
+        if i < decimal_at && index < digits.len() {
+            out.push(digits[index] as char);
+            index += 1;
+        } else {
+            out.push('0');
+        }
+    }
+    let fraction_present = min_fraction > 0 || index < digits.len();
+    if fraction_present {
+        out.push('.');
+    }
+    for i in 0..max_fraction as i32 {
+        if i >= min_fraction as i32 && index >= digits.len() {
+            break;
+        }
+        if -1 - i > decimal_at - 1 {
+            out.push('0');
+            continue;
+        }
+        if index < digits.len() {
+            out.push(digits[index] as char);
+            index += 1;
+        } else {
+            out.push('0');
+        }
+    }
+    out
+}
+
 /// DigitList.set(boolean, double, int, true) for a positive finite value: the kept digits (ASCII) and
 /// decimalAt, the number of digits before the point.
 fn digit_list(a: f64, maximum_digits: i32) -> (Vec<u8>, i32) {

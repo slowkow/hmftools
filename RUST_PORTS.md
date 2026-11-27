@@ -160,11 +160,20 @@ pipeline's plotting steps keep their Java images):
   (0.2 GB against 4-5 GB). Java reads the mappability file one base off (PA2: MAPPABILITY changes on 256
   of 17,254 HG008 somatic records) and drops a gene once a variant reaches past its end (PA1). Findings
   PA1-PA9.
+- **PURPLE** (`purple-rs`): byte-identical to Java (VCFs with their BGZF bytes and tabix indexes) on
+  seven cases: HG008 tumor/normal, tumor-only, germline-only and targeted, and a private pair, at 1 and 2
+  threads. Two outputs need a defined Java reference, as Java varies from run to run: the kataegis ids
+  (PU1, a race between threads) and baf.circos (PU2, identity-hash order). 3.1-3.5 times faster
+  (8.8 in germline-only mode), with 2.5-4.5 times less memory. Germline amplifications are typed as
+  deletions in Java (PU9). Findings PU1-PU9. The R plots are not drawn, and ORANGE needs them, so the
+  pipeline runs PURPLE as a port only with its own profile for now.
 - **LINX** (`linx-rs`): LINX_SOMATIC and LINX_GERMLINE byte-identical to Java on HG008 and on a private
   whole-genome pair (14 and 6 files) and on 14 small and option cases; 2.6-3.5 times faster at one
   thread, in a quarter to a third of the memory (0.2-0.3 GB against 0.8-1.1 GB). Java's output order
   depends on identity hashes (LX1); two of the faults are chromosome-name checks that never match on
   GRCh38 (LX2, LX5). Findings LX1-LX5. The visualiser (Circos and R) and LINXREPORT are not ported.
+  Inside the pipeline on HG008 (rerun 7): identical to the port run locally, and to the Java run apart
+  from LX1's ids and order; ORANGE's JSON unchanged.
 
 For the R and Python parts, the first version keeps calling the same scripts, so plots and
 predictions stay identical. Replacing them is a separate decision per program: a random forest or a

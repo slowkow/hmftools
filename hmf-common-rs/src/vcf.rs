@@ -954,9 +954,15 @@ pub struct VcfFileWriter {
 
 impl VcfFileWriter {
     pub fn create(path: &str, header: &VcfHeader) -> Result<VcfFileWriter> {
+        Self::create_with_header_text(path, &header.text())
+    }
+
+    /// The same, for a header held elsewhere (`variant_context`): `text` is the whole header, `#CHROM`
+    /// line included
+    pub fn create_with_header_text(path: &str, text: &str) -> Result<VcfFileWriter> {
         let file = std::fs::File::create(path).with_context(|| format!("creating {path}"))?;
         let mut out = BgzfWriter::new(std::io::BufWriter::with_capacity(1 << 20, file));
-        out.write_all(header.text().as_bytes())?;
+        out.write_all(text.as_bytes())?;
         Ok(VcfFileWriter { path: path.to_string(), out, names: Vec::new(), indexes: Vec::new(), pending: None })
     }
 

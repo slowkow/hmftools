@@ -25,12 +25,19 @@
 //! - `gz`: fast gzip / BGZF text reading (zlib-rs) with a line reader.
 //! - `vcf`: VCF headers, records and the writer as htsjdk 2.23 has them, with the BGZF stream and the
 //!   tabix index written as Java writes them.
+//! - `variant_context`: VCF records with htsjdk's typed attributes and lazy genotypes (VariantContext),
+//!   for tools that read a VCF, change fields and write it again (PURPLE); written through `vcf`'s BGZF
+//!   stream and tabix index.
+//! - `commons_math`, `java_strictmath`, `kernel_estimator`, `config_builder`: commons-math3
+//!   distributions, StrictMath, KernelEstimator and ConfigBuilder as the Java tools use them.
 
 pub mod args;
 pub mod blosum;
 #[cfg(feature = "bwa")]
 pub mod bwa;
 pub mod codon;
+pub mod commons_math;
+pub mod config_builder;
 pub mod compat;
 pub mod csv;
 pub mod driver_panel;
@@ -43,7 +50,9 @@ pub mod java_hash;
 pub mod java_id_hash;
 pub mod java_math;
 pub mod java_sort;
+pub mod java_strictmath;
 pub mod java_text;
+pub mod kernel_estimator;
 pub mod known_fusion;
 pub mod kotlin_random;
 pub mod log;
@@ -57,4 +66,5 @@ pub mod purple_files;
 pub mod segmentation;
 pub mod sv;
 pub mod transcript_utils;
+pub mod variant_context;
 pub mod vcf;

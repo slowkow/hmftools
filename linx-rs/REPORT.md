@@ -59,6 +59,29 @@ both in the same places:
 
 Sorted, with the ids left out, all of them agree (LX1).
 
+### In the pipeline (GIAB HG008, 2026-11-27)
+
+HG008 rerun 7 on Google Batch ran LINX_SOMATIC and LINX_GERMLINE as the port, in Java mode. Every step
+before them came from the first run's cache, through the same PURPLE output.
+- **Against the port run locally:** all 20 files are identical to the local `-java_compat` run on the
+  same inputs, which equals Java with `-XX:hashCode=2`.
+- **Against the first run's Java LINX** (Hartwig's 2.4-beta.3 image, default JVM):
+  - 13 files are identical: breakend, driver catalog, drivers, fusion, links, neoepitope, five of the
+    visualiser files, and the germline driver catalog and links.
+  - The rest differ only in LX1's ids and order: clusters, svs and vis_sv_data (cluster and chain ids),
+    and the germline breakend, clusters, disruption and svs files (ids and row order). Sorted, with the
+    id columns left out, they are identical.
+- **Later steps:** ORANGE's JSON is unchanged. The LINX visualiser's plot of chr8, the LINXREPORT HTML
+  and ORANGE's PDF differ, as they show the cluster ids.
+- **Time and memory:**
+
+  | Step | Port | Java |
+  |---|---|---|
+  | LINX_SOMATIC | 2.8 s, 164 MB | 6 s, 1 GB |
+  | LINX_GERMLINE | 3.1 s, 89 MB | 7.5 s, 1 GB |
+
+The rerun cost $0.25, mostly for the LINX visualiser and TEAL, which also ran from the new image.
+
 ## 2. Findings
 
 Each is corrected by default and kept in Java mode (`-java_compat`, or `-java_compat_except` for all but

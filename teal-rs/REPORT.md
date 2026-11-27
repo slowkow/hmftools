@@ -122,6 +122,9 @@ first HG008 run on the same inputs.
   11,792 unplaced records had the input's bin, 4680, where htsjdk writes 0 for any record without a
   reference. The port now writes 0 for them too. On a public HG008 test BAM (the start of chr1 and
   200,000 unplaced reads), Java and the port give a byte-identical telbam (uncompressed, 1,916 records).
+  HG008 rerun 7 (2026-11-27) confirmed it in the pipeline: both whole-genome telbams are byte-identical
+  to the first run's Java telbams once decompressed (66.3 and 42.1 MB). The prep took 6 min 52 s at 439%
+  CPU and 1.5 GB.
 - **Reading on Batch:** the read-ahead (several handles, in file order) took the prep from 15.5 to 7.5
   minutes at 420% CPU, against Java's 13.8 (HG008 rerun, 2026-11-27).
 - **Time:** TealPipelineApp took 7.4 s and 0.4 GB against Java's 35 s and 2.3 GB. The prep took 15.5

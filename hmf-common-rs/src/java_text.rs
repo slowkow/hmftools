@@ -30,6 +30,9 @@ pub fn parse_byte(s: &str) -> Option<i8> {
 /// trailing d, D, f or F is accepted, and "NaN" and "Infinity" with an optional sign; hexadecimal floats
 /// are not handled.
 pub fn parse_double(s: &str) -> Option<f64> {
+    if let Some(v) = parse_simple_decimal(s.as_bytes()) {
+        return Some(v);
+    }
     let t = s.trim_matches(|c: char| c <= ' ');
     let (sign, body) = match t.as_bytes().first() {
         Some(b'-') => (-1.0, &t[1..]),
@@ -49,6 +52,40 @@ pub fn parse_double(s: &str) -> Option<f64> {
         return None;
     }
     body.parse::<f64>().ok().map(|v| sign * v)
+}
+
+/// Exact fast path of Double.parseDouble for `[-+]digits[.digits]` with at most 15 digits in all: the
+/// digits as an integer and the power of ten are both exact doubles, so one IEEE division gives the
+/// correctly rounded value, as the full parse does (Clinger's fast path). None for anything else.
+#[inline]
+fn parse_simple_decimal(b: &[u8]) -> Option<f64> {
+    const POW10: [f64; 16] = [1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15];
+    let (neg, body) = match b.first()? {
+        b'-' => (true, &b[1..]),
+        b'+' => (false, &b[1..]),
+        _ => (false, b),
+    };
+    if body.is_empty() || body.len() > 16 {
+        return None;
+    }
+    let mut mantissa: u64 = 0;
+    let mut digits = 0usize;
+    let mut frac: Option<usize> = None;
+    for (i, &c) in body.iter().enumerate() {
+        match c {
+            b'0'..=b'9' => {
+                mantissa = mantissa * 10 + (c - b'0') as u64;
+                digits += 1;
+            }
+            b'.' if frac.is_none() && i > 0 && i + 1 < body.len() => frac = Some(body.len() - i - 1),
+            _ => return None,
+        }
+    }
+    if digits > 15 {
+        return None;
+    }
+    let v = mantissa as f64 / POW10[frac.unwrap_or(0)];
+    Some(if neg { -v } else { v })
 }
 
 /// Boolean.parseBoolean: true for "true" in any case, false for anything else
@@ -180,6 +217,45 @@ pub fn lines_of(text: &str) -> Vec<String> {
         lines.push(text[start..].to_string());
     }
     lines
+}
+
+#[cfg(test)]
+mod fast_parse_tests {
+    use super::*;
+
+    #[test]
+    fn simple_decimals_match_the_full_parse() {
+        let mut x: u64 = 0x2545F4914F6CDD1D;
+        for _ in 0..200_000 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            let digits = (x % 15 + 1) as usize;
+            let frac = (x >> 8) as usize % (digits + 1);
+            let mut s = String::new();
+            if x & 0x10000 != 0 {
+                s.push('-');
+            }
+            let mut y = x >> 20;
+            let mut ds = String::new();
+            for _ in 0..digits {
+                ds.push((b'0' + (y % 10) as u8) as char);
+                y /= 10;
+            }
+            if frac > 0 && frac < digits {
+                s.push_str(&ds[..digits - frac]);
+                s.push('.');
+                s.push_str(&ds[digits - frac..]);
+            } else {
+                s.push_str(&ds);
+            }
+            let full: f64 = s.parse().unwrap();
+            assert_eq!(parse_double(&s).unwrap().to_bits(), full.to_bits(), "{s}");
+        }
+        assert_eq!(parse_double("-0.0").unwrap().to_bits(), (-0.0f64).to_bits());
+        assert!(parse_double("1.").is_some() && parse_double(".5").is_some() && parse_double(" 1").is_some());
+        assert_eq!(parse_double("1e3"), Some(1000.0));
+    }
 }
 
 #[cfg(test)]

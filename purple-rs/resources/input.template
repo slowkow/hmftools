@@ -1,0 +1,161 @@
+<<include etc/colors_fonts_patterns.conf>>
+
+show_ticks          = no
+show_tick_labels    = no
+
+<ideogram>
+
+    <spacing>
+        default = 0.002r
+    </spacing>
+
+    # Ideogram position, fill and outline
+    radius           = 0.90r
+    thickness        = 50p
+    fill             = yes
+    stroke_color     = dgrey
+    stroke_thickness = 2p
+
+    # Minimum definition for ideogram labels.
+
+    show_label       = yes
+    # see etc/fonts.conf for list of font names
+    label_font       = bold
+    label_with_tag   = yes
+    label_radius     = (dims(ideogram,radius_inner)+dims(ideogram,radius_outer)-conf(ideogram,label_size))/2
+    label_size       = 30
+    label_color      = white
+    label_parallel   = yes
+    label_case       = upper
+
+</ideogram>
+
+<colors>
+    amber = 255,126,0
+    cobalt= 0,71,171
+</colors>
+
+<image>
+	<<include etc/image.conf>>
+</image>
+
+karyotype = KARYOTYPE
+
+chromosomes_units           = 1000000
+chromosomes_display_default = yes
+chromosomes                 = -EXCLUDE
+
+<highlights>
+
+	<highlight>
+		file       = gaps.txt
+		ideogram   = yes
+		fill_color = black_a3
+		z = 5
+	</highlight>
+
+</highlights>
+
+# Default is to clip the data to proximity min/max.
+<plots>
+
+	# -----------------------------------------------------------
+	# Tumor Ratio (COBALT)
+	<plot>
+		type = scatter
+		file = SAMPLE.ratio.circos
+		r0   = 0.575r
+		r1   = 0.975r
+		min  = 0
+		max  = 2
+		color = cobalt
+		glyph = circle
+
+		<axes>
+			<axis>
+				color     = lblue
+				thickness = 1
+				spacing   = 0.25r
+			</axis>
+		</axes>
+
+		<backgrounds>
+			<background>
+				color = vlblue_a5
+			</background>
+		</backgrounds>
+	</plot>
+
+	# -----------------------------------------------------------
+	# Reference Ratio (Green)
+	<plot>
+		type = scatter
+		file = REFERENCE.ratio.circos
+		r0   = 0.575r
+		r1   = 0.975r
+		min  = 0
+		max  = 2
+		color = COBALT_REF_COLOUR
+		glyph = circle
+	</plot>
+
+	# -----------------------------------------------------------
+	# BAF (Amber)
+	<plot>
+		type = scatter
+		file = SAMPLE.baf.circos
+		r0   = 0.300r
+		r1   = 0.550r
+		min  = 0
+		max  = 1
+		color = amber
+		glyph = circle
+
+        <axes>
+            <axis>
+                color     = lorange
+                thickness = 1
+                spacing   = 0.25r
+            </axis>
+        </axes>
+
+        <backgrounds>
+            <background>
+                color = vlorange_a5
+            </background>
+        </backgrounds>
+	</plot>
+
+</plots>
+
+<<include etc/housekeeping.conf>>
+
+<colors>
+    chr1 = 103,88,150
+    chr2 = 117,90,134
+    chr3 = 129,92,121
+    chr4 = 144,106,116
+    chr5 = 158,117,111
+    chr6 = 171,143,105
+
+    chr7 = 171,171,10
+    chr8 = 154,168,10
+    chr9 = 139,165,10
+    chr10 = 123,162,10
+    chr11 = 99,162,10
+    chr12 = 73,153,10
+
+    chr13 = 31,153,83
+    chr14 = 31,149,99
+    chr15 = 31,145,115
+    chr16 = 31,142,130
+    chr17 = 31,138,146
+    chr18 = 31,135,162
+
+    chr19 = 59,131,178
+    chr20 = 68,127,176
+    chr21 = 77,125,174
+    chr22 = 87,121,172
+    chrX = 96,114,171
+    chrY = 105,106,169
+ </colors>

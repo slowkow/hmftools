@@ -781,3 +781,33 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod purple_probe_tests {
+    use super::*;
+
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    struct K(usize);
+    impl IdKey for K {
+        fn id_addr(&self) -> usize {
+            self.0
+        }
+    }
+
+    // ArrayListMultimap.create() keyed by an enum (a HashMap of table 16), n keys put in order, under
+    // -XX:hashCode=2: the 24 vectors of testdata/constant_hash_order.txt (purple port probe, JDK 23)
+    #[test]
+    fn multimap_of_sixteen() {
+        for line in include_str!("testdata/constant_hash_order.txt").lines() {
+            let (n, order) = line.split_once(": ").unwrap();
+            let n: usize = n.parse().unwrap();
+            let expected: Vec<usize> = order.split(' ').map(|x| x.parse().unwrap()).collect();
+            let mut m: IdHashMap<K, ()> = IdHashMap::with_capacity(16);
+            for i in 0..n {
+                m.insert(K(i), ());
+            }
+            let got: Vec<usize> = m.keys().map(|k| k.0).collect();
+            assert_eq!(got, expected, "n={n}");
+        }
+    }
+}

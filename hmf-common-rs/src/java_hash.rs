@@ -56,6 +56,11 @@ pub fn guava_capacity(expected_size: usize) -> usize {
 pub struct JavaHashMap<K, V> {
     /// insertion order, with removed entries taken out
     entries: Vec<(K, V)>,
+    /// position within a bucket's chain: put appends (increasing numbers), computeIfAbsent / compute /
+    /// merge put a new key at the head of its bucket (decreasing negative numbers)
+    seqs: Vec<i64>,
+    next_tail: i64,
+    next_head: i64,
     index: HashMap<K, usize>,
     capacity: usize,
 }
@@ -73,7 +78,7 @@ impl<K: JavaHash + Eq + Hash + Clone, V> JavaHashMap<K, V> {
     }
     /// new HashMap<>(initialCapacity)
     pub fn with_capacity(initial_capacity: usize) -> Self {
-        JavaHashMap { entries: Vec::new(), index: HashMap::new(), capacity: table_size_for(initial_capacity) }
+        JavaHashMap { entries: Vec::new(), seqs: Vec::new(), next_tail: 0, next_head: -1, index: HashMap::new(), capacity: table_size_for(initial_capacity) }
     }
     pub fn len(&self) -> usize {
         self.entries.len()
@@ -98,17 +103,40 @@ impl<K: JavaHash + Eq + Hash + Clone, V> JavaHashMap<K, V> {
         if let Some(i) = self.index.get(&key) {
             return Some(std::mem::replace(&mut self.entries[*i].1, value));
         }
+        self.push(key, value, false);
+        None
+    }
+    fn push(&mut self, key: K, value: V, head: bool) {
         self.index.insert(key.clone(), self.entries.len());
         self.entries.push((key, value));
-        // resize when the size passes 0.75 of the table
+        if head {
+            self.seqs.push(self.next_head);
+            self.next_head -= 1;
+        } else {
+            self.seqs.push(self.next_tail);
+            self.next_tail += 1;
+        }
+        // resize when the size passes 0.75 of the table (the split keeps the chain order)
         while self.entries.len() > (self.capacity * 3) / 4 {
             self.capacity *= 2;
         }
-        None
+    }
+    /// computeIfAbsent (and the new-key case of compute / merge, as Collectors.groupingBy and toMap use):
+    /// a new key goes to the head of its bucket
+    pub fn compute_if_absent(&mut self, key: K, f: impl FnOnce() -> V) -> &mut V {
+        let i = match self.index.get(&key) {
+            Some(i) => *i,
+            None => {
+                self.push(key, f(), true);
+                self.entries.len() - 1
+            }
+        };
+        &mut self.entries[i].1
     }
     pub fn remove(&mut self, key: &K) -> Option<V> {
         let i = self.index.remove(key)?;
         let (_, v) = self.entries.remove(i);
+        self.seqs.remove(i);
         for (_, idx) in self.index.iter_mut() {
             if *idx > i {
                 *idx -= 1;
@@ -118,12 +146,17 @@ impl<K: JavaHash + Eq + Hash + Clone, V> JavaHashMap<K, V> {
     }
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.seqs.clear();
         self.index.clear();
     }
     /// keeps the entries `f` accepts, in their order; the table keeps its size, as Java's does on removal
     /// (Collection.retainAll / removeIf)
     pub fn retain(&mut self, mut f: impl FnMut(&K, &V) -> bool) {
-        self.entries.retain(|(k, v)| f(k, v));
+        let keep: Vec<bool> = self.entries.iter().map(|(k, v)| f(k, v)).collect();
+        let mut it = keep.iter();
+        self.entries.retain(|_| *it.next().unwrap());
+        let mut it = keep.iter();
+        self.seqs.retain(|_| *it.next().unwrap());
         self.index.clear();
         for (i, (k, _)) in self.entries.iter().enumerate() {
             self.index.insert(k.clone(), i);
@@ -132,7 +165,7 @@ impl<K: JavaHash + Eq + Hash + Clone, V> JavaHashMap<K, V> {
     fn order(&self) -> Vec<usize> {
         let mask = (self.capacity - 1) as u32;
         let mut order: Vec<usize> = (0..self.entries.len()).collect();
-        order.sort_by_key(|i| spread(self.entries[*i].0.java_hash()) & mask);
+        order.sort_by_key(|i| (spread(self.entries[*i].0.java_hash()) & mask, self.seqs[*i]));
         order
     }
     /// entries in Java iteration order
@@ -301,6 +334,18 @@ mod tests {
             m.insert(k, k);
         }
         assert_eq!(m.keys().cloned().collect::<Vec<_>>(), vec![17, 1, 33, 3]);
+        // Collectors.groupingBy (computeIfAbsent) puts colliding keys at the head of the bucket: Java
+        // prints [SUZ12, SMAD4, NF1, TP53, ARID1B] for these keys grouped in this order (TP53 and ARID1B
+        // share bucket 13 of 16), and [SUZ12, SMAD4, NF1, ARID1B, TP53] for HashMap.put
+        let keys = ["ARID1B", "TP53", "NF1", "SUZ12", "SMAD4"];
+        let mut g: JavaHashMap<String, i32> = JavaHashMap::new();
+        let mut p: JavaHashMap<String, i32> = JavaHashMap::new();
+        for k in keys {
+            *g.compute_if_absent(k.to_string(), || 0) += 1;
+            p.insert(k.to_string(), 1);
+        }
+        assert_eq!(g.keys().cloned().collect::<Vec<_>>(), vec!["SUZ12", "SMAD4", "NF1", "TP53", "ARID1B"]);
+        assert_eq!(p.keys().cloned().collect::<Vec<_>>(), vec!["SUZ12", "SMAD4", "NF1", "ARID1B", "TP53"]);
     }
 
     #[test]
