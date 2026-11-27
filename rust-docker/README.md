@@ -61,7 +61,7 @@ subcommands:
 | `com.hartwig.hmftools.lilac.LilacApplication` (or none) | `lilac-rs` |
 | `com.hartwig.hmftools.cider.CiderApplication` (or none) | `cider-rs` (cider-rs takes the class itself) |
 | `com.hartwig.hmftools.pave.PaveApplication` (or none) | `pave-rs` |
-| `com.hartwig.hmftools.purple.PurpleApplication` (or none) | `purple-rs` (a `-circos` without a value, as `$(which circos)` gives where Circos is missing, is dropped) |
+| `com.hartwig.hmftools.purple.PurpleApplication` (or none) | `purple-rs` (`-circos`, with or without a value, becomes `-circos_native`: the Circos and R plots are drawn natively) |
 | `com.hartwig.hmftools.linx.LinxApplication` (or none) | `linx-rs` (not the visualiser, `linx.visualiser.SvVisualiser`) |
 | `com.hartwig.hmftools.sigs.fitter.SignatureFitter` (or none) | `sigs-rs` |
 | `com.hartwig.hmftools.virusinterpreter.VirusInterpreterApplication` (or none) | `virus-interpreter-rs` |

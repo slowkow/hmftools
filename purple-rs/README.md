@@ -51,8 +51,11 @@ Modes, as in Java: tumor/normal (`-tumor` and `-reference`), tumor-only (`-tumor
 | `-somatic_min_peak`, `-somatic_min_variants`, `-somatic_min_purity`, `-somatic_penalty_weight`, `-highly_diploid_percentage` | Java's | somatic fit parameters |
 | `-sv_qual_filter` | 0 | minimum SV QUAL (0: off) |
 | `-write_all_somatics` | | in tumor-only mode, write filtered somatic variants too |
-| `-circos` | | Circos binary: the Circos input files are written and the two plots drawn |
-| `-no_charts`, `-ignore_plot_errors`, `-skip_circos_genes` | | charting switches |
+| `-circos` | | as in Java, turns the Circos plots on: the Circos input files are written and `circos.png` and `input.png` drawn natively (the binary named is not run) |
+| `-circos_native` | | the same without naming a binary (`-circos` must name an existing file, as in Java) |
+| `-external_circos` | | run the Circos binary given by `-circos` instead, as Java does |
+| `-no_charts`, `-ignore_plot_errors`, `-skip_circos_genes` | | charting switches, as in Java |
+| `-write_plot_data` | | keep `plot/<tumor>.somatic_data.tsv`, the rainfall plot's data (Java writes it for R and deletes it) |
 | `-specific_chr`, `-specific_regions` | | restrict to chromosomes or regions |
 | `-threads` | 1 | worker threads |
 | `-log_level`, `-log_debug` | INFO | log level |
@@ -75,17 +78,20 @@ In `-output_dir`, `<tumor>.purple.<name>`:
 | `target_region_cn.tsv` | targeted mode: copy number of each COBALT window over a target region |
 | `purple.version` | version and build date |
 | `circos/` | with `-circos`: the Circos data and configuration files, gaps.txt |
-| `plot/` | with `-circos`: `<tumor>.circos.png` and `<tumor>.input.png` |
+| `plot/` | unless `-no_charts` or germline-only: `copynumber.png` and `map.png` (when there are autosomal segments with BAF support), `purity.range.png`, `segment.png`; with a somatic VCF also `somatic.png`, `somatic.clonality.png`, `somatic.rainfall.png`; with `-circos` also `circos.png` and `input.png` |
 
-Not ported: the R plots (copynumber, map, purity range, segment, somatic, clonality and rainfall
-plots; REPORT.md lists them).
+The plots are drawn natively by [hmf-plot-rs](../hmf-plot-rs/README.md) (BUI's software raster), without R,
+Perl or Circos, from the same files the R scripts and Circos read, with the same sizes, layout, scales,
+colours and labels. `src/plots.rs` holds the plot-specific steps (the R scripts' dplyr and ggplot2 stats).
 
 ## Corrected by default
 
 See [REPORT.md](REPORT.md) for each finding. In short: kataegis ids numbered in genome order whatever the
 thread count (PU1); the AMBER points of baf.circos in genome order (PU2); somatic VCFs checked for the
 tumor sample in tumor-only mode (PU4); arm maxima of all-negative arms (PU6); the phased-inframe
-reportability check (PU8); germline amplification drivers typed GERMLINE_AMP (PU9).
+reportability check (PU8); germline amplification drivers typed GERMLINE_AMP (PU9). In the plots: every SNV
+point drawn on the Circos plot (PL1), the bar outlines the R scripts ask for (PL2), rainfall distances within
+a chromosome (PL3), and up to 100,000 rainfall SNVs (PL4).
 
 ## Building and testing
 
@@ -94,5 +100,6 @@ CARGO_BUILD_JOBS=2 cargo build --release
 CARGO_BUILD_JOBS=2 cargo test --release
 ```
 
-Depends on `../hmf-common-rs` (path dependency). The unit tests are ports of the Java tests with
+Depends on `../hmf-common-rs` and `../hmf-plot-rs` (path dependencies; hmf-plot-rs builds BUI's C kit, which
+needs `cmake`). The unit tests are ports of the Java tests with
 synthetic data.

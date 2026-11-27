@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY hmf-common-rs hmf-common-rs
+# the drawing crate (BUI's raster, fetched from GitHub at a pinned commit; cmake builds its C kit) for purple-rs's plots
+COPY hmf-plot-rs hmf-plot-rs
 # the Java test resources that the shared crate's segmentation tests read (build stage only)
 COPY hmf-common/src/test/resources/segmentation hmf-common/src/test/resources/segmentation
 COPY hmf-common/src/test/resources/pcf hmf-common/src/test/resources/pcf
@@ -48,6 +50,7 @@ COPY orange-rs orange-rs
 # test fails the image build
 RUN rustc --version \
     && (cd hmf-common-rs && cargo test --release --locked && cargo test --release --locked --features bwa) \
+    && (cd hmf-plot-rs && cargo test --release --locked) \
     && for crate in sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs \
             sigs-rs virus-interpreter-rs peach-rs chord-rs neo-rs cuppa-rs qsee-rs orange-rs; do \
         (cd $crate && cargo build --release --locked && cargo test --release --locked) || exit 1; \

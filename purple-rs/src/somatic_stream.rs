@@ -317,6 +317,8 @@ pub struct SomaticStreamResult {
     pub reported_genes: std::collections::HashSet<String>,
     /// indices of the variants kept for the Circos plots
     pub plotting_variants: Vec<usize>,
+    /// the SNVs of the rainfall plot (RChartData's somatic_data.tsv)
+    pub rainfall: Vec<crate::plots::RainfallPoint>,
     pub variant_type_counts: VariantTypeCounts,
     pub biallelic_counts: VariantTypeCounts,
 }
@@ -333,6 +335,7 @@ impl SomaticStreamResult {
             peak_model: Vec::new(),
             reported_genes: Default::default(),
             plotting_variants: Vec::new(),
+            rainfall: Vec::new(),
             variant_type_counts: VariantTypeCounts::default(),
             biallelic_counts: VariantTypeCounts::default(),
         }
@@ -406,7 +409,7 @@ impl<'a> SomaticStream<'a> {
         msi_prediction: Option<f64>,
         output_vcf: &str,
         hist_path: &str,
-        somatic_data_path: Option<&str>,
+        collect_rainfall: bool,
     ) -> Result<SomaticStreamResult> {
         let mut result = SomaticStreamResult::empty();
         let Some(input_header) = cache.header.clone() else { return Ok(result) };
@@ -433,7 +436,8 @@ impl<'a> SomaticStream<'a> {
         let targets = &self.reference.target_regions;
         let (mut load, mut burden, mut unclear, mut msi_count) = (0i32, 0i32, 0i32, 0i32);
         let mut histogram: HashMap<String, i32> = HashMap::new();
-        let mut somatic_data: Vec<String> = Vec::new();
+        // RChartData: the SNVs of the rainfall plot, at most 100,000 (PL4: Java counts every PASS variant)
+        let mut rainfall_seen = 0usize;
         let (snp_mod, indel_mod) = {
             let m = |c: i32| if c <= 25000 { 1 } else { c / 25000 };
             (m(cache.snp_count), m(cache.indel_count))
@@ -516,13 +520,20 @@ impl<'a> SomaticStream<'a> {
             let vcn = v.rec.info.as_double("PURPLE_VCN", 0.0);
             let key = format!("{}>{}", jround(vcn / 0.05) as i32, jround(cn / 1.0) as i32);
             *histogram.entry(key).or_insert(0) += 1;
-            if somatic_data_path.is_some() && somatic_data.len() < 100_000 {
-                // the counter counts every variant seen, written or not
-                somatic_data.push(if v.vtype == VariantType::Snp && v.is_pass() {
-                    format!("{}\t{}\t{}>{}\t{}", v.chromosome(), v.position(), v.ref_bases(), v.alt(), v.rec.info.as_string("KT", ""))
-                } else {
-                    String::new()
-                });
+            if collect_rainfall {
+                let snv = v.vtype == VariantType::Snp && v.is_pass();
+                let counted = if crate::compat::java("PL4") { rainfall_seen < 100_000 } else { result.rainfall.len() < 100_000 };
+                if counted {
+                    rainfall_seen += 1;
+                    if snv {
+                        result.rainfall.push(crate::plots::RainfallPoint {
+                            chromosome: v.chromosome().to_string(),
+                            position: v.position() as i64,
+                            mutation: format!("{}>{}", v.ref_bases(), v.alt()),
+                            kataegis: v.rec.info.as_string("KT", ""),
+                        });
+                    }
+                }
             }
             // checkChartDownsampling
             if !config.charting.disabled {
@@ -570,14 +581,6 @@ impl<'a> SomaticStream<'a> {
             text.push('\n');
         }
         std::fs::write(hist_path, text)?;
-        if let Some(p) = somatic_data_path {
-            let mut text = String::from("chromosome\tposition\tmutation\tkataegis\n");
-            for l in somatic_data.iter().filter(|l| !l.is_empty()) {
-                text.push_str(l);
-                text.push('\n');
-            }
-            std::fs::write(p, text)?;
-        }
 
         // calculateVariantLoadValues
         result.tml = if !targets.has_target_regions() {

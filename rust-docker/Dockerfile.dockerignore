@@ -6,6 +6,12 @@
 !hmf-common-rs/build.rs
 !hmf-common-rs/vendor
 !hmf-common-rs/resources
+!hmf-plot-rs/Cargo.toml
+!hmf-plot-rs/Cargo.lock
+!hmf-plot-rs/.cargo
+!hmf-plot-rs/src
+!hmf-plot-rs/fonts
+!hmf-plot-rs/resources
 !hmf-common/src/test/resources/segmentation
 !hmf-common/src/test/resources/pcf
 !sage-rs/Cargo.toml
@@ -59,6 +65,7 @@
 !purple-rs/build.rs
 !purple-rs/src
 !purple-rs/resources
+!purple-rs/.cargo
 !linx-rs/Cargo.toml
 !linx-rs/Cargo.lock
 !linx-rs/src

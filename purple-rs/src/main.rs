@@ -21,6 +21,7 @@ mod germline;
 mod germline_sv;
 mod inputs;
 mod parallel;
+mod plots;
 mod purity_fitter;
 mod reference;
 mod region;
@@ -258,7 +259,7 @@ fn run(cb: &ConfigBuilder) -> Result<i32> {
             msi_prediction,
             &format!("{out}{tumor_id}.purple.somatic.vcf.gz"),
             &format!("{out}{tumor_id}.purple.somatic.hist.tsv"),
-            None,
+            !config.charting.disabled,
         )?;
         write_purity_range(&format!("{out}/{tumor_id}.purple.purity.range.tsv"), &best_fit.all_fits)?;
         copynumber::write_copy_numbers(&format!("{out}/{tumor_id}.purple.cnv.somatic.tsv"), &copy_numbers)?;
@@ -357,6 +358,7 @@ fn run(cb: &ConfigBuilder) -> Result<i32> {
     if !config.germline_mode() && !config.charting.disabled {
         info!("generating charts");
         let mut charting = || -> Result<()> {
+            let plot_dir = &config.charting.plot_directory;
             if config.charting.circos_binary.is_some() {
                 let plotting: Vec<&variant::Variant> = stream_result.as_ref().map(|r| r.plotting_variants.iter().map(|&i| &somatic_cache.variants[i]).collect()).unwrap_or_default();
                 let svs = sv_cache.somatic_variants().to_vec();
@@ -374,9 +376,19 @@ fn run(cb: &ConfigBuilder) -> Result<i32> {
                     drivers: if config.skip_circos_genes { &[] } else { &driver_sources },
                 };
                 charts::write_circos(&config, &inputs)?;
-                charts::run_circos(&config, &tumor_id)?;
+                if config.charting.external_circos {
+                    charts::run_circos(&config, &tumor_id)?;
+                } else {
+                    plots::draw_circos(&config.charting.circos_directory, plot_dir, &tumor_id)?;
+                }
             }
-            // the R plots (copy number, somatic) are not ported
+            // RCharts: copyNumberPlots.R, and somaticVariantPlots.R when a somatic VCF is given
+            let rainfall: &[plots::RainfallPoint] = stream_result.as_ref().map(|r| r.rainfall.as_slice()).unwrap_or(&[]);
+            if config.charting.write_plot_data {
+                plots::write_somatic_data(&format!("{plot_dir}{tumor_id}.somatic_data.tsv"), rainfall)?;
+            }
+            let plot_somatics = config.sample_files.somatic_vcf_file.as_deref().is_some_and(|f| !f.is_empty());
+            plots::draw_r_plots(&plots::PlotInputs { output_dir: out, plot_dir, tumor_id: &tumor_id, plot_somatics, rainfall })?;
             Ok(())
         };
         if let Err(e) = charting() {
@@ -468,7 +480,7 @@ fn write_empty_result_files(
     let tumor_id = &config.tumor_id;
     if config.run_tumor() {
         let mut s = somatic_stream::SomaticStream::new(config, reference);
-        s.process_and_write(somatic_cache, None, msi_prediction, &format!("{out}{tumor_id}.purple.somatic.vcf.gz"), &format!("{out}{tumor_id}.purple.somatic.hist.tsv"), None)?;
+        s.process_and_write(somatic_cache, None, msi_prediction, &format!("{out}{tumor_id}.purple.somatic.vcf.gz"), &format!("{out}{tumor_id}.purple.somatic.hist.tsv"), false)?;
         sv_cache.write(None, &[], config.tumor_only_mode(), Gender::Female)?;
         write_purity_range(&format!("{out}/{tumor_id}.purple.purity.range.tsv"), &[])?;
         copynumber::write_copy_numbers(&format!("{out}/{tumor_id}.purple.cnv.somatic.tsv"), &[])?;

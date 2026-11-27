@@ -126,6 +126,10 @@ pub struct ChartConfig {
     pub circos_binary: Option<String>,
     pub plot_directory: String,
     pub circos_directory: String,
+    /// run the Circos binary given by -circos, as Java does, instead of drawing the Circos plots natively
+    pub external_circos: bool,
+    /// keep plot/<tumor>.somatic_data.tsv (the rainfall plot's data, which Java deletes)
+    pub write_plot_data: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -287,6 +291,9 @@ pub fn register(cb: &mut ConfigBuilder) {
     // ChartConfig
     cb.add_path("circos", false, "Location of circos binary");
     cb.add_flag("no_charts", "Disable charts");
+    cb.add_flag("external_circos", "Run the Circos binary given by -circos instead of drawing the Circos plots natively");
+    cb.add_flag("circos_native", "Draw the Circos plots natively, as -circos does, without naming a Circos binary");
+    cb.add_flag("write_plot_data", "Keep the rainfall plot's data, plot/<tumor>.somatic_data.tsv");
 
     // SampleDataFiles
     cb.add_path("sample_dir", false, "Sample data directory containing Cobalt, Amber, Pave and Esvee files");
@@ -421,7 +428,10 @@ impl PurpleConfig {
             disabled: cb.has_flag("no_charts"),
             plot_directory: format!("{output_dir}plot/"),
             circos_directory: format!("{output_dir}circos/"),
-            circos_binary: cb.value("circos"),
+            // -circos_native: the Circos plots without a Circos binary (the binary is never run unless -external_circos)
+            circos_binary: cb.value("circos").or_else(|| cb.has_flag("circos_native").then(|| "native".to_string())),
+            external_circos: cb.has_flag("external_circos"),
+            write_plot_data: cb.has_flag("write_plot_data"),
         };
         valid &= create_directory(&output_dir);
         if !charting.disabled {
@@ -490,7 +500,7 @@ impl PurpleConfig {
                 somatic_penalty_weight: 0.0,
                 highly_diploid_percentage: 0.0,
             },
-            charting: ChartConfig { disabled: true, circos_binary: None, plot_directory: String::new(), circos_directory: String::new() },
+            charting: ChartConfig { disabled: true, circos_binary: None, plot_directory: String::new(), circos_directory: String::new(), external_circos: false, write_plot_data: false },
             target_regions_mode: false,
             ignore_plot_errors: false,
             sv_qual_filter: 0,

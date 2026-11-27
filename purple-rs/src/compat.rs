@@ -18,9 +18,11 @@ thread_local! {
 
 /// The number of findings in REPORT.md, PU1 to PU<FINDINGS>; raise it when a finding is added.
 pub const FINDINGS: u32 = 40;
+/// The plot findings, PL1 to PL<PLOT_FINDINGS> (plots.rs).
+pub const PLOT_FINDINGS: u32 = 20;
 
 fn valid_id(id: &str) -> bool {
-    numbered_id(id, "PU", FINDINGS) || hmf_common::compat::common_id(id)
+    numbered_id(id, "PU", FINDINGS) || numbered_id(id, "PL", PLOT_FINDINGS) || hmf_common::compat::common_id(id)
 }
 
 /// Whether to behave as Java does for the finding `id` (for example "PU1").

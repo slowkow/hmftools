@@ -165,8 +165,8 @@ pipeline's plotting steps keep their Java images):
   threads. Two outputs need a defined Java reference, as Java varies from run to run: the kataegis ids
   (PU1, a race between threads) and baf.circos (PU2, identity-hash order). 3.1-3.5 times faster
   (8.8 in germline-only mode), with 2.5-4.5 times less memory. Germline amplifications are typed as
-  deletions in Java (PU9). Findings PU1-PU9. The R plots are not drawn, and oncoanalyser skips ORANGE without
-  them, so the pipeline runs PURPLE as a port only with its own profile for now.
+  deletions in Java (PU9). Findings PU1-PU9. Its 9 plots (7 from R scripts, 2 from Circos) are drawn natively
+  since 2026-11-27 (below).
 - **LINX** (`linx-rs`): LINX_SOMATIC and LINX_GERMLINE byte-identical to Java on HG008 and on a private
   whole-genome pair (14 and 6 files) and on 14 small and option cases; 2.6-3.5 times faster at one
   thread, in a quarter to a third of the memory (0.2-0.3 GB against 0.8-1.1 GB). Java's output order
@@ -225,6 +225,17 @@ For the R and Python parts, the first version keeps calling the same scripts, so
 predictions stay identical. Replacing them is a separate decision per program: a random forest or a
 fitted classifier can be reproduced exactly in Rust; plots and the PDF cannot be byte-identical and
 would be checked by eye.
+
+**Native plots** (`hmf-plot-rs`, from 2026-11-27): a shared drawing crate on BUI's software raster
+(https://github.com/ppmpreetham/BUI, pinned by commit; its C kit is built with cmake), with the ggplot2 elements
+the R scripts use and a Circos ring engine driven by the same .conf files. PURPLE's 9 plots come first: same file
+names, pixel sizes and conditions as Java. In `-java_compat` the 7 R plots match Java's panels and text extents
+within 1 px; the 2 Circos images differ in rendering only (anti-aliased shapes, dots as discs). The PNGs are
+byte-identical across runs and across macOS arm64, Linux arm64 and Linux amd64 (libm's sin/cos/pow, C built with
+`-ffp-contract=off`). The charting step takes about 0.7 s, against about 24 s for R and Circos. Findings PL1-PL4:
+Circos's `skip_run` drops 15% of HG008's plotted SNVs (PL1), ggplot2 3.4+ ignores the bars' outline size (PL2),
+and the rainfall distances cross chromosome boundaries (PL3). Still to do on the same crate: LINX's visualiser,
+CUPPA's and qsee's R plots, and the PDFs of ORANGE and qsee (BUI has no vector output).
 
 ### Wave C: RNA and newer tools
 

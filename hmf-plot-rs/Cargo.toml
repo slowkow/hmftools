@@ -1,0 +1,22 @@
+[package]
+name = "hmf-plot-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Native drawing for the hmftools Rust ports: ggplot2-style charts and a Circos ring engine, rendered by BUI"
+license = "GPL-3.0-only"
+
+[lib]
+name = "hmf_plot"
+path = "src/lib.rs"
+
+[dependencies]
+# BUI (Blender's UI kit as a C library): only its software raster and text engine are used, through the
+# raw bindings; no window, no layout. Pinned: see README.md.
+blenderui-sys = { git = "https://github.com/ppmpreetham/BUI", rev = "1af5d5084d92e8ed30c637076bc964c3769386ca", default-features = false, features = ["freetype"] }
+png = "0.17"
+libm = "0.2"
+
+[dev-dependencies]
+
+[profile.release]
+debug = 1

@@ -1,0 +1,5 @@
+# The C code built here (BUI's kit, htslib) without fused multiply-adds, so that Apple clang and gcc compute
+# the same floating-point results: BUI's polygon coverage then gives the same pixels on macOS and Linux.
+[env]
+CFLAGS = "-ffp-contract=off"
+CXXFLAGS = "-ffp-contract=off"

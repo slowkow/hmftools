@@ -14,10 +14,10 @@ Every file of a tumor/normal run:
 - **VCFs:** the somatic, germline, SV and germline SV VCFs.
 - **Drivers:** germline_amp_del.tsv and both driver catalogs.
 - **The rest:** purple.version.
-- **Circos (`-circos`):** the 12 data files, the two .conf files and gaps.txt; the port runs Circos as
-  Java does.
+- **Circos (`-circos`):** the 12 data files, the two .conf files and gaps.txt.
+- **Plots:** all nine PNGs of plot/, drawn natively (section 6).
 
-Targeted mode also writes target_region_cn.tsv. The R plots are not ported (section 6).
+Targeted mode also writes target_region_cn.tsv. The plots are drawn natively (section 6).
 
 Not ported, as they are unused: SomaticHistogramPeaks, ResegmentationUtils, ObservedRegionFile,
 GCAccumulator, ChimerismDetection and the tools package. `-pipeline_format` takes only its default,
@@ -200,29 +200,47 @@ Where the time goes (the private pair, `-threads 2`, 10 s):
 The largest parts of memory are the COBALT ratios (3 million windows, each holding its chromosome name
 as a String) and the Ensembl cache. Storing the chromosome once per list would save about a quarter.
 
-## 6. Plots (not ported)
+## 6. Plots
 
-Java draws them in `plot/` after writing the data files. The port writes every data file the plots read,
-and runs Circos when `-circos` is given, but does not run R.
+The port draws all nine plots natively, with [hmf-plot-rs](../hmf-plot-rs/README.md) (BUI's software raster),
+without R, Perl or Circos (`src/plots.rs`). Each reads the same file as the R script or Circos and repeats its
+transformations; the file names, pixel sizes and the conditions under which each is written are Java's.
 
-| Plot | Made by | Reads |
-|---|---|---|
-| `<tumor>.copynumber.png` | r/copyNumberPlots.R (Rscript) | cnv.somatic.tsv |
-| `<tumor>.map.png` | r/copyNumberPlots.R | cnv.somatic.tsv (minor allele copy number) |
-| `<tumor>.purity.range.png` | r/copyNumberPlots.R | purity.range.tsv, purity.tsv |
-| `<tumor>.segment.png` | r/copyNumberPlots.R | segment.tsv |
-| `<tumor>.somatic.png` | r/somaticVariantPlots.R (when a somatic VCF is given) | somatic.hist.tsv |
-| `<tumor>.somatic.clonality.png` | r/somaticVariantPlots.R | somatic.clonality.tsv, somatic.hist.tsv |
-| `<tumor>.somatic.rainfall.png` | r/somaticVariantPlots.R | plot/<tumor>.somatic_data.tsv (written by Java for R and deleted afterwards; the port does not write it) |
-| `<tumor>.circos.png`, `<tumor>.input.png` | the Circos binary (`-circos`) | circos/*.circos, *.conf, gaps.txt |
+| Plot | Java draws it with | Reads | Size |
+|---|---|---|---|
+| `<tumor>.copynumber.png` | r/copyNumberPlots.R | cnv.somatic.tsv | 1440 x 1200 |
+| `<tumor>.map.png` | r/copyNumberPlots.R | cnv.somatic.tsv (minor allele copy number) | 1440 x 1200 |
+| `<tumor>.purity.range.png` | r/copyNumberPlots.R | purity.range.tsv, purity.tsv | 1440 x 1200 |
+| `<tumor>.segment.png` | r/copyNumberPlots.R | segment.tsv | 1440 x 1200 |
+| `<tumor>.somatic.png` | r/somaticVariantPlots.R (with a somatic VCF) | somatic.hist.tsv | 1440 x 1200 |
+| `<tumor>.somatic.clonality.png` | r/somaticVariantPlots.R | somatic.clonality.tsv, somatic.hist.tsv | 2400 x 1800 |
+| `<tumor>.somatic.rainfall.png` | r/somaticVariantPlots.R | the PASS SNVs (Java's plot/<tumor>.somatic_data.tsv, kept by `-write_plot_data`) | 2400 x 1200 |
+| `<tumor>.circos.png`, `<tumor>.input.png` | Circos 0.69 (`-circos`) | circos/*.circos, *.conf, gaps.txt | 3000 x 3000 |
 
-ORANGE needs these plots (its plot fields are mandatory), and oncoanalyser runs ORANGE only when
-`plot/<tumor>.circos.png` exists. So in a pipeline run with purple-rs, ORANGE is skipped until the plots
-are drawn natively.
+How they were checked (the notes of the plots work list every command): side-by-side images against the
+pipeline's Java images for HG008 and the private pair, and against the pipeline image's R and Circos run on
+purple-rs's files for HG008 tumor-only and HG008 without somatic VCF and SVs; ggplot2's layout (gtable widths
+and heights, scale ranges, breaks, labels) dumped from R; panel boxes and text extents of every R plot at the
+same pixels as Java's (within 1 px); unit tests of the transformations against R. The Circos images differ only
+in rendering: anti-aliased shapes where GD draws aliased ones.
+
+The plots are deterministic, and the same bytes on macOS and Linux (arm64; see hmf-plot-rs's README).
+
+### Plot findings
+
+Corrected by default, Java's drawing with `-java_compat`:
+- **PL1:** circos.template's `skip_run = yes` makes Circos drop every SNV whose allele frequency text equals the
+  previous one's (1,425 of HG008's 9,227 plotted SNVs). Corrected: all drawn.
+- **PL2:** `size = 0.07` on geom_histogram and geom_bar is ignored by ggplot2 >= 3.4, so the copy number, map
+  and clonality bars get 0.5 mm outlines. Corrected: 0.07 mm.
+- **PL3:** the rainfall plot's intermutation distances are taken across chromosome boundaries. Corrected: within
+  each chromosome.
+- **PL4:** the rainfall data stop after 100,000 PASS variants of any type although only SNVs are plotted.
+  Corrected: 100,000 SNVs.
 
 ## 7. Open points
 
-- **Not ported:** the R plots, and `-pipeline_format` values other than the default.
+- **Not ported:** `-pipeline_format` values other than the default.
 - **PU5** is not reproduced (section 3).
 - **`-java_compat` above one thread** gives one of Java's possible KT numberings: the enrichers run one
   after the other. Java itself varies from run to run (PU1).
