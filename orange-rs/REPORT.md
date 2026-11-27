@@ -410,3 +410,8 @@ port, then following ca04e6c39d, named it `virusInterpreter`. The port now follo
 same inputs with the pipeline's command it gives the image's JSON but for the LINX plot order (above). The LINX
 driver plots came in the same order on Batch (in Java mode both take Linux's directory order). ORANGE took 5.3 s and
 42 MB, against Java's 18 s and 419 MB.
+
+**The PDF (HG008 rerun 15):** orange-rs with its PDF ran in Java mode on rerun 11's inputs (Java PURPLE and its R and
+Circos plots). Against the PDF Java ORANGE wrote from the same inputs: 8 pages of the same sizes, the same
+`pdftotext -layout` text, every one of 1,041 words at the same position, the same 30 embedded images, no rendered
+pixel different at 100 dpi; the JSON byte-identical. 5 s and 43 MB, against Java's 18 s and 419 MB.
