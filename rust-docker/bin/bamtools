@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# `bamtools` as oncoanalyser calls the Java tool, run by bam-tools-rs: JVM options are dropped and the
+# metrics main class (com.hartwig.hmftools.bamtools.metrics.BamMetrics, also the jar's default) runs.
+# -java_compat or BAMTOOLS_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.bamtools.metrics.BamMetrics) ;;
+        com.hartwig.*) echo "bamtools (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec bam-tools-rs ${args[@]+"${args[@]}"}

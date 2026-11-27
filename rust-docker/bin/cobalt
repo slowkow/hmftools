@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# `cobalt` as oncoanalyser calls the Java tool, run by cobalt-rs: JVM options are dropped.
+# -java_compat or COBALT_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.cobalt.CobaltApplication) ;;
+        com.hartwig.*) echo "cobalt (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec cobalt-rs ${args[@]+"${args[@]}"}

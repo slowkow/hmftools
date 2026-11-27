@@ -17,7 +17,7 @@ case "${image##*/}" in
     *:*) ;;
     *) image="$image:$(git -C "$root" rev-parse --short=10 HEAD)" ;;
 esac
-if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs sage-rs redux-rs esvee-rs rust-docker)" ]; then
+if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs rust-docker)" ]; then
     echo "note: uncommitted changes are not part of the build; it uses HEAD" >&2
 fi
 
@@ -30,6 +30,10 @@ git -C "$root" archive HEAD \
     sage-rs/Cargo.toml sage-rs/Cargo.lock sage-rs/src sage-rs/resources \
     redux-rs/Cargo.toml redux-rs/Cargo.lock redux-rs/src \
     esvee-rs/Cargo.toml esvee-rs/Cargo.lock esvee-rs/build.rs esvee-rs/src esvee-rs/vendor \
+    amber-rs/Cargo.toml amber-rs/Cargo.lock amber-rs/build.rs amber-rs/src amber-rs/resources amber-rs/testdata \
+    cobalt-rs/Cargo.toml cobalt-rs/Cargo.lock cobalt-rs/build.rs cobalt-rs/src cobalt-rs/resources \
+    cobalt/src/test/resources \
+    bam-tools-rs/Cargo.toml bam-tools-rs/Cargo.lock bam-tools-rs/src bam-tools-rs/resources bam-tools-rs/testdata \
     rust-docker/Dockerfile rust-docker/Dockerfile.dockerignore rust-docker/bin \
     | tar -x -C "$tmp"
 

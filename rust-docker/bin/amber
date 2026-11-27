@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# `amber` as oncoanalyser calls the Java tool, run by amber-rs: JVM options are dropped.
+# -java_compat or AMBER_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.amber.AmberApplication) ;;
+        com.hartwig.*) echo "amber (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec amber-rs ${args[@]+"${args[@]}"}
