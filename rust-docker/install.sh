@@ -22,6 +22,11 @@ for tool in sage redux esvee amber cobalt bamtools teal lilac cider pave purple 
     install -m 755 "$root/rust-docker/bin/$tool" "$dest/"
 done
 
+# the `python` stand-in for CUPPA's `python -m cuppa.predict`, in a folder of its own so that it shadows no Python
+# (oncoanalyser puts it on PATH for the CUPPA task only)
+mkdir -p "$dest/cuppa-shim"
+install -m 755 "$root/rust-docker/bin/python" "$dest/cuppa-shim/"
+
 PATH="$dest:$PATH"
 sage -version
 redux -version
