@@ -119,3 +119,10 @@ Added to `hmf-common-rs` for this port (additions only; no existing behaviour ch
 - `variant_context::VcfReader::next_line()`: the next data line as read, unparsed, for readers that check a
   few columns before `VcfRecord::parse` (SIGS skips filtered records this way; PEACH skips records off the
   panel).
+
+## In the pipeline (GIAB HG008, 2026-11-27)
+
+HG008 rerun 9 on Google Batch ran SIGS, Virus Interpreter, PEACH and CHORD as ports, in Java mode, with every
+other step from the first run's cache. PEACH's outputs (all 5 files) are identical to the first run's Java
+outputs. CUPPA and ORANGE, which ran again on them, gave the same outputs as before. PEACH took 616 ms, 2.8 MB,
+against Java's 3 s, 80 MB. The rerun's tasks cost $0.02.

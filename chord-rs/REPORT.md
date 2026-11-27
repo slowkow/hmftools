@@ -368,3 +368,10 @@ Added to `hmf-common-rs` (nothing changed):
 Used from hmf-common-rs: `config_builder`, `compat`, `log`, `refgenome`, `variant_context` (records and
 types), `sv` (StructuralVariantType, MATE_ID, match_breakend_alt), `gz` (line reading, gzip for RDS),
 `java_text`, `fmt`.
+
+## In the pipeline (GIAB HG008, 2026-11-27)
+
+HG008 rerun 9 on Google Batch ran SIGS, Virus Interpreter, PEACH and CHORD as ports, in Java mode, with every
+other step from the first run's cache. CHORD's outputs (both files) are identical to the first run's Java
+outputs. CUPPA and ORANGE, which ran again on them, gave the same outputs as before. CHORD took 7.4 s, 51 MB (mostly staging: 6% CPU),
+against Java's 9 s, 439 MB. The rerun's tasks cost $0.02.

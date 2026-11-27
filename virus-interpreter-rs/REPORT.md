@@ -124,3 +124,10 @@ Added to `hmf-common-rs` for this port (additions only; no existing behaviour ch
   This is PurpleQCFile.read with Java's defaults, its old FAIL_ names read as WARN_ statuses, and its errors
   for unknown names or a missing gender line. Test `purple_qc_tests::reads_the_qc_file`. Virus Interpreter
   reads the QC statuses with it; ORANGE will need it too.
+
+## In the pipeline (GIAB HG008, 2026-11-27)
+
+HG008 rerun 9 on Google Batch ran SIGS, Virus Interpreter, PEACH and CHORD as ports, in Java mode, with every
+other step from the first run's cache. VIRUSINTERPRETER's outputs (the one file) are identical to the first run's Java
+outputs. CUPPA and ORANGE, which ran again on them, gave the same outputs as before. VIRUSINTERPRETER took 1.6 s, 9.2 MB,
+against Java's 5 s, 598 MB. The rerun's tasks cost $0.02.
