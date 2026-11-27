@@ -44,7 +44,7 @@ Results (Java mode); "identical" means every output file as in the table above:
 | e_threshold | small tumor | a threshold without `-write_off_target` (BT17) | Java and port: exit status 1 |
 | e_nodir | small tumor | a missing output directory (BT19) | Java and port: exit status 0, errors logged, no files |
 | small_t_th1 | small tumor | `-threads 1` | identical to the 2-thread run |
-| wgs_t, wgs_n | a private whole-genome pair (80x tumor, 105x normal) | oncoanalyser command | run (section 3); Java references pending |
+| wgs_t, wgs_n | a private whole-genome pair (80x tumor, 105x normal) | oncoanalyser command | 7 files identical, each (partition_stats without ProcessTime, rows sorted) |
 
 The synthetic BED is a regular grid on chr21 and chr22 plus a region nested in another (BT12), regions
 1 and 3 bases apart (merged and kept apart) and pairs 50 and 60 bases apart (reads overlapping both,
@@ -143,13 +143,16 @@ USB SSD, `/usr/bin/time -l`, 2 threads for both, Java `-Xmx16g`. CPU = user + sy
 | v_threads1 (1 thread) | 76.0 s | 80.9 s | 2.32 GB | 12.0 s | 12.0 s | 79 MB | 6.3x |
 | e_noversion | 42.8 s | 88.7 s | 2.30 GB | 6.3 s | 11.8 s | 73 MB | 6.7x |
 | e_partition | 34.8 s | 72.8 s | 2.33 GB | 5.6 s | 10.5 s | 71 MB | 6.1x |
-| wgs_t (80x tumor, 2.0G reads) | pending | | | 432.2 s | 777.1 s | 109 MB | |
-| wgs_n (105x normal, 2.5G reads) | pending | | | 548.9 s | 970.4 s | 105 MB | |
+| wgs_t (80x tumor, 2.0G reads) | 2,821.9 s | 4,996.0 s | 2.53 GB | 432.2 s | 777.1 s | 109 MB | 6.5x |
+| wgs_n (105x normal, 2.5G reads) | 3,921.8 s | 6,192.6 s | 2.46 GB | 548.9 s | 970.4 s | 105 MB | 7.1x |
 
 The whole-genome runs are the final binary's; earlier runs (unmapped reads read last, on one thread) took 453.5 s and 554.6 s, and two runs of each BAM gave identical files. The corrected mode costs about the same (wgs_t 467.5 s, small_n 14.8 s). Threads: the small tumor takes
 24.3 s at 1 thread and 12.5 s at 2 (1.9x). The pipeline figure for Java (about 8 CPU hours for a 100x
-pair, `../RUST_PORTS.md`) against the port's 0.49 CPU hours for this pair is a factor of about 17 in CPU;
-the Java references will give the measured one.
+pair, `../RUST_PORTS.md`) against the port's 0.49 CPU hours for this pair is a factor of about 17 in CPU.
+Measured on this pair, Java used 3.11 CPU hours against the port's 0.49, a factor of 6.4. The comparison
+runs of the merged binary (2026-11-27, with a Java run beside them) took 469.5 s and 531.5 s, in 114 and
+115 MB. On Google Batch (HG008, 16 CPUs) the port took 2.9 and 1.2 min against Java's 11.5 and 4.6, in
+0.55 GB against 3.8 and 2.8 GB.
 
 ## 4. Speed: what was done and where the time goes
 
@@ -180,8 +183,5 @@ the Java references will give the measured one.
 
 ## 5. Open points
 
-- The whole-genome comparison with Java, once the Java references of the two BAMs exist (the port's
-  outputs in both modes are made). The partition_stats rows of a 2-thread Java run are compared sorted
-  and without ProcessTime.
 - `EnrichedRegionRepeatMasks` (a separate main class, with hmf-common RepeatMaskAnnotations) is not
   ported; neither BamMetrics nor oncoanalyser calls it.
