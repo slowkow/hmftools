@@ -263,7 +263,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "core-math",
+ "flate2",
+ "memchr",
  "rust-htslib",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -932,3 +935,9 @@ dependencies = [
  "quote",
  "syn 3.0.10",
 ]
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa76918995d776d9dd34d371030be228d021137449771493d56e29f77e4148ac"

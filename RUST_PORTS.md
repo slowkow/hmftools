@@ -153,6 +153,13 @@ Java from the pipeline.
 
 Status on 2026-11-27 (PAVE, PURPLE and LINX are being ported first; plots are left for later, and the
 pipeline's plotting steps keep their Java images):
+- **PAVE** (`pave-rs`): byte-identical to Java on 29 cases (the VCF, its BGZF bytes and tabix index):
+  HG008 and a private pair, somatic and germline with the pipeline's commands, slices, a synthetic set
+  of 365,000 records over every kind of impact site, 13 option cases and 8 edge cases; where Java fails,
+  the port fails on the same record. About 6 times faster at 2 threads, in a twentieth of the memory
+  (0.2 GB against 4-5 GB). Java reads the mappability file one base off (PA2: MAPPABILITY changes on 256
+  of 17,254 HG008 somatic records) and drops a gene once a variant reaches past its end (PA1). Findings
+  PA1-PA9.
 - **LINX** (`linx-rs`): LINX_SOMATIC and LINX_GERMLINE byte-identical to Java on HG008 and on a private
   whole-genome pair (14 and 6 files) and on 14 small and option cases; 2.6-3.5 times faster at one
   thread, in a quarter to a third of the memory (0.2-0.3 GB against 0.8-1.1 GB). Java's output order

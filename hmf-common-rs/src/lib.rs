@@ -22,6 +22,9 @@
 //! - `csv`: commons-csv's CSVPrinter as the Kotlin tools use it (tab-delimited, MINIMAL quoting).
 //! - `kotlin_random`: kotlin.random.Random(seed), the XorWow generator.
 //! - `sam_header`: SAM header lines as htsjdk writes them (`@HD VN:1.6` whatever the input's version).
+//! - `gz`: fast gzip / BGZF text reading (zlib-rs) with a line reader.
+//! - `vcf`: VCF headers, records and the writer as htsjdk 2.23 has them, with the BGZF stream and the
+//!   tabix index written as Java writes them.
 
 pub mod args;
 pub mod blosum;
@@ -34,6 +37,7 @@ pub mod driver_panel;
 pub mod ensembl;
 pub mod faidx;
 pub mod fmt;
+pub mod gz;
 pub mod java_fastmath;
 pub mod java_hash;
 pub mod java_id_hash;
@@ -53,3 +57,4 @@ pub mod purple_files;
 pub mod segmentation;
 pub mod sv;
 pub mod transcript_utils;
+pub mod vcf;

@@ -219,6 +219,12 @@ pub fn position_within(pos: i32, start: i32, end: i32) -> bool {
     pos >= start && pos <= end
 }
 
+/// BaseRegion.positionsWithin: the inner range (start not after its end) lies inside the outer one
+#[inline]
+pub fn positions_within(inner_start: i32, inner_end: i32, outer_start: i32, outer_end: i32) -> bool {
+    inner_start <= inner_end && inner_start >= outer_start && inner_end <= outer_end
+}
+
 /// ChrBaseRegion.compareTo: chromosome rank (then name), then start only (ties are equal, so a stable sort
 /// keeps their order)
 pub fn compare_chr_regions(a: &ChrBaseRegion, b: &ChrBaseRegion) -> std::cmp::Ordering {

@@ -1,7 +1,7 @@
 # hmf-common-rs
 
 Code shared by the Rust ports of hmftools (`sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`,
-`bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `linx-rs`, and the ports that follow).
+`bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `linx-rs`, and the ports that follow).
 It plays the part of the Java `hmf-common` module, plus the Java library behaviour the ports reproduce
 so that their output equals the Java tools'.
 
@@ -12,7 +12,7 @@ so that their output equals the Java tools'.
 | `faidx`, `refgenome` | indexed FASTA access, 1-based inclusive positions as the Java RefGenomeInterface |
 | `fmt` | numbers as Java's `String.format`, `Double.toString` and `DecimalFormat` write them (`decimal_format` ports the JDK's FloatingDecimal digits and DigitList rounding; `decimal_format_fixed` for patterns such as "0.0000") |
 | `log` | log lines in the layout of the Java tools; the `info!`, `warn!`, `error!` and `debug!` macros |
-| `regions` | chromosome ranks and names, regions, `-specific_regions` / `-specific_chr`; RefGenomeVersion, BaseRegion, region and BED file loading with Java's merging, PartitionUtils |
+| `regions` | chromosome ranks and names, regions (with BaseRegion's positionWithin and positionsWithin), `-specific_regions` / `-specific_chr`; RefGenomeVersion, BaseRegion, region and BED file loading with Java's merging, PartitionUtils |
 | `java_hash`, `java_id_hash` | java.util.HashMap and HashSet iteration order (with `retain` for retainAll / removeIf, which keep the table size), for hash codes and for identity hashes under `-XX:hashCode=2` |
 | `java_sort`, `java_math` | TimSort as `List.sort`, and Java numeric behaviour such as `DoubleStream.sum`, `Math.max`, `Math.round`, `Double.compare` |
 | `java_fastmath` | commons-math3 `FastMath.log` and `FastMath.exp`, which differ from `Math.log` and `Math.exp` in the last bit for some inputs (COBALT takes logs with it; AMBER's Poisson and binomial distributions take both) |
@@ -32,6 +32,8 @@ so that their output equals the Java tools'.
 | `known_fusion` | KnownFusionCache and KnownFusionData (the known fusion file), KnownFusionType, FusionCommon's constants |
 | `transcript_utils` | TranscriptUtils: coding bases and phases |
 | `poisson` | commons-math3's PoissonDistribution (probability, cumulative probability, regularized gamma), bit for bit (AMBER, LINX) |
+| `gz` | fast gzip / BGZF text reading (zlib-rs, one member after another, optionally inflating on its own thread) and a line reader (PAVE's resource files) |
+| `vcf` | VCF headers, records and the VCFEncoder as htsjdk 2.23 has them, and `VcfFileWriter`: the BGZF stream (zlib level 5, as java.util.zip) with htsjdk's on-the-fly tabix index (PAVE) |
 | `ref_coords` | RefGenomeCoordinates: the GRCh37 and GRCh38 lengths of chromosomes 1-22, X and Y (resources refgenome/lengths.*.tsv) |
 
 The ports take it as a path dependency (`hmf-common = { path = "../hmf-common-rs" }`, with

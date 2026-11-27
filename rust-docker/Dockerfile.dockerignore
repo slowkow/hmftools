@@ -49,6 +49,10 @@
 !cider-rs/Cargo.lock
 !cider-rs/src
 !cider-rs/resources
+!pave-rs/Cargo.toml
+!pave-rs/Cargo.lock
+!pave-rs/build.rs
+!pave-rs/src
 !linx-rs/Cargo.toml
 !linx-rs/Cargo.lock
 !linx-rs/src

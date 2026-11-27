@@ -220,6 +220,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "626d4928326b646e70f65ed36fc7cf9f206bdb68a0019ee7c6b4709da4e084c4"
 dependencies = [
  "crc32fast",
+ "libz-sys",
  "miniz_oxide",
  "zlib-rs",
 ]
@@ -288,7 +289,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "core-math",
+ "flate2",
+ "memchr",
  "rust-htslib",
+ "zlib-rs",
 ]
 
 [[package]]

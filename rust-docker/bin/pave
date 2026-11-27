@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# `pave` as oncoanalyser calls the Java tool (PAVE_SOMATIC, PAVE_GERMLINE), run by pave-rs: JVM options are
+# dropped (pave-rs also ignores them) and the jar's default main class, PaveApplication, runs. The PON
+# builder and resource builders are not ported. -java_compat or PAVE_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.pave.PaveApplication) ;;
+        com.hartwig.*) echo "pave (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec pave-rs ${args[@]+"${args[@]}"}
