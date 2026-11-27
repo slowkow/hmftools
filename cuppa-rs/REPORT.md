@@ -177,6 +177,16 @@ Kept as Java and pycuppa do, recorded:
 
 ## Open points
 
+- **The platform's exp:** the softmax takes `f64::exp` from the platform's math library, as numpy does, so the
+  port matches pycuppa on macOS byte for byte; built on Linux (glibc) its last digits can differ, as pycuppa's own
+  do between machines (the HG008 test compares within a relative 1e-12 there). Inside the Linux pipeline, the
+  pipeline's pycuppa also used x86-64 BLAS kernels, whose summation order differs again.
+- **rustc 1.100.0:** a release build with rustc 1.100.0 (Linux, arm64 and x86-64) typed every SNV of the Java
+  tests' VCF as UNDEFINED in `hts_type` (plain safe code; the same build with a debug print in that function
+  typed them correctly), so four prep tests failed. With rustc 1.97.1, the version all checks used, they pass on
+  Linux and macOS. The image is pinned to rustc 1.97 until the cause (a compiler fault, or undefined behaviour
+  elsewhere in the process) is found.
+
 - **Other machines:** the port's numbers are those of pycuppa on macOS arm64. On Linux x86-64 (the pipeline)
   pycuppa's last digits differ (OpenBLAS's Haswell/SkylakeX kernels, numpy's AVX512 exp/log/pow); the port gives
   its macOS numbers there too, apart from the C library's exp, log1p, pow and log10 (glibc and Apple's libm agree

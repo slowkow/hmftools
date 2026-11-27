@@ -202,6 +202,8 @@ Second batch, merged on 2026-11-27:
   HG008), and the port gives the macOS ones. Findings CU1-CU8: the alt-splice-junction model expects
   log-transformed counts that it never gets (CU8, RNA runs), a missing sex feature means male (CU2), and a
   sample's probabilities depend on the cohort it is predicted in (CU7). The plot (R) is not drawn.
+  The image's toolchain is pinned to rustc 1.97.1: with rustc 1.100.0, a release build of cuppa-rs mistyped its
+  test VCF's SNVs (a compiler fault or undefined behaviour, not yet found).
 
 - **qsee** (`qsee-rs`): every data file byte-identical to Java qsee 1.0 on 107 cases (gzip bytes included),
   which also equal the pipeline's qsee 1.1-beta.1 outputs on HG008 and a private pair; without the R report 0.2 s

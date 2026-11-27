@@ -9,7 +9,11 @@
 # samtools and sambamba, which REDUX and ESVEE are given as -bamtool, and procps (`ps`), which Nextflow
 # uses to record each task's CPU and memory.
 
-FROM rust:1-bookworm AS build
+# The toolchain is pinned to the one every port was checked with (rustc 1.97.1). rust:1-bookworm moved to rustc
+# 1.100.0, with which a release build of cuppa-rs typed every SNV of its test VCF as UNDEFINED (the code is safe;
+# a debug print in the function made it right again): a compiler fault or undefined behaviour elsewhere, not yet
+# found (cuppa-rs REPORT.md, open points).
+FROM rust:1.97-bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
         clang libclang-dev cmake libbz2-dev liblzma-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*

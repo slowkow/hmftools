@@ -134,15 +134,45 @@ fn predict_hg008(java: bool, group: &str) -> (String, String, String) {
     r
 }
 
-/// HG008's prediction equals pycuppa's (macOS arm64 reference), in both modes (no finding applies)
+/// HG008's prediction equals pycuppa's (macOS arm64 reference), in both modes (no finding applies). The
+/// softmax takes `f64::exp` from the platform's libm, as numpy does, so on macOS the files are byte-identical;
+/// elsewhere (glibc's exp) the last digits may differ, as pycuppa's own do between machines, and the values are
+/// compared within a relative 1e-12, the text exactly.
 #[test]
 fn hg008_prediction_equals_pycuppa() {
     let want_summ = std::fs::read_to_string(testdata("hg008/HG008-T.cuppa.pred_summ.tsv")).unwrap();
     let want_vis = std::fs::read_to_string(testdata("hg008/HG008-T.cuppa.vis_data.tsv")).unwrap();
     for java in [true, false] {
         let (summ, vis, _) = predict_hg008(java, "DNA");
-        assert_eq!(summ, want_summ, "java mode {java}");
-        assert_eq!(vis, want_vis, "java mode {java}");
+        if cfg!(target_os = "macos") {
+            assert_eq!(summ, want_summ, "java mode {java}");
+            assert_eq!(vis, want_vis, "java mode {java}");
+        } else {
+            assert_close_tables(&summ, &want_summ, &format!("pred_summ, java mode {java}"));
+            assert_close_tables(&vis, &want_vis, &format!("vis_data, java mode {java}"));
+        }
+    }
+}
+
+/// Two TSV texts with the same rows and fields, numbers equal within a relative 1e-12
+fn assert_close_tables(got: &str, want: &str, what: &str) {
+    let (g, w): (Vec<&str>, Vec<&str>) = (got.lines().collect(), want.lines().collect());
+    assert_eq!(g.len(), w.len(), "{what}: line count");
+    for (i, (gl, wl)) in g.iter().zip(&w).enumerate() {
+        let (gf, wf): (Vec<&str>, Vec<&str>) = (gl.split('\t').collect(), wl.split('\t').collect());
+        assert_eq!(gf.len(), wf.len(), "{what}: fields of line {i}");
+        for (a, b) in gf.iter().zip(&wf) {
+            if a == b {
+                continue;
+            }
+            match (a.parse::<f64>(), b.parse::<f64>()) {
+                (Ok(x), Ok(y)) => {
+                    let rel = (x - y).abs() / x.abs().max(y.abs()).max(f64::MIN_POSITIVE);
+                    assert!(rel <= 1e-12, "{what}: line {i}: {a} against {b}");
+                }
+                _ => panic!("{what}: line {i}: {a} against {b}"),
+            }
+        }
     }
 }
 
