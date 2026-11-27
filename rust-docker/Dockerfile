@@ -1,9 +1,9 @@
-# Image with the Rust ports of SAGE, REDUX, ESVEE, AMBER, COBALT, BamTools (metrics), TEAL and LILAC,
-# callable the way oncoanalyser calls the Java tools.
+# Image with the Rust ports of SAGE, REDUX, ESVEE, AMBER, COBALT, BamTools (metrics), TEAL, LILAC
+# and CIDER, callable the way oncoanalyser calls the Java tools.
 # Build from the repository root:
 #   docker build -f rust-docker/Dockerfile -t hmftools-rust:dev .
-# Commands: sage-rs, redux-rs, esvee-rs, amber-rs, cobalt-rs, bam-tools-rs, teal-rs, lilac-rs, and the wrappers
-# sage, redux, esvee, amber, cobalt, bamtools, teal and lilac (rust-docker/bin), plus
+# Commands: sage-rs, redux-rs, esvee-rs, amber-rs, cobalt-rs, bam-tools-rs, teal-rs, lilac-rs, cider-rs, and the
+# wrappers sage, redux, esvee, amber, cobalt, bamtools, teal, lilac and cider (rust-docker/bin), plus
 # samtools and sambamba, which REDUX and ESVEE are given as -bamtool, and procps (`ps`), which Nextflow
 # uses to record each task's CPU and memory.
 
@@ -26,11 +26,12 @@ COPY cobalt-rs cobalt-rs
 COPY bam-tools-rs bam-tools-rs
 COPY teal-rs teal-rs
 COPY lilac-rs lilac-rs
+COPY cider-rs cider-rs
 # build each port and run its unit tests (and those of the shared crate) on this platform; a failing
 # test fails the image build
 RUN rustc --version \
-    && (cd hmf-common-rs && cargo test --release --locked) \
-    && for crate in sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs; do \
+    && (cd hmf-common-rs && cargo test --release --locked && cargo test --release --locked --features bwa) \
+    && for crate in sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs; do \
         (cd $crate && cargo build --release --locked && cargo test --release --locked) || exit 1; \
         install -m 755 $crate/target/release/$crate /usr/local/bin/; \
     done
@@ -41,7 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bin/sage-rs /usr/local/bin/redux-rs /usr/local/bin/esvee-rs /usr/local/bin/amber-rs \
     /usr/local/bin/cobalt-rs /usr/local/bin/bam-tools-rs /usr/local/bin/teal-rs \
-    /usr/local/bin/lilac-rs /usr/local/bin/
+    /usr/local/bin/lilac-rs /usr/local/bin/cider-rs /usr/local/bin/
 COPY rust-docker/bin/sage rust-docker/bin/redux rust-docker/bin/esvee rust-docker/bin/amber rust-docker/bin/cobalt \
-    rust-docker/bin/bamtools rust-docker/bin/teal rust-docker/bin/lilac /usr/local/bin/
-RUN sage -version && redux -version && esvee -version && amber -version && cobalt -version && bamtools -version && teal -version && lilac -version && samtools --version | head -1 && sambamba --version 2>&1 | head -2
+    rust-docker/bin/bamtools rust-docker/bin/teal rust-docker/bin/lilac \
+    rust-docker/bin/cider /usr/local/bin/
+RUN sage -version && redux -version && esvee -version && amber -version && cobalt -version && bamtools -version && teal -version && lilac -version && cider -version && samtools --version | head -1 && sambamba --version 2>&1 | head -2

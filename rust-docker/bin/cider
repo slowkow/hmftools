@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# `cider` as oncoanalyser calls the Java tool, run by cider-rs, which itself drops JVM options and takes
+# the main class com.hartwig.hmftools.cider.CiderApplication (another class is refused, exit 2).
+# -java_compat or CIDER_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+exec cider-rs "$@"

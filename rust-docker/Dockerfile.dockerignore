@@ -3,6 +3,8 @@
 !hmf-common-rs/Cargo.toml
 !hmf-common-rs/Cargo.lock
 !hmf-common-rs/src
+!hmf-common-rs/build.rs
+!hmf-common-rs/vendor
 !hmf-common/src/test/resources/segmentation
 !hmf-common/src/test/resources/pcf
 !sage-rs/Cargo.toml
@@ -43,4 +45,8 @@
 !lilac-rs/src
 !lilac-rs/resources
 !lilac-rs/testdata
+!cider-rs/Cargo.toml
+!cider-rs/Cargo.lock
+!cider-rs/src
+!cider-rs/resources
 !rust-docker/bin

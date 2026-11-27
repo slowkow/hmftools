@@ -1,7 +1,7 @@
 # Running the Rust ports in oncoanalyser
 
-The Rust ports of SAGE, REDUX, ESVEE, AMBER, COBALT, the BamTools metrics, TEAL and LILAC,
-packaged for use in
+The Rust ports of SAGE, REDUX, ESVEE, AMBER, COBALT, the BamTools metrics, TEAL, LILAC
+and CIDER, packaged for use in
 place of the Java tools in oncoanalyser
 (https://github.com/slowkow/oncoanalyser, branch `rust-ports`, profile `rust_ports`). Two forms:
 
@@ -39,8 +39,8 @@ For AWS, build the same Dockerfile and push it to ECR.
 
 | Command | What it is |
 |---|---|
-| `sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`, `bam-tools-rs`, `teal-rs`, `lilac-rs` | the ports (the folders of the same names) |
-| `sage`, `redux`, `esvee`, `amber`, `cobalt`, `bamtools`, `teal`, `lilac` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them |
+| `sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`, `bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs` | the ports (the folders of the same names) |
+| `sage`, `redux`, `esvee`, `amber`, `cobalt`, `bamtools`, `teal`, `lilac`, `cider` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them |
 | `samtools`, `sambamba` | given to REDUX and ESVEE as `-bamtool`; the ports only check that the path exists (they sort and index BAMs themselves), so on the host these must be on `PATH` too |
 
 The wrappers drop JVM options (`-Xmx...`, `-XX:...`, `-D...=...`) and turn Java main classes into
@@ -59,6 +59,7 @@ subcommands:
 | `com.hartwig.hmftools.bamtools.metrics.BamMetrics` (or none) | `bam-tools-rs` |
 | `com.hartwig.hmftools.teal.TealPipelineTelbamApp`, `TealPipelineApp`, `TealApplication` | `teal-rs` with the class (teal-rs takes the classes itself) |
 | `com.hartwig.hmftools.lilac.LilacApplication` (or none) | `lilac-rs` |
+| `com.hartwig.hmftools.cider.CiderApplication` (or none) | `cider-rs` (cider-rs takes the class itself) |
 
 Any other main class is refused with exit code 2. `-version` prints the version in Java's form, for
 example `Sage version 5.1`.

@@ -11,3 +11,11 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = "1.0.104"
 rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate", "bzip2", "lzma"] }
+
+[build-dependencies]
+# builds the vendored BWA-MEM sources (vendor/bwa) with the `bwa` feature
+cc = { version = "1", optional = true }
+
+[features]
+# the `bwa` module: BWA-MEM alignment through the vendored library, as gatk-bwamem-jni does it
+bwa = ["dep:cc"]

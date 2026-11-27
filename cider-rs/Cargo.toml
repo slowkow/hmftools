@@ -1,0 +1,26 @@
+[package]
+name = "cider-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A port of hmftools CIDER 1.2 (IG/TCR CDR3 sequences from a BAM) to Rust"
+
+[[bin]]
+name = "cider-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+# zlib, as Java's java.util.zip: the same deflate bytes for the gzip files and the BGZF blocks of cider.bam
+flate2 = { version = "1.1.11", default-features = false, features = ["zlib"] }
+hmf-common = { path = "../hmf-common-rs", features = ["bwa"] }
+mimalloc = { version = "0.1.52", default-features = false, optional = true }
+rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate", "bzip2", "lzma"] }
+
+[features]
+default = ["mimalloc"]
+# a faster allocator; build with --no-default-features to use the system one
+mimalloc = ["dep:mimalloc"]
+
+[profile.release]
+panic = "abort"
+debug = 1

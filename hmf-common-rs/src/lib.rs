@@ -17,9 +17,18 @@
 //!   flag counts, gene and exon depth), writers and readers; `java_text`: Java's number parsing and
 //!   String.split as the file readers need them.
 //! - `ref_coords`: GRCh37 and GRCh38 chromosome lengths (RefGenomeCoordinates).
+//! - `codon`: Codons and Nucleotides (amino acids from DNA, complements); `blosum`: BlosumMapping.
+//! - `bwa` (with the `bwa` feature): BWA-MEM alignment through the vendored bwa, as gatk-bwamem-jni.
+//! - `csv`: commons-csv's CSVPrinter as the Kotlin tools use it (tab-delimited, MINIMAL quoting).
+//! - `kotlin_random`: kotlin.random.Random(seed), the XorWow generator.
 
 pub mod args;
+pub mod blosum;
+#[cfg(feature = "bwa")]
+pub mod bwa;
+pub mod codon;
 pub mod compat;
+pub mod csv;
 pub mod driver_panel;
 pub mod ensembl;
 pub mod faidx;
@@ -30,6 +39,7 @@ pub mod java_id_hash;
 pub mod java_math;
 pub mod java_sort;
 pub mod java_text;
+pub mod kotlin_random;
 pub mod log;
 pub mod metrics;
 pub mod ref_coords;
