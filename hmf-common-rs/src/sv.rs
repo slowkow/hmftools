@@ -806,6 +806,88 @@ pub fn always_pass(_: &VcfRecord) -> bool {
     true
 }
 
+/// VariantAltInsertCoords.fromRefAlt (added for CHORD): the orientation, inserted sequence and other
+/// breakend that an SV ALT gives, for a single breakend (`.ACGT` or `ACGT.`), a breakend in bracket
+/// notation (BREAKEND_REGEX) or anything else (no orientation, no other breakend). Orientations are
+/// 1 (FORWARD), -1 (REVERSE) or None (null).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VariantAltInsertCoords {
+    pub alt: String,
+    pub insert_sequence: String,
+    pub orient: Option<i8>,
+    pub other_chromosome: String,
+    pub other_position: i32,
+    pub other_orient: Option<i8>,
+}
+
+/// String.substring(begin, end) on chars, with Java's StringIndexOutOfBoundsException
+fn java_substring(s: &str, begin: i64, end: i64) -> Result<String> {
+    let chars: Vec<char> = s.chars().collect();
+    if begin < 0 || end > chars.len() as i64 || begin > end {
+        bail!("java.lang.StringIndexOutOfBoundsException: begin {begin}, end {end}, length {}", chars.len());
+    }
+    Ok(chars[begin as usize..end as usize].iter().collect())
+}
+
+impl VariantAltInsertCoords {
+    /// fromRefAlt as Java has it: the other breakend's "chromosome:position" is split at every ':' and
+    /// its first two parts taken (a contig name with ':' in it is cut short)
+    pub fn from_ref_alt(alt_string: &str, ref_bases: &str) -> Result<VariantAltInsertCoords> {
+        Self::from_ref_alt_split(alt_string, ref_bases, false)
+    }
+
+    /// fromRefAlt, with the other breakend's position taken after the last ':' if `split_at_last_colon`
+    pub fn from_ref_alt_split(alt_string: &str, ref_bases: &str, split_at_last_colon: bool) -> Result<VariantAltInsertCoords> {
+        let len = alt_string.chars().count() as i64;
+        let ref_len = ref_bases.chars().count() as i64;
+        let mut out = VariantAltInsertCoords {
+            alt: String::new(),
+            insert_sequence: String::new(),
+            orient: None,
+            other_chromosome: String::new(),
+            other_position: 0,
+            other_orient: None,
+        };
+        if alt_string.starts_with('.') {
+            out.alt = java_substring(alt_string, len - 1, len)?;
+            out.insert_sequence = java_substring(alt_string, ref_len, len - 1)?;
+            out.orient = Some(-1);
+        } else if alt_string.ends_with('.') {
+            out.alt = java_substring(alt_string, 0, 1)?;
+            out.insert_sequence = java_substring(alt_string, 1, len - ref_len)?;
+            out.orient = Some(1);
+        } else if let Some((g1, g2, g3, g4)) = match_breakend_alt(alt_string) {
+            if !g1.is_empty() {
+                out.insert_sequence = java_substring(&g1, ref_len, g1.chars().count() as i64)?;
+                out.alt = java_substring(alt_string, 0, 1)?;
+                out.orient = Some(1);
+            } else {
+                let g4_len = g4.chars().count() as i64;
+                out.insert_sequence = if g4.is_empty() { String::new() } else { java_substring(&g4, 0, g4_len - ref_len)? };
+                out.alt = java_substring(alt_string, len - 1, len)?;
+                out.orient = Some(-1);
+            }
+            out.other_orient = Some(if g2 == "]" { 1 } else { -1 });
+            let (chromosome, position) = if split_at_last_colon {
+                match g3.rsplit_once(':') {
+                    Some((c, p)) => (c.to_string(), p.to_string()),
+                    None => bail!("java.lang.ArrayIndexOutOfBoundsException: Index 1 out of bounds for length 1 ({g3})"),
+                }
+            } else {
+                let parts = crate::java_text::split(&g3, ':');
+                let Some(p) = parts.get(1) else {
+                    bail!("java.lang.ArrayIndexOutOfBoundsException: Index 1 out of bounds for length {} ({g3})", parts.len());
+                };
+                (parts[0].to_string(), p.to_string())
+            };
+            out.other_chromosome = chromosome;
+            out.other_position =
+                parse_int(&position).ok_or_else(|| anyhow!("java.lang.NumberFormatException: For input string: \"{position}\""))?;
+        }
+        Ok(out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -839,5 +921,28 @@ mod tests {
         assert_eq!(filters(&r, Some(&p)), "LOW;PON");
         assert_eq!(filters(&r, None), "PASS");
         assert!(is_human_chromosome("chr22") && is_human_chromosome("X") && !is_human_chromosome("chr23") && !is_human_chromosome("chrM"));
+    }
+
+    #[test]
+    fn variant_alt_insert_coords() {
+        let c = VariantAltInsertCoords::from_ref_alt("A[1:208014820[", "A").unwrap();
+        assert_eq!((c.orient, c.other_chromosome.as_str(), c.other_position, c.other_orient), (Some(1), "1", 208014820, Some(-1)));
+        let c = VariantAltInsertCoords::from_ref_alt("]1:207981231]G", "G").unwrap();
+        assert_eq!((c.orient, c.other_position, c.other_orient, c.alt.as_str()), (Some(-1), 207981231, Some(1), "G"));
+        let c = VariantAltInsertCoords::from_ref_alt("CTACA[3:60204586[", "C").unwrap();
+        assert_eq!(c.insert_sequence, "TACA");
+        let c = VariantAltInsertCoords::from_ref_alt("CAGG.", "C").unwrap();
+        assert_eq!((c.orient, c.insert_sequence.as_str(), c.other_chromosome.as_str()), (Some(1), "AGG", ""));
+        let c = VariantAltInsertCoords::from_ref_alt(".AGGC", "C").unwrap();
+        assert_eq!((c.orient, c.insert_sequence.as_str(), c.alt.as_str()), (Some(-1), "AGG", "C"));
+        let c = VariantAltInsertCoords::from_ref_alt("<DEL>", "C").unwrap();
+        assert_eq!((c.orient, c.other_chromosome.as_str()), (None, ""));
+        // a contig name with ':' is cut at the first one, as Java splits it
+        let c = VariantAltInsertCoords::from_ref_alt("A[HLA-A*01:01:01:01:100[", "A").unwrap();
+        assert_eq!((c.other_chromosome.as_str(), c.other_position), ("HLA-A*01", 1));
+        let c = VariantAltInsertCoords::from_ref_alt_split("A[HLA-A*01:01:01:01:100[", "A", true).unwrap();
+        assert_eq!((c.other_chromosome.as_str(), c.other_position), ("HLA-A*01:01:01:01", 100));
+        assert!(VariantAltInsertCoords::from_ref_alt("AC[1:x[", "A").is_err());
+        assert!(VariantAltInsertCoords::from_ref_alt("]1:5]A", "AC").is_err());
     }
 }

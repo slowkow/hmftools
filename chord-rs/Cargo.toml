@@ -1,0 +1,16 @@
+[package]
+name = "chord-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A Rust port of hmftools CHORD 2.1.2: homologous recombination deficiency prediction, without R"
+
+[[bin]]
+name = "chord-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+hmf-common = { path = "../hmf-common-rs" }
+
+[profile.release]
+debug = 1

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# `chord` as oncoanalyser calls the Java tool, run by chord-rs, which predicts with the randomForest model in
+# Rust (no R). JVM options are dropped; chord-rs takes the Java main classes itself (ChordApplication, the
+# default; ChordDataPrep and ChordModel as its `prep` and `predict`). -java_compat or CHORD_JAVA_COMPAT=1
+# selects Java's (and its R script's) behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec chord-rs ${args[@]+"${args[@]}"}

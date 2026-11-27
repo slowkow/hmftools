@@ -183,6 +183,12 @@ Second batch, merged on 2026-11-27:
   anywhere in the VCF that ends the run). The 1.7.1 jar calls the metrics option `-bam_metrics_tumor_dir`,
   where oncoanalyser passes `-tumor_metrics_dir`; the port takes both.
 
+- **CHORD** (`chord-rs`): byte-identical to Java on 53 cases, the R script's randomForest prediction
+  included, which the port makes in Rust from the forest exported once from CHORD.rds (it also reads the .rds
+  itself); equal to R on 20,000 random samples. 7-15 times faster, a tenth of the memory, no R. Findings
+  CH1-CH10: R breaks BRCA1/BRCA2 ties at random (CH1), turns sample ids such as `0123` into `123` (CH3), and
+  a soft-masked reference loses every indel's context (CH4).
+
 For the R and Python parts, the first version keeps calling the same scripts, so plots and
 predictions stay identical. Replacing them is a separate decision per program: a random forest or a
 fitted classifier can be reproduced exactly in Rust; plots and the PDF cannot be byte-identical and
