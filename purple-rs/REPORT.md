@@ -99,6 +99,13 @@ too and everything before from the first run's cache. Against the first run's Ja
 - **Time and memory:** 11.9 s and 1.0 GB, against Java's 44 s and 5.3 GB, which include R's plots and
   Circos.
 
+**With the plots (HG008 rerun 14):** purple-rs, now drawing its 9 plots natively, ran in Java mode with every
+step after it run again. The text files equal Java's; the VCFs differ only in `##purpleVersion` and in KT on 94
+somatic records (PU1); the plots differ from R's and Circos's in rendering only. ORANGE (as the port) ran on the
+native plots, and its JSON equals Java ORANGE's from the same inputs; every later step wrote the same files as with
+Java PURPLE. PURPLE took 14.7 s and 868 MB, against Java's 43.9 s and 3.7 GB with R and Circos. oncoanalyser's
+`rust_ports` profile now includes PURPLE.
+
 ## 3. Findings
 
 Each is corrected by default and kept in Java mode (`-java_compat`).

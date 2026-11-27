@@ -166,7 +166,7 @@ pipeline's plotting steps keep their Java images):
   (PU1, a race between threads) and baf.circos (PU2, identity-hash order). 3.1-3.5 times faster
   (8.8 in germline-only mode), with 2.5-4.5 times less memory. Germline amplifications are typed as
   deletions in Java (PU9). Findings PU1-PU9. Its 9 plots (7 from R scripts, 2 from Circos) are drawn natively
-  since 2026-11-27 (below).
+  since 2026-11-27 (below); in the pipeline ORANGE runs on them, and oncoanalyser's `rust_ports` includes PURPLE.
 - **LINX** (`linx-rs`): LINX_SOMATIC and LINX_GERMLINE byte-identical to Java on HG008 and on a private
   whole-genome pair (14 and 6 files) and on 14 small and option cases; 2.6-3.5 times faster at one
   thread, in a quarter to a third of the memory (0.2-0.3 GB against 0.8-1.1 GB). Java's output order
