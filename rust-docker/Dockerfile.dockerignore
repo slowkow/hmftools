@@ -62,4 +62,16 @@
 !linx-rs/Cargo.lock
 !linx-rs/src
 !linx-rs/resources
+!sigs-rs/Cargo.toml
+!sigs-rs/Cargo.lock
+!sigs-rs/src
+!sigs-rs/resources
+!virus-interpreter-rs/Cargo.toml
+!virus-interpreter-rs/Cargo.lock
+!virus-interpreter-rs/src
+!virus-interpreter-rs/testdata
+!peach-rs/Cargo.toml
+!peach-rs/Cargo.lock
+!peach-rs/src
+!peach-rs/testdata
 !rust-docker/bin

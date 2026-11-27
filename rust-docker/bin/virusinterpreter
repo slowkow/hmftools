@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# `virusinterpreter` as oncoanalyser calls the Java tool, run by virus-interpreter-rs: JVM options are dropped (virus-interpreter-rs also ignores them) and
+# the jar's default main class, com.hartwig.hmftools.virusinterpreter.VirusInterpreterApplication, runs. -java_compat or VIRUS_INTERPRETER_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.virusinterpreter.VirusInterpreterApplication) ;;
+        com.hartwig.*) echo "virusinterpreter (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec virus-interpreter-rs ${args[@]+"${args[@]}"}

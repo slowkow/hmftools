@@ -1,0 +1,17 @@
+[package]
+name = "peach-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A Rust port of hmftools PEACH 2.0: pharmacogenomic haplotypes from a germline VCF"
+
+[[bin]]
+name = "peach-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+hmf-common = { path = "../hmf-common-rs" }
+
+[profile.release]
+panic = "abort"
+debug = 1

@@ -17,7 +17,7 @@ case "${image##*/}" in
     *:*) ;;
     *) image="$image:$(git -C "$root" rev-parse --short=10 HEAD)" ;;
 esac
-if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs rust-docker)" ]; then
+if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs sigs-rs virus-interpreter-rs peach-rs rust-docker)" ]; then
     echo "note: uncommitted changes are not part of the build; it uses HEAD" >&2
 fi
 
@@ -40,6 +40,9 @@ git -C "$root" archive HEAD \
     pave-rs/Cargo.toml pave-rs/Cargo.lock pave-rs/build.rs pave-rs/src \
     purple-rs/Cargo.toml purple-rs/Cargo.lock purple-rs/build.rs purple-rs/src purple-rs/resources \
     linx-rs/Cargo.toml linx-rs/Cargo.lock linx-rs/src linx-rs/resources \
+    sigs-rs/Cargo.toml sigs-rs/Cargo.lock sigs-rs/src sigs-rs/resources \
+    virus-interpreter-rs/Cargo.toml virus-interpreter-rs/Cargo.lock virus-interpreter-rs/src virus-interpreter-rs/testdata \
+    peach-rs/Cargo.toml peach-rs/Cargo.lock peach-rs/src peach-rs/testdata \
     rust-docker/Dockerfile rust-docker/Dockerfile.dockerignore rust-docker/bin \
     | tar -x -C "$tmp"
 

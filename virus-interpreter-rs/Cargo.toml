@@ -1,0 +1,18 @@
+[package]
+name = "virus-interpreter-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A Rust port of hmftools Virus Interpreter 1.7.1: annotation and reporting of VIRUSBreakend's viruses"
+
+[[bin]]
+name = "virus-interpreter-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+hmf-common = { path = "../hmf-common-rs" }
+memchr = "2.8.3"
+
+[profile.release]
+panic = "abort"
+debug = 1

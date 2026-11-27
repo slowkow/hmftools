@@ -175,6 +175,14 @@ pipeline's plotting steps keep their Java images):
   Inside the pipeline on HG008 (rerun 7): identical to the port run locally, and to the Java run apart
   from LX1's ids and order; ORANGE's JSON unchanged.
 
+Second batch, merged on 2026-11-27:
+- **SIGS** (`sigs-rs`), **Virus Interpreter** (`virus-interpreter-rs`) and **PEACH** (`peach-rs`): byte-identical
+  to Java on 32, 11 and 25 cases (HG008, a private pair, every option, synthetic and failure cases), each in
+  a tenth of a second or less and a few MB, against 0.3-0.8 s and 85-920 MB. Findings SI1-SI7 (an option that
+  always writes zeros, an int overflow, configuration errors that exit 0, ...), VI1-VI3, PE1-PE2 (a record
+  anywhere in the VCF that ends the run). The 1.7.1 jar calls the metrics option `-bam_metrics_tumor_dir`,
+  where oncoanalyser passes `-tumor_metrics_dir`; the port takes both.
+
 For the R and Python parts, the first version keeps calling the same scripts, so plots and
 predictions stay identical. Replacing them is a separate decision per program: a random forest or a
 fitted classifier can be reproduced exactly in Rust; plots and the PDF cannot be byte-identical and

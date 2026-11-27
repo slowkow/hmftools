@@ -438,3 +438,163 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------
+// PurpleQCFile (added 2026-11-27 for Virus Interpreter)
+
+/// PurpleQCStatus, in enum order
+pub const PURPLE_QC_STATUSES: [&str; 10] = [
+    "PASS",
+    "WARN_DELETED_GENES",
+    "WARN_HIGH_COPY_NUMBER_NOISE",
+    "WARN_GENDER_MISMATCH",
+    "WARN_LOW_PURITY",
+    "WARN_TINC",
+    "WARN_CONTAMINATION",
+    "FAIL_CONTAMINATION",
+    "FAIL_NO_TUMOR",
+    "FAIL_TINC",
+];
+
+const FITTED_PURITY_METHODS: [&str; 4] = ["NORMAL", "HIGHLY_DIPLOID", "SOMATIC", "NO_TUMOR"];
+const GENDERS: [&str; 2] = ["MALE", "FEMALE"];
+const GERMLINE_ABERRATIONS: [&str; 10] =
+    ["NONE", "MOSAIC_X", "KLINEFELTER", "XYY", "TRISOMY_X", "TRISOMY_13", "TRISOMY_15", "TRISOMY_18", "TRISOMY_21", "TERTRASOMY_9"];
+
+/// PurpleQC as PurpleQCFile.read gives it; enum values kept as their names
+#[derive(Clone, Debug, PartialEq)]
+pub struct PurpleQc {
+    /// the QC statuses (a set in Java), each a PurpleQCStatus name, in file order without repeats
+    pub status: Vec<String>,
+    pub method: String,
+    pub copy_number_segments: i32,
+    pub unsupported_copy_number_segments: i32,
+    pub purity: f64,
+    pub amber_gender: String,
+    pub cobalt_gender: String,
+    pub deleted_genes: i32,
+    pub contamination: f64,
+    pub germline_aberrations: Vec<String>,
+    pub amber_mean_depth: i32,
+    pub loh_percent: f64,
+    pub tinc_level: f64,
+}
+
+impl PurpleQc {
+    pub fn has_status(&self, status: &str) -> bool {
+        self.status.iter().any(|s| s == status)
+    }
+}
+
+/// PurpleQCFile.generateFilename: basePath + File.separator + sample + ".purple.qc"
+pub fn purple_qc_filename(base_path: &str, sample: &str) -> String {
+    format!("{base_path}/{sample}.purple.qc")
+}
+
+fn enum_value(value: &str, names: &[&str], enum_name: &str) -> Result<String> {
+    if names.contains(&value) {
+        Ok(value.to_string())
+    } else {
+        bail!("java.lang.IllegalArgumentException: No enum constant com.hartwig.hmftools.common.{enum_name}.{value}")
+    }
+}
+
+/// PurpleQCFile.read: each field from the first line whose first tab-separated field is its name (Java's
+/// FileReaderUtils.getValue), else its default; errors where Java throws (an unknown status, method, gender
+/// or aberration name, a missing gender line, a number that does not parse)
+pub fn read_purple_qc(path: &str) -> Result<PurpleQc> {
+    let lines = read_lines(path).with_context(|| format!("java.nio.file.NoSuchFileException: {path}"))?;
+    let get = |field: &str, default: Option<&str>| -> Result<Option<String>> {
+        for line in &lines {
+            let values: Vec<&str> = line.split('\t').collect();
+            if values[0] == field {
+                return values
+                    .get(1)
+                    .map(|v| Some(v.to_string()))
+                    .ok_or_else(|| anyhow!("java.lang.ArrayIndexOutOfBoundsException: {path}: no value for {field}"));
+            }
+        }
+        Ok(default.map(String::from))
+    };
+    let num_int = |field: &str, default: &str| -> Result<i32> { int(&get(field, Some(default))?.unwrap()) };
+    let num_dbl = |field: &str, default: &str| -> Result<f64> { dbl(&get(field, Some(default))?.unwrap()) };
+    let gender = |field: &str| -> Result<String> {
+        match get(field, None)? {
+            None => bail!("java.lang.NullPointerException: Name is null ({path}: no {field})"),
+            Some(v) => enum_value(&v, &GENDERS, "purple.Gender"),
+        }
+    };
+
+    // PurpleQCStatus.fromString, with the old FAIL_ names read as their WARN_ statuses
+    let mut status: Vec<String> = Vec::new();
+    for s in get("QCStatus", Some(""))?.unwrap().split(',') {
+        let s = match s {
+            "FAIL_SEGMENT" => "WARN_HIGH_COPY_NUMBER_NOISE",
+            "FAIL_GENDER" => "WARN_GENDER_MISMATCH",
+            "FAIL_DELETED_GENES" => "WARN_DELETED_GENES",
+            other => other,
+        };
+        let s = enum_value(s, &PURPLE_QC_STATUSES, "purple.PurpleQCStatus")?;
+        if !status.contains(&s) {
+            status.push(s);
+        }
+    }
+    let method = enum_value(&get("Method", Some("NORMAL"))?.unwrap(), &FITTED_PURITY_METHODS, "purple.FittedPurityMethod")?;
+    let copy_number_segments = num_int("CopyNumberSegments", "0")?;
+    let unsupported_copy_number_segments = num_int("UnsupportedCopyNumberSegments", "0")?;
+    let purity = num_dbl("Purity", "0")?;
+    let amber_gender = gender("AmberGender")?;
+    let cobalt_gender = gender("CobaltGender")?;
+    let deleted_genes = num_int("DeletedGenes", "0")?;
+    let contamination = num_dbl("Contamination", "0")?;
+    let mut germline_aberrations = Vec::new();
+    for a in get("GermlineAberrations", Some("NONE"))?.unwrap().split(',') {
+        let a = enum_value(a, &GERMLINE_ABERRATIONS, "genome.chromosome.GermlineAberration")?;
+        if !germline_aberrations.contains(&a) {
+            germline_aberrations.push(a);
+        }
+    }
+    Ok(PurpleQc {
+        status,
+        method,
+        copy_number_segments,
+        unsupported_copy_number_segments,
+        purity,
+        amber_gender,
+        cobalt_gender,
+        deleted_genes,
+        contamination,
+        germline_aberrations,
+        amber_mean_depth: num_int("AmberMeanDepth", "0")?,
+        loh_percent: num_dbl("LohPercent", "-1")?,
+        tinc_level: num_dbl("TincLevel", "0")?,
+    })
+}
+
+#[cfg(test)]
+mod purple_qc_tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_qc_file() {
+        let dir = std::env::temp_dir().join(format!("purple_qc_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("S.purple.qc");
+        std::fs::write(
+            &path,
+            "QCStatus\tWARN_LOW_PURITY,FAIL_SEGMENT\nMethod\tNO_TUMOR\nCopyNumberSegments\t12\nPurity\t0.1500\nAmberGender\tFEMALE\nCobaltGender\tMALE\nGermlineAberrations\tNONE\n",
+        )
+        .unwrap();
+        let qc = read_purple_qc(path.to_str().unwrap()).unwrap();
+        assert_eq!(qc.status, vec!["WARN_LOW_PURITY", "WARN_HIGH_COPY_NUMBER_NOISE"]);
+        assert_eq!(qc.method, "NO_TUMOR");
+        assert_eq!(qc.copy_number_segments, 12);
+        assert_eq!(qc.loh_percent, -1.0);
+        assert!(qc.has_status("WARN_LOW_PURITY") && !qc.has_status("PASS"));
+        std::fs::write(&path, "QCStatus\tPASS\nAmberGender\tFEMALE\n").unwrap();
+        assert!(read_purple_qc(path.to_str().unwrap()).is_err());
+        std::fs::write(&path, "QCStatus\tNOT_A_STATUS\nAmberGender\tFEMALE\nCobaltGender\tFEMALE\n").unwrap();
+        assert!(read_purple_qc(path.to_str().unwrap()).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# `peach` as oncoanalyser calls the Java tool, run by peach-rs: JVM options are dropped (peach-rs also ignores them) and
+# the jar's default main class, com.hartwig.hmftools.peach.PeachApplication, runs. -java_compat or PEACH_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.peach.PeachApplication) ;;
+        com.hartwig.*) echo "peach (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec peach-rs ${args[@]+"${args[@]}"}

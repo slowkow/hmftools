@@ -1,7 +1,7 @@
 # hmf-common-rs
 
 Code shared by the Rust ports of hmftools (`sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`,
-`bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, and the ports that follow).
+`bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, and the ports that follow).
 It plays the part of the Java `hmf-common` module, plus the Java library behaviour the ports reproduce
 so that their output equals the Java tools'.
 

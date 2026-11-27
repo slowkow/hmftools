@@ -939,3 +939,97 @@ mod double_to_string_tests {
         assert_eq!(t(-0.0), "-0.0");
     }
 }
+
+/// String.format("%.<prec>g", d) (`%g` is precision 6, and precision 0 counts as 1): rounded half-up to
+/// `prec` significant digits; written as `%f` with `prec - 1 - x` fraction digits when the rounded value's
+/// decimal exponent x is from -4 to `prec - 1`, else as `%e` with `prec - 1` fraction digits. Unlike C,
+/// Java keeps the trailing zeros. (Added 2026-11-27 for SIGS's multi-sample fit file.)
+pub fn java_general(d: f64, prec: usize) -> String {
+    if d.is_nan() {
+        return "NaN".into();
+    }
+    if d.is_infinite() {
+        return if d > 0.0 { "Infinity".into() } else { "-Infinity".into() };
+    }
+    let p = prec.max(1);
+    let neg = d < 0.0 || (d == 0.0 && d.is_sign_negative());
+    let a = d.abs();
+    let mut s = String::new();
+    if neg {
+        s.push('-');
+    }
+    if a == 0.0 {
+        s.push('0');
+        if p > 1 {
+            s.push('.');
+            s.extend(std::iter::repeat_n('0', p - 1));
+        }
+        return s;
+    }
+    let (mut ds, mut exp) = digits(a);
+    round_half_up(&mut ds, &mut exp, p as i32);
+    ds.resize(p, 0);
+    let x = exp - 1; // the rounded value is d1.d2d3... x 10^x
+    if x < -4 || x >= p as i32 {
+        s.push((ds[0] + b'0') as char);
+        if p > 1 {
+            s.push('.');
+            s.extend(ds[1..].iter().map(|d| (d + b'0') as char));
+        }
+        s.push('e');
+        s.push(if x < 0 { '-' } else { '+' });
+        s.push_str(&format!("{:02}", x.abs()));
+    } else if x < 0 {
+        s.push_str("0.");
+        s.extend(std::iter::repeat_n('0', (-x - 1) as usize));
+        s.extend(ds.iter().map(|d| (d + b'0') as char));
+    } else {
+        let int_digits = x as usize + 1;
+        s.extend(ds[..int_digits].iter().map(|d| (d + b'0') as char));
+        if p > int_digits {
+            s.push('.');
+            s.extend(ds[int_digits..].iter().map(|d| (d + b'0') as char));
+        }
+    }
+    s
+}
+
+#[cfg(test)]
+mod general_tests {
+    use super::java_general;
+
+    #[test]
+    fn java_percent_g() {
+        // String.format("%g", v) as Java 23 writes it
+        let cases = [
+            (0.0, "0.00000"),
+            (1.0, "1.00000"),
+            (12.0, "12.0000"),
+            (0.0001, "0.000100000"),
+            (0.00001, "1.00000e-05"),
+            (0.000123456789, "0.000123457"),
+            (123456.5, "123457"),
+            (1234567.0, "1.23457e+06"),
+            (999999.5, "1.00000e+06"),
+            (9999995.0, "1.00000e+07"),
+            (0.99999951, "1.00000"),
+            (632.581, "632.581"),
+            (0.06856, "0.0685600"),
+            (1e-300, "1.00000e-300"),
+            (1e300, "1.00000e+300"),
+            (5.5e-5, "5.50000e-05"),
+            (0.000099999996, "0.000100000"),
+            (2459.783000000001, "2459.78"),
+            (100000.0, "100000"),
+            (0.1, "0.100000"),
+            (1.5, "1.50000"),
+            (2.5e-5, "2.50000e-05"),
+        ];
+        for (v, expected) in cases {
+            assert_eq!(java_general(v, 6), expected, "{v}");
+            assert_eq!(java_general(-v, 6), format!("-{expected}"), "-{v}");
+        }
+        assert_eq!(java_general(f64::NAN, 6), "NaN");
+        assert_eq!(java_general(f64::INFINITY, 6), "Infinity");
+    }
+}

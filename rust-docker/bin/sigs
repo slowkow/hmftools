@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# `sigs` as oncoanalyser calls the Java tool, run by sigs-rs: JVM options are dropped (sigs-rs also ignores them) and
+# the jar's default main class, com.hartwig.hmftools.sigs.fitter.SignatureFitter, runs. -java_compat or SIGS_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.sigs.fitter.SignatureFitter) ;;
+        com.hartwig.*) echo "sigs (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec sigs-rs ${args[@]+"${args[@]}"}

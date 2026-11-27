@@ -889,6 +889,23 @@ impl VcfReader {
         }
     }
 
+    /// The next data line as read, without its line end and without parsing it (empty lines skipped), for
+    /// a reader that looks at a few columns before parsing a record with `VcfRecord::parse`. (Added
+    /// 2026-11-27 for SIGS, which skips filtered records unparsed.)
+    pub fn next_line(&mut self) -> Result<Option<&str>> {
+        loop {
+            self.line.clear();
+            if self.reader.read_line(&mut self.line).with_context(|| format!("reading {}", self.path))? == 0 {
+                return Ok(None);
+            }
+            let len = self.line.trim_end_matches(['\n', '\r']).len();
+            if len == 0 {
+                continue;
+            }
+            return Ok(Some(&self.line[..len]));
+        }
+    }
+
     /// every record
     pub fn read_all(&mut self) -> Result<Vec<VcfRecord>> {
         let mut out = Vec::new();

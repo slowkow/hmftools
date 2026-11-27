@@ -1,0 +1,17 @@
+[package]
+name = "sigs-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A Rust port of hmftools SIGS 1.3: fits a sample's SNV counts to trinucleotide signatures"
+
+[[bin]]
+name = "sigs-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+hmf-common = { path = "../hmf-common-rs" }
+
+[profile.release]
+panic = "abort"
+debug = 1

@@ -1,7 +1,7 @@
 # Running the Rust ports in oncoanalyser
 
 The Rust ports of SAGE, REDUX, ESVEE, AMBER, COBALT, the BamTools metrics, TEAL, LILAC,
-CIDER, PAVE, PURPLE and LINX, packaged for use in
+CIDER, PAVE, PURPLE, LINX, SIGS, Virus Interpreter and PEACH, packaged for use in
 place of the Java tools in oncoanalyser
 (https://github.com/slowkow/oncoanalyser, branch `rust-ports`, profile `rust_ports`). Two forms:
 
@@ -39,8 +39,8 @@ For AWS, build the same Dockerfile and push it to ECR.
 
 | Command | What it is |
 |---|---|
-| `sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`, `bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs` | the ports (the folders of the same names) |
-| `sage`, `redux`, `esvee`, `amber`, `cobalt`, `bamtools`, `teal`, `lilac`, `cider`, `pave`, `purple`, `linx` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them |
+| `sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`, `bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs` | the ports (the folders of the same names) |
+| `sage`, `redux`, `esvee`, `amber`, `cobalt`, `bamtools`, `teal`, `lilac`, `cider`, `pave`, `purple`, `linx`, `sigs`, `virusinterpreter`, `peach` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them |
 | `samtools`, `sambamba` | given to REDUX and ESVEE as `-bamtool`; the ports only check that the path exists (they sort and index BAMs themselves), so on the host these must be on `PATH` too |
 
 The wrappers drop JVM options (`-Xmx...`, `-XX:...`, `-D...=...`) and turn Java main classes into
@@ -63,6 +63,9 @@ subcommands:
 | `com.hartwig.hmftools.pave.PaveApplication` (or none) | `pave-rs` |
 | `com.hartwig.hmftools.purple.PurpleApplication` (or none) | `purple-rs` (a `-circos` without a value, as `$(which circos)` gives where Circos is missing, is dropped) |
 | `com.hartwig.hmftools.linx.LinxApplication` (or none) | `linx-rs` (not the visualiser, `linx.visualiser.SvVisualiser`) |
+| `com.hartwig.hmftools.sigs.fitter.SignatureFitter` (or none) | `sigs-rs` |
+| `com.hartwig.hmftools.virusinterpreter.VirusInterpreterApplication` (or none) | `virus-interpreter-rs` |
+| `com.hartwig.hmftools.peach.PeachApplication` (or none) | `peach-rs` |
 
 Any other main class is refused with exit code 2. `-version` prints the version in Java's form, for
 example `Sage version 5.1`.
