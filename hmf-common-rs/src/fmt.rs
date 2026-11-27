@@ -189,6 +189,26 @@ pub fn decimal_format(v: f64, max_fraction: usize) -> String {
     out
 }
 
+/// java.text.DecimalFormat("0.000...") with English symbols and exactly `places` digits after the point
+/// (zeros added): the rounding of `decimal_format`; "-0.0000" for negative values that round to zero.
+pub fn decimal_format_fixed(v: f64, places: usize) -> String {
+    let mut s = decimal_format(v, places);
+    if v.is_nan() || v.is_infinite() || places == 0 {
+        return s;
+    }
+    let frac = match s.find('.') {
+        Some(i) => s.len() - i - 1,
+        None => {
+            s.push('.');
+            0
+        }
+    };
+    for _ in frac..places {
+        s.push('0');
+    }
+    s
+}
+
 /// DigitList.set(boolean, double, int, true) for a positive finite value: the kept digits (ASCII) and
 /// decimalAt, the number of digits before the point.
 fn digit_list(a: f64, maximum_digits: i32) -> (Vec<u8>, i32) {

@@ -146,6 +146,7 @@ fn check_add_dir_separator(path: &str) -> String {
 }
 
 /// EnsemblDataCache with the data it loads
+#[derive(Clone)]
 pub struct EnsemblDataCache {
     data_path: String,
     version: RefGenomeVersion,
@@ -164,6 +165,34 @@ pub struct EnsemblDataCache {
     require_gene_synonyms: bool,
     require_non_ensembl_transcripts: bool,
     restricted_gene_ids: Vec<String>,
+    /// protein features by transcript id (getTranscriptProteinDataMap), loaded when protein domains are required
+    protein_data: JavaHashMap<i32, Vec<TranscriptProteinData>>,
+    /// the preceding gene's splice acceptor position by transcript id, when splice positions are required
+    trans_splice_acceptor_pos: std::collections::HashMap<i32, i32>,
+}
+
+/// TranscriptProteinData
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranscriptProteinData {
+    pub transcript_id: i32,
+    pub translation_id: i32,
+    pub protein_feature_id: i32,
+    pub seq_start: i32,
+    pub seq_end: i32,
+    pub hit_description: String,
+}
+
+pub const BIOTYPE_PROTEIN_CODING: &str = "protein_coding";
+pub const BIOTYPE_NONSENSE_MED_DECAY: &str = "nonsense_mediated_decay";
+pub const BIOTYPE_RETAINED_INTRON: &str = "retained_intron";
+pub const BIOTYPE_PROCESSED_TRANS: &str = "processed_transcript";
+pub const BIOTYPE_LINC_RNA: &str = "lincRNA";
+
+pub fn ensembl_protein_data_file(version: RefGenomeVersion) -> String {
+    format!("ensembl_protein_features.{}.csv", version.identifier())
+}
+pub fn ensembl_splice_data_file(version: RefGenomeVersion) -> String {
+    format!("ensembl_trans_splice_data.{}.csv", version.identifier())
 }
 
 impl EnsemblDataCache {
@@ -183,6 +212,8 @@ impl EnsemblDataCache {
             require_gene_synonyms: false,
             require_non_ensembl_transcripts: false,
             restricted_gene_ids: Vec::new(),
+            protein_data: JavaHashMap::new(),
+            trans_splice_acceptor_pos: std::collections::HashMap::new(),
         }
     }
 
@@ -213,9 +244,6 @@ impl EnsemblDataCache {
     /// load(delayTranscriptLoading): the genes, then (unless delayed) the transcripts. Java returns false
     /// where a file is missing; that is an error here, as are the exceptions Java does not catch.
     pub fn load(&mut self, delay_transcript_loading: bool) -> Result<()> {
-        if self.require_protein_domains || self.require_splice_positions {
-            bail!("Ensembl protein domain and splice position data are not ported");
-        }
         let restricted: Vec<String> = self.restricted_gene_ids.clone();
         load_ensembl_gene_data(&self.data_path, &restricted, &mut self.chr_genes, self.version, self.require_gene_synonyms)?;
         if !delay_transcript_loading {
@@ -229,8 +257,54 @@ impl EnsemblDataCache {
                 self.require_non_ensembl_transcripts,
                 &[],
             )?;
+            if self.require_protein_domains {
+                load_transcript_protein_data(&self.data_path, self.version, &mut self.protein_data, &HashSet::new())?;
+            }
+            if self.require_splice_positions {
+                load_transcript_splice_acceptor_data(&self.data_path, self.version, &mut self.trans_splice_acceptor_pos, &HashSet::new())?;
+            }
         }
         Ok(())
+    }
+
+    /// getTranscriptProteinDataMap
+    pub fn transcript_protein_data_map(&self) -> &JavaHashMap<i32, Vec<TranscriptProteinData>> {
+        &self.protein_data
+    }
+
+    /// findPrecedingGeneSpliceAcceptorPosition: -1 if not known
+    pub fn find_preceding_gene_splice_acceptor_position(&self, trans_id: i32) -> i32 {
+        self.trans_splice_acceptor_pos.get(&trans_id).copied().unwrap_or(-1)
+    }
+
+    /// findGeneRegions without the downstream gene annotations (which the caller adds): genes whose range,
+    /// extended upstream by `upstream_distance`, holds the position, in file order
+    pub fn find_gene_regions(&self, chromosome: &str, position: i32, upstream_distance: i32) -> Vec<&GeneData> {
+        let Some(list) = self.chr_genes.get(&chromosome.to_string()) else { return Vec::new() };
+        list.iter()
+            .filter(|g| {
+                let start = if g.strand == 1 { g.gene_start - upstream_distance } else { g.gene_start };
+                let end = if g.strand == 1 { g.gene_end } else { g.gene_end + upstream_distance };
+                position >= start && position <= end
+            })
+            .collect()
+    }
+
+    /// findGenesByRegion: genes with a transcript lying wholly within the region
+    pub fn find_genes_by_region(&self, chromosome: &str, pos_start: i32, pos_end: i32) -> Vec<&GeneData> {
+        let mut out = Vec::new();
+        // Java dereferences the chromosome's list unchecked
+        let list = self.chr_genes.get(&chromosome.to_string()).expect("Ensembl genes of chromosome");
+        for g in list {
+            if pos_start > g.gene_end || pos_end < g.gene_start {
+                continue;
+            }
+            let Some(trans) = self.transcripts_by_gene.get(&g.gene_id) else { continue };
+            if trans.iter().any(|t| pos_start <= t.trans_start && pos_end >= t.trans_end) {
+                out.push(g);
+            }
+        }
+        out
     }
 
     /// loadTranscriptData(restrictedGeneIds, nonCanonicalTrans)
@@ -254,6 +328,19 @@ impl EnsemblDataCache {
     /// getTranscriptDataMap
     pub fn transcript_data_map(&self) -> &JavaHashMap<String, Vec<TranscriptData>> {
         &self.transcripts_by_gene
+    }
+    /// the maps of a cache built in memory (GeneTestUtils.addGeneData, addTransExonData)
+    pub fn chr_gene_data_map_mut(&mut self) -> &mut JavaHashMap<String, Vec<GeneData>> {
+        &mut self.chr_genes
+    }
+    pub fn transcript_data_map_mut(&mut self) -> &mut JavaHashMap<String, Vec<TranscriptData>> {
+        &mut self.transcripts_by_gene
+    }
+    pub fn transcript_protein_data_map_mut(&mut self) -> &mut JavaHashMap<i32, Vec<TranscriptProteinData>> {
+        &mut self.protein_data
+    }
+    pub fn set_trans_splice_acceptor_position(&mut self, trans_id: i32, position: i32) {
+        self.trans_splice_acceptor_pos.insert(trans_id, position);
     }
 
     /// createGeneIdDataMap
@@ -522,6 +609,187 @@ pub fn load_transcript_data(
     })
     .with_context(|| format!("failed to load gene transcript exon data({filename})"))?;
     Ok(())
+}
+
+/// EnsemblDataLoader.loadTranscriptProteinData: protein features by transcript id, a new list each time the
+/// transcript id changes
+pub fn load_transcript_protein_data(
+    data_path: &str, version: RefGenomeVersion, map: &mut JavaHashMap<i32, Vec<TranscriptProteinData>>, restricted_trans_ids: &HashSet<i32>,
+) -> Result<()> {
+    let filename = check_old_filename(&(check_add_dir_separator(data_path) + &ensembl_protein_data_file(version)));
+    if !std::path::Path::new(&filename).exists() {
+        bail!("missing Ensembl protein feature data file: {filename}");
+    }
+    let mut cols: Option<[usize; 6]> = None;
+    let mut current_trans_id = -1;
+    java_text::for_each_line(&filename, |line| {
+        let Some([trans_i, translation_i, pf_i, start_i, end_i, desc_i]) = cols else {
+            let f = java_text::fields_index_map(line, ',');
+            cols = Some([
+                index_of(&f, "TranscriptId", &filename)?,
+                index_of(&f, "TranslationId", &filename)?,
+                index_of(&f, "ProteinFeatureId", &filename)?,
+                index_of(&f, "SeqStart", &filename)?,
+                index_of(&f, "SeqEnd", &filename)?,
+                index_of(&f, "HitDescription", &filename)?,
+            ]);
+            return Ok(());
+        };
+        let items = java_text::split(line, ',');
+        let item = |i: usize| items.get(i).copied().ok_or_else(|| anyhow!("{filename}: ArrayIndexOutOfBounds in line: {line}"));
+        let bad = |what: &str| anyhow!("{filename}: invalid {what} in line: {line}");
+        let trans_id = parse_int(item(trans_i)?).ok_or_else(|| bad("TranscriptId"))?;
+        if !restricted_trans_ids.is_empty() && !restricted_trans_ids.contains(&trans_id) {
+            return Ok(());
+        }
+        if trans_id != current_trans_id {
+            current_trans_id = trans_id;
+            map.insert(trans_id, Vec::new());
+        }
+        let d = TranscriptProteinData {
+            transcript_id: trans_id,
+            translation_id: parse_int(item(translation_i)?).ok_or_else(|| bad("TranslationId"))?,
+            protein_feature_id: parse_int(item(pf_i)?).ok_or_else(|| bad("ProteinFeatureId"))?,
+            seq_start: parse_int(item(start_i)?).ok_or_else(|| bad("SeqStart"))?,
+            seq_end: parse_int(item(end_i)?).ok_or_else(|| bad("SeqEnd"))?,
+            hit_description: item(desc_i)?.to_string(),
+        };
+        map.get_mut(&trans_id).unwrap().push(d);
+        Ok(())
+    })
+    .with_context(|| format!("failed to load protein features({filename})"))?;
+    if cols.is_none() {
+        bail!("empty Ensembl protein feature data file({filename})");
+    }
+    Ok(())
+}
+
+/// EnsemblDataLoader.loadTranscriptSpliceAcceptorData: PreSpliceAcceptorPosition by TransId
+pub fn load_transcript_splice_acceptor_data(
+    data_path: &str, version: RefGenomeVersion, map: &mut std::collections::HashMap<i32, i32>, restricted_trans_ids: &HashSet<i32>,
+) -> Result<()> {
+    let filename = check_old_filename(&(check_add_dir_separator(data_path) + &ensembl_splice_data_file(version)));
+    if !std::path::Path::new(&filename).exists() {
+        bail!("missing Ensembl splice acceptor data file: {filename}");
+    }
+    let mut cols: Option<[usize; 2]> = None;
+    java_text::for_each_line(&filename, |line| {
+        let Some([trans_i, sa_i]) = cols else {
+            let f = java_text::fields_index_map(line, ',');
+            cols = Some([index_of(&f, "TransId", &filename)?, index_of(&f, "PreSpliceAcceptorPosition", &filename)?]);
+            return Ok(());
+        };
+        let items = java_text::split(line, ',');
+        let item = |i: usize| items.get(i).copied().ok_or_else(|| anyhow!("{filename}: ArrayIndexOutOfBounds in line: {line}"));
+        let bad = |what: &str| anyhow!("{filename}: invalid {what} in line: {line}");
+        let trans_id = parse_int(item(trans_i)?).ok_or_else(|| bad("TransId"))?;
+        if !restricted_trans_ids.is_empty() && !restricted_trans_ids.contains(&trans_id) {
+            return Ok(());
+        }
+        let sa = parse_int(item(sa_i)?).ok_or_else(|| bad("PreSpliceAcceptorPosition"))?;
+        map.insert(trans_id, sa);
+        Ok(())
+    })
+    .with_context(|| format!("failed to load transcript splice data({filename})"))?;
+    if cols.is_none() {
+        bail!("empty Ensembl trans splice acceptor data file({filename})");
+    }
+    Ok(())
+}
+
+/// EnsemblDataCache.getProteinDomainPositions: the genomic start and end of a protein feature
+pub fn get_protein_domain_positions(protein: &TranscriptProteinData, trans: &TranscriptData) -> [Option<i32>; 2] {
+    if trans.exons.is_empty() {
+        return [None, None];
+    }
+    let (Some(coding_start), Some(coding_end)) = (trans.coding_start, trans.coding_end) else { return [None, None] };
+    let mut pre_protein_bases = protein.seq_start * 3;
+    let mut protein_bases = (protein.seq_end - protein.seq_start) * 3;
+    let mut protein_start = -1;
+    let mut protein_end = -1;
+    if trans.strand == 1 {
+        for exon in &trans.exons {
+            if exon.end < coding_start {
+                continue;
+            }
+            if pre_protein_bases > 0 {
+                let ref_start = coding_start.max(exon.start);
+                let exon_coding_bases = exon.end - ref_start;
+                if exon_coding_bases >= pre_protein_bases {
+                    protein_start = ref_start + pre_protein_bases;
+                    pre_protein_bases = 0;
+                } else {
+                    pre_protein_bases -= exon_coding_bases;
+                    continue;
+                }
+            }
+            let start_pos = exon.start.max(protein_start);
+            let exon_bases = exon.end - start_pos;
+            if exon_bases >= protein_bases {
+                protein_end = start_pos + protein_bases;
+                break;
+            } else {
+                protein_bases -= exon_bases;
+            }
+        }
+    } else {
+        for exon in trans.exons.iter().rev() {
+            if exon.start > coding_end {
+                continue;
+            }
+            if pre_protein_bases > 0 {
+                let ref_start = coding_end.min(exon.end);
+                let exon_coding_bases = ref_start - exon.start;
+                if exon_coding_bases >= pre_protein_bases {
+                    protein_end = ref_start - pre_protein_bases;
+                    pre_protein_bases = 0;
+                } else {
+                    pre_protein_bases -= exon_coding_bases;
+                    continue;
+                }
+            }
+            let start_pos = exon.end.min(protein_end);
+            let exon_bases = start_pos - exon.start;
+            if exon_bases >= protein_bases {
+                protein_start = start_pos - protein_bases;
+                break;
+            } else {
+                protein_bases -= exon_bases;
+            }
+        }
+    }
+    if protein_end == -1 || protein_start == -1 {
+        return [None, None];
+    }
+    [Some(protein_start), Some(protein_end)]
+}
+
+/// EnsemblDataCache.getExonRankings(strand, exons, position): the exon ranks before and after a position
+pub fn get_exon_rankings(strand: i8, exons: &[ExonData], position: i32) -> [i32; 2] {
+    let mut d = [0, 0];
+    let first = &exons[0];
+    let last = &exons[exons.len() - 1];
+    if (position < first.start && strand == 1) || (position > last.end && strand == -1) {
+        d = [0, 1];
+    } else if (position < first.start && strand == -1) || (position > last.end && strand == 1) {
+        d = [exons.len() as i32, -1];
+    } else {
+        for i in 0..exons.len() {
+            let e = &exons[i];
+            let next = exons.get(i + 1);
+            if position == e.end || position == e.start || (position >= e.start && position <= e.end) {
+                d = [e.rank, e.rank];
+                break;
+            }
+            if let Some(n) = next {
+                if position > e.end && position < n.start {
+                    d = if strand == 1 { [e.rank, n.rank] } else { [n.rank, e.rank] };
+                    break;
+                }
+            }
+        }
+    }
+    d
 }
 
 #[cfg(test)]

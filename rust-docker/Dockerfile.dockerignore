@@ -49,4 +49,8 @@
 !cider-rs/Cargo.lock
 !cider-rs/src
 !cider-rs/resources
+!linx-rs/Cargo.toml
+!linx-rs/Cargo.lock
+!linx-rs/src
+!linx-rs/resources
 !rust-docker/bin

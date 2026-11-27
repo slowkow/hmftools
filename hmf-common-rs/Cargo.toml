@@ -10,6 +10,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0.104"
+core-math = "1.4.0"
 rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate", "bzip2", "lzma"] }
 
 [build-dependencies]

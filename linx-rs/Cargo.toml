@@ -1,0 +1,23 @@
+[package]
+name = "linx-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A port of hmftools LINX 2.4 (structural variant clustering, chaining and annotation)"
+
+[[bin]]
+name = "linx-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+hmf-common = { path = "../hmf-common-rs" }
+mimalloc = { version = "0.1.52", default-features = false, optional = true }
+
+[features]
+default = ["mimalloc"]
+# a faster allocator; build with --no-default-features to use the system one
+mimalloc = ["dep:mimalloc"]
+
+[profile.release]
+panic = "abort"
+debug = 1

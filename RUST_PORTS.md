@@ -151,6 +151,14 @@ Java from the pipeline.
 | qsee | 5,800 | plots with R |
 | WISP | 6,600 | plots with R |
 
+Status on 2026-11-27 (PAVE, PURPLE and LINX are being ported first; plots are left for later, and the
+pipeline's plotting steps keep their Java images):
+- **LINX** (`linx-rs`): LINX_SOMATIC and LINX_GERMLINE byte-identical to Java on HG008 and on a private
+  whole-genome pair (14 and 6 files) and on 14 small and option cases; 2.6-3.5 times faster at one
+  thread, in a quarter to a third of the memory (0.2-0.3 GB against 0.8-1.1 GB). Java's output order
+  depends on identity hashes (LX1); two of the faults are chromosome-name checks that never match on
+  GRCh38 (LX2, LX5). Findings LX1-LX5. The visualiser (Circos and R) and LINXREPORT are not ported.
+
 For the R and Python parts, the first version keeps calling the same scripts, so plots and
 predictions stay identical. Replacing them is a separate decision per program: a random forest or a
 fitted classifier can be reproduced exactly in Rust; plots and the PDF cannot be byte-identical and
