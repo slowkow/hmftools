@@ -31,7 +31,7 @@ pub fn java(id: &'static str) -> bool {
 }
 
 /// The number of findings in REPORT.md, CU1 to CU<FINDINGS>; raise it when a finding is added.
-pub const FINDINGS: u32 = 8;
+pub const FINDINGS: u32 = 9;
 
 fn valid_id(id: &str) -> bool {
     numbered_id(id, "CU", FINDINGS)

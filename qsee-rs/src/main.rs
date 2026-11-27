@@ -15,6 +15,7 @@ mod compat;
 mod config;
 mod feature;
 mod lod;
+mod plot;
 mod prep;
 mod status;
 mod vis;

@@ -8,12 +8,15 @@
 //! - `cuppa-rs predict <options>` (or `cuppa-rs -m cuppa.predict <options>`): pycuppa's prediction, with
 //!   its `--` options; writes `<sample>.cuppa.pred_summ.tsv` and `<sample>.cuppa.vis_data.tsv`;
 //! - `cuppa-rs <options>` (or `cuppa-rs com.hartwig.hmftools.cup.cli.PredictionRunner`): the jar's main
-//!   class, the feature extraction and then the prediction.
+//!   class, the feature extraction and then the prediction;
+//! - `cuppa-rs plot <vis_data.tsv> <plot.png|plot.pdf>`: the summary plot alone, as `Rscript plot_predictions.R`
+//!   draws it from a vis data file (the prediction draws it itself).
 //!
 //! `-java_compat` (or CUPPA_JAVA_COMPAT=1) reproduces the faults of Java and pycuppa that the port corrects
 //! (REPORT.md, CU1-...).
 
 mod compat;
+mod plot;
 mod predict;
 mod prep;
 mod sha256;
@@ -45,6 +48,27 @@ pub fn cuppa_main(argv: &[String]) -> i32 {
             Mode::Predict
         }
         Some("com.hartwig.hmftools.cup.cli.PredictionRunner") => Mode::Runner,
+        Some("plot") => {
+            // -java_compat / -java_compat_except (or CUPPA_JAVA_COMPAT*) for the plot's finding (CU9)
+            let rest = match compat::take_options(&argv[1..]) {
+                Ok(a) => a,
+                Err(e) => {
+                    hmf_common::error!("{e}");
+                    return 1;
+                }
+            };
+            if rest.len() != 2 {
+                eprintln!("usage: cuppa-rs plot <vis_data.tsv> <plot.png|plot.pdf> [-java_compat]");
+                return 1;
+            }
+            return match plot::draw(&rest[0], &rest[1]) {
+                Ok(()) => 0,
+                Err(e) => {
+                    hmf_common::error!("{e:#}");
+                    1
+                }
+            };
+        }
         Some(a) if !a.starts_with('-') => {
             eprintln!("unknown command {a}: expected prep, predict, a CUPPA class name or the PredictionRunner options");
             return 1;

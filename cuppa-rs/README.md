@@ -5,7 +5,7 @@ the Java feature extraction (`com.hartwig.hmftools.cup.prep.CuppaDataPrep`) and 
 (`python -m cuppa.predict`, scikit-learn 1.3.0), so that neither Java nor Python is needed. The classifier is
 exported once from its pickle (`scripts/export_model.py`) into `resources/cuppa_model.38.bin.gz`, which the
 binary embeds. With `-java_compat` the output files are byte-identical to Java's and pycuppa's; faults found in
-both are corrected by default (findings CU1-CU8 in [REPORT.md](REPORT.md)).
+both are corrected by default (findings CU1-CU9 in [REPORT.md](REPORT.md)).
 
 ## Build and run
 
@@ -29,6 +29,8 @@ cuppa-rs predict --sample_id TUMOR --features_path cuppa/TUMOR.cuppa_data.tsv.gz
   Java passes to Python.
 - JVM options (`-Xmx...`, `-XX:...`, `-D...`) are accepted and ignored; `cuppa-rs -version` prints
   `Cuppa version 2.5`.
+- `cuppa-rs plot <sample>.cuppa.vis_data.tsv <out.png|out.pdf>` draws the summary plot from a vis data file
+  (as `Rscript plot_predictions.R`).
 
 ## Options
 
@@ -62,9 +64,15 @@ finding; `-java_compat_except CU2,...` (or `CUPPA_JAVA_COMPAT_EXCEPT`) for all b
   (snv96) and the top event features per class (event), as pandas writes them;
 - `<sample>.cuppa.vis_data.tsv` (not in RNA mode): probabilities, signature quantiles, event feature odds and the
   cross-validation performance, with ranks;
-- not drawn: `<sample>.cuppa.vis.png` (or `cuppa.vis.pdf` for a cohort), which pycuppa draws from the vis data
-  with its R script `cuppa/visualization/plot_predictions.R` (ggplot2, ggh4x, stringr, patchwork); running that
-  script on the port's vis data gives the same plot.
+- `<sample>.cuppa.vis.png` (or `cuppa.vis.pdf` for a cohort, one page per sample): the summary plot, drawn
+  natively (`src/plot.rs`, with hmf-plot-rs) as pycuppa's R script `cuppa/visualization/plot_predictions.R`
+  draws it in the CUPPA 2.5.1 image (R 4.2.3, ggplot2 3.5.1, ggh4x, patchwork), at R's pixel size. Every element
+  is where R puts it (within 0.01 px of R's viewports); text is DejaVu Sans as there, but rasterised by
+  hmf-plot-rs (whole-pixel glyph positions), so pixels at glyph edges, panel edges (whole-pixel clipping) and
+  anti-aliased lines differ from Cairo's. The PDF has R's pages, page size, text and word positions (Helvetica,
+  R's kerning) and draws as R's at 100 dpi to the pixel. `cuppa-rs predict` draws it where pycuppa would (not in
+  RNA-only mode; above 10 samples only with `--force_plot`). R is not needed. Checks: [REPORT.md](REPORT.md),
+  "The summary plot".
 
 ## How the prediction is reproduced
 
@@ -82,4 +90,6 @@ kernels and SIMD math). By default each sample of a cohort is computed as if alo
 test resources in `testdata/java`), pycuppa's tests of the prediction components (`src/tests/pycuppa.rs`), and
 the port's tests (`src/tests/port.rs`: numpy's arithmetic against `testdata/numpy_fixture.tsv`, written by
 numpy through `scripts/numpy_fixture.py`; the embedded model; HG008's prediction against pycuppa's in both modes;
-each finding in both modes). The comparisons with Java and pycuppa are in [REPORT.md](REPORT.md).
+each finding in both modes; `src/plot.rs`: stringi's word wrapping and R's number formats as the plot uses them).
+The plot's layout model is tested in hmf-plot-rs (`ggp`, `patchwork`, `pdf_figure`). The comparisons with Java,
+pycuppa and R are in [REPORT.md](REPORT.md).

@@ -93,11 +93,13 @@
 !neo-rs/src
 !neo-rs/resources
 !cuppa-rs/Cargo.toml
+!cuppa-rs/.cargo
 !cuppa-rs/Cargo.lock
 !cuppa-rs/src
 !cuppa-rs/resources
 !cuppa-rs/testdata
 !qsee-rs/Cargo.toml
+!qsee-rs/.cargo
 !qsee-rs/Cargo.lock
 !qsee-rs/src
 !qsee-rs/resources

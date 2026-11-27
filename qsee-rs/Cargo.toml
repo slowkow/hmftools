@@ -11,6 +11,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.104"
 hmf-common = { path = "../hmf-common-rs" }
+# the visual report (PNG with BUI's raster, PDF with the pdf module)
+hmf-plot = { package = "hmf-plot-rs", path = "../hmf-plot-rs", features = ["pdf"] }
 
 [profile.release]
 panic = "abort"

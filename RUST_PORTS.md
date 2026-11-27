@@ -204,14 +204,17 @@ Second batch, merged on 2026-11-27:
   BLAS: the Linux pipeline's differ from the macOS references in the last 2-3 digits (at most 2.4e-13 relative on
   HG008), and the port gives the macOS ones. Findings CU1-CU8: the alt-splice-junction model expects
   log-transformed counts that it never gets (CU8, RNA runs), a missing sex feature means male (CU2), and a
-  sample's probabilities depend on the cohort it is predicted in (CU7). The plot (R) is not drawn.
+  sample's probabilities depend on the cohort it is predicted in (CU7). Its summary plot (R in Java) is drawn natively
+  since 2026-11-27: the layout of every element within 0.01 px of R's, PDF text and word positions equal; 0.26 s
+  against 4.5 s.
   The image's toolchain is pinned to rustc 1.97.1: with rustc 1.100.0, a release build of cuppa-rs mistyped its
   test VCF's SNVs (a compiler fault or undefined behaviour, not yet found).
 
 - **qsee** (`qsee-rs`): every data file byte-identical to Java qsee 1.0 on 107 cases (gzip bytes included),
   which also equal the pipeline's qsee 1.1-beta.1 outputs on HG008 and a private pair; without the R report 0.2 s
-  and 34 MB against 2.9 s and 1.36 GB. It still runs the jar's R script for the report unless `-skip_plot` (the
-  image's wrapper adds it when R is absent; ORANGE does not use the report). Findings QS1-QS12: contamination
+  and 34 MB against 2.9 s and 1.36 GB. Its visual report (PNG and PDF, R in Java) is drawn natively
+  since 2026-11-27, every layout element within 0.01 px of R's and the PDF's words at R's positions; 0.3 s against
+  8.8 s. Findings QS1-QS12: contamination
   shown as `>` where PURPLE uses `>=` (QS4, every run), PURPLE's WARN_CONTAMINATION shown as PASS (QS5), a
   missing BQR file fatal despite `-allow_missing_input` (QS1).
 
@@ -240,8 +243,9 @@ within 1 px; the 2 Circos images differ in rendering only (anti-aliased shapes, 
 byte-identical across runs and across macOS arm64, Linux arm64 and Linux amd64 (libm's sin/cos/pow, C built with
 `-ffp-contract=off`). The charting step takes about 0.7 s, against about 24 s for R and Circos. Findings PL1-PL4:
 Circos's `skip_run` drops 15% of HG008's plotted SNVs (PL1), ggplot2 3.4+ ignores the bars' outline size (PL2),
-and the rainfall distances cross chromosome boundaries (PL3). Still to do on the same crate: LINX's visualiser,
-CUPPA's and qsee's R plots, and the PDFs of ORANGE and qsee (BUI has no vector output).
+and the rainfall distances cross chromosome boundaries (PL3). Since then LINX's visualiser, ORANGE's PDF, CUPPA's summary
+plot and qsee's visual report (PNG and PDF) are drawn natively too (below and in each crate's REPORT.md), so no
+figure of the pipeline needs R, Perl, Circos or Java.
 
 ### Wave C: RNA and newer tools
 

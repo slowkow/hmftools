@@ -12,6 +12,9 @@
 //! - [`gviz`], [`compose`], [`gdtext`], [`rpdf`]: Gviz's ideogram strip, placing rendered images on a canvas,
 //!   GD's string boxes, and R's `pdf()` device text metrics (LINX's visualiser).
 //!
+//! - [`gtable`], [`rdev`]: gtable's tables and grid's layout, and R's png() and pdf() devices' text metrics, on
+//!   which `ggp` and `patchwork` lay out ggplot2 figures and patchwork compositions (CUPPA's and qsee's plots).
+//!
 //! - [`pdf`] (feature "pdf"): a PDF writer (pages, vector shapes, text in embedded font subsets, PNG images,
 //!   outlines) and a table layout engine that reproduces boxable's (the Java tables library ORANGE uses).
 //!
@@ -44,8 +47,20 @@ pub mod rpdf;
 mod rpdf_helvetica;
 #[cfg(feature = "raster")]
 pub mod gg;
+#[cfg(feature = "raster")]
+pub mod ggp;
+#[cfg(feature = "raster")]
+pub mod gtable;
+#[cfg(feature = "raster")]
+pub mod patchwork;
+#[cfg(feature = "raster")]
+pub mod rdev;
+#[cfg(feature = "raster")]
+mod rdev_afm;
 #[cfg(feature = "pdf")]
 pub mod pdf;
+#[cfg(all(feature = "raster", feature = "pdf"))]
+pub mod pdf_figure;
 
 pub use color::Rgba;
 #[cfg(feature = "raster")]

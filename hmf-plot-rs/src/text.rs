@@ -14,6 +14,10 @@ use crate::bui;
 pub enum Font {
     /// DejaVu Sans Book: R's "sans" in the pipeline's image (fontconfig), so ggplot2's text.
     Sans,
+    /// R's bold "sans" in the pipeline's images, which have DejaVu Sans Book only: fontconfig asks for synthetic
+    /// emboldening, so the glyphs are DejaVu Sans Book emboldened (BUI's synthetic bold here) at the advances of
+    /// the regular face (Pango keeps them). Added for CUPPA's and qsee's titles.
+    SansBold,
     /// CMU Bright Bold: Circos's `bold` (ideogram labels).
     CircosBold,
     /// CMU Sans Serif Demi Condensed: Circos's `condensed` (text tracks).
@@ -25,7 +29,7 @@ pub enum Font {
 impl Font {
     fn family(&self) -> &'static str {
         match self {
-            Font::Sans => "hmfplot-dejavu-sans",
+            Font::Sans | Font::SansBold => "hmfplot-dejavu-sans",
             Font::CircosBold => "hmfplot-cmu-bright-bold",
             Font::CircosCondensed => "hmfplot-cmu-sans-demicondensed",
             Font::CircosRoman => "hmfplot-cmu-bright-roman",
@@ -34,7 +38,7 @@ impl Font {
 
     pub(crate) fn data(&self) -> &'static [u8] {
         match self {
-            Font::Sans => include_bytes!("../fonts/DejaVuSans.ttf"),
+            Font::Sans | Font::SansBold => include_bytes!("../fonts/DejaVuSans.ttf"),
             Font::CircosBold => include_bytes!("../fonts/cmunbbx.otf"),
             Font::CircosCondensed => include_bytes!("../fonts/cmunssdc.otf"),
             Font::CircosRoman => include_bytes!("../fonts/cmunbmr.ttf"),
@@ -43,6 +47,19 @@ impl Font {
 
     pub(crate) fn c_family(&self) -> CString {
         CString::new(self.family()).unwrap()
+    }
+
+    /// BUI's style flags for the face: bold is synthesized from the registered regular face.
+    pub(crate) fn bui_flags(&self) -> i32 {
+        match self {
+            Font::SansBold => bui::BUI_FONT_BOLD,
+            _ => 0,
+        }
+    }
+
+    /// The faces laid out with R's Cairo advances (DejaVu Sans, regular and synthetic bold).
+    pub(crate) fn is_sans(&self) -> bool {
+        matches!(self, Font::Sans | Font::SansBold)
     }
 
     /// The Circos font names of etc/fonts.conf that map to an embedded face.
@@ -109,7 +126,7 @@ pub(crate) fn mask_locked(font: Font, size: f64, text: &str) -> Option<Mask> {
     let mut advance = 0.0f32;
     // SAFETY: BUI reads `text.len()` bytes; the run stays valid while no font is opened (we hold the lock).
     unsafe {
-        let run = bui::BUI_text_prepare(family.as_ptr(), 0, size as f32, text.as_ptr().cast(), text.len() as i32, &mut advance);
+        let run = bui::BUI_text_prepare(family.as_ptr(), font.bui_flags(), size as f32, text.as_ptr().cast(), text.len() as i32, &mut advance);
         if run.is_null() {
             return None;
         }
@@ -127,7 +144,7 @@ pub(crate) fn mask_locked(font: Font, size: f64, text: &str) -> Option<Mask> {
 /// advance at the fractional size, rounded to whole pixels; the Circos faces take BUI's run advance (GD, like
 /// BUI, lays a run out with hinted advances).
 pub fn advance(font: Font, size: f64, text: &str) -> f64 {
-    if font == Font::Sans {
+    if font.is_sans() {
         return advance_fractional(font, size, text);
     }
     bui_advance(font, size, text)
@@ -135,7 +152,7 @@ pub fn advance(font: Font, size: f64, text: &str) -> f64 {
 
 /// The pen offsets of a run's glyphs as `advance` lays them out (None: BUI lays the run out itself).
 pub(crate) fn glyph_offsets(font: Font, size: f64, text: &str) -> Option<Vec<(char, f64)>> {
-    if font != Font::Sans {
+    if !font.is_sans() {
         return None;
     }
     let h = SANS_HMTX.get_or_init(|| Hmtx::parse(Font::Sans.data()).expect("DejaVu Sans tables"));
@@ -160,7 +177,7 @@ fn bui_advance(font: Font, size: f64, text: &str) -> f64 {
     let family = font.c_family();
     let mut w = 0.0f32;
     // SAFETY: BUI reads `text.len()` bytes.
-    unsafe { bui::BUI_text_measure(family.as_ptr(), 0, size as f32, text.as_ptr().cast(), text.len() as i32, &mut w) };
+    unsafe { bui::BUI_text_measure(family.as_ptr(), font.bui_flags(), size as f32, text.as_ptr().cast(), text.len() as i32, &mut w) };
     w as f64
 }
 
@@ -263,7 +280,8 @@ impl Hmtx {
                 let (end, start) = (u16_at(ends + 2 * s)? as u32, u16_at(starts + 2 * s)? as u32);
                 let delta = u16_at(deltas + 2 * s)?;
                 let ro = u16_at(ranges + 2 * s)? as usize;
-                for c in start..=end.min(0x7e) {
+                // printable ASCII, and the ligatures fi and fl (U+FB01, U+FB02) that Pango's shaping substitutes
+                for c in (start..=end).filter(|&c| c <= 0x7e || c == 0xfb01 || c == 0xfb02) {
                     let g = if ro == 0 {
                         (c as u16).wrapping_add(delta)
                     } else {
@@ -329,7 +347,7 @@ static SANS_HMTX: std::sync::OnceLock<Hmtx> = std::sync::OnceLock::new();
 /// pixel size, each rounded to whole pixels (hinted metrics). BUI's own measure works at a whole-pixel size.
 pub fn advance_fractional(font: Font, size: f64, text: &str) -> f64 {
     match font {
-        Font::Sans => SANS_HMTX.get_or_init(|| Hmtx::parse(Font::Sans.data()).expect("DejaVu Sans tables")).width(size, text),
+        Font::Sans | Font::SansBold => SANS_HMTX.get_or_init(|| Hmtx::parse(Font::Sans.data()).expect("DejaVu Sans tables")).width(size, text),
         _ => bui_advance(font, size, text),
     }
 }

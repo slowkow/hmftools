@@ -1,7 +1,8 @@
 //! qsee `plot`: VisDataFile (`<tumor>.qsee.vis.data.tsv.gz`, what the R script draws from), and
-//! QseePlot / QseePlotTask: the R script `plot_qc.R` run as Java runs it (RExecutor), unless -skip_plot.
+//! QseePlot / QseePlotTask: the report the R script `plot_qc.R` draws, drawn natively (`crate::plot`), unless
+//! -skip_plot.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use std::io::Write;
 
 use hmf_common::delim_file::JavaWriter;
@@ -10,8 +11,6 @@ use crate::common::{decimal_8, generate_filename, SampleType, COL_FEATURE_NAME, 
 use crate::config::{QseeConfig, QseePlotConfig};
 use crate::feature::SampleFeatures;
 
-/// plot_qc.R as the jar carries it (identical to qsee/src/main/R/plot_qc.R)
-pub const PLOT_SCRIPT: &str = include_str!("../resources/plot_qc.R");
 
 pub fn vis_data_filename(base: &str, sample_id: &str, output_id: Option<&str>) -> String {
     generate_filename(base, sample_id, "vis.data", output_id, "tsv.gz")
@@ -68,32 +67,20 @@ pub fn write_vis_data(path: &str, samples: &[SampleFeatures]) -> Result<()> {
     result
 }
 
-/// QseePlotTask.run: `Rscript plot_qc.R <tumor> <reference|NA> <vis data> <cohort percentiles|NA> <pdf>
-/// <show warnings> <single patient> <log level>`, the script written to a temporary file first
-pub fn run_plot_task(tumor: &str, reference: Option<&str>, vis_data: &str, cohort: Option<&str>, plot_path: &str, show_warnings: bool, single_patient: bool, log_level: &str) -> Result<()> {
-    let dir = std::env::temp_dir();
-    let script = dir.join(format!("script{}{}.R", std::process::id(), unique_suffix()));
-    std::fs::write(&script, PLOT_SCRIPT).map_err(|e| anyhow!("Failed to run QC plot script: {e}"))?;
-    let args = [tumor, reference.unwrap_or("NA"), vis_data, cohort.unwrap_or("NA"), plot_path, if show_warnings { "true" } else { "false" }, if single_patient { "true" } else { "false" }, log_level];
-    hmf_common::debug!("executing R script via command: Rscript {} {}", script.display(), args.join(" "));
-    let status = std::process::Command::new("Rscript").arg(&script).args(args).status();
-    let _ = std::fs::remove_file(&script);
-    match status {
-        Err(e) => bail!("Failed to run QC plot script: {e}"),
-        Ok(s) if !s.success() => {
-            hmf_common::error!("error executing R script");
-            bail!("java.lang.RuntimeException: R script exited with {s}")
-        }
-        Ok(_) => Ok(()),
-    }
+/// QseePlotTask.run: the report plot_qc.R draws (`Rscript plot_qc.R <tumor> <reference|NA> <vis data> <cohort
+/// percentiles|NA> <pdf> <show warnings> <single patient> <log level>`), drawn natively (`crate::plot`): the PDF, and
+/// for a single patient the PNG beside it. Returns the PDF's page. (show warnings only sets R's warning output.)
+pub fn run_plot_task(tumor: &str, reference: Option<&str>, vis_data: &str, cohort: Option<&str>, plot_path: &str, show_warnings: bool, single_patient: bool, log_level: &str) -> Result<hmf_plot::display::Figure> {
+    let _ = (show_warnings, log_level);
+    hmf_common::debug!("drawing the QC report natively: {tumor} {} {vis_data} {} {plot_path}", reference.unwrap_or("NA"), cohort.unwrap_or("NA"));
+    crate::plot::report(tumor, reference, vis_data, cohort, plot_path, single_patient).map_err(|e| {
+        hmf_common::error!("error drawing the QC report: {e:#}");
+        anyhow!("java.lang.RuntimeException: {e:#}")
+    })
 }
 
-fn unique_suffix() -> u128 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
-}
-
-/// QseePlot.run: one report for a single patient, else one per tumor sample (on -threads threads); the
-/// PDFs of several patients are not merged by the port (Java merges them with PDFBox for -merge_plots)
+/// QseePlot.run: one report for a single patient, else one per tumor sample; with -merge_plots the reports'
+/// pages go into `multisample.qsee.vis.report.pdf` and the per-sample PDFs are deleted (as Java with PDFBox).
 pub fn run_plot(pc: &QseePlotConfig, log_level: &str) -> Result<()> {
     hmf_common::info!("Plotting QC metrics");
     let single = pc.samples.is_single_patient();
@@ -112,11 +99,25 @@ pub fn run_plot(pc: &QseePlotConfig, log_level: &str) -> Result<()> {
         let t = &pc.samples.tumor_ids[0];
         run_plot_task(t, reference(0), &vis_path(t), pc.cohort_percentiles_file.as_deref(), &plot_path(t), pc.show_plot_warnings, true, log_level)?;
     } else {
+        let mut pages = Vec::new();
         for (i, t) in pc.samples.tumor_ids.iter().enumerate() {
-            run_plot_task(t, reference(i), &vis_path(t), pc.cohort_percentiles_file.as_deref(), &plot_path(t), pc.show_plot_warnings, false, log_level)?;
+            pages.push(run_plot_task(t, reference(i), &vis_path(t), pc.cohort_percentiles_file.as_deref(), &plot_path(t), pc.show_plot_warnings, false, log_level)?);
         }
         if pc.merge_plots {
-            hmf_common::warn!("-merge_plots: the port does not merge PDFs; the per-sample reports are kept");
+            let dest = plot_path(MULTISAMPLE_SAMPLE_ID);
+            hmf_common::info!("Merging plots to file: {dest}");
+            let merged = crate::plot::write_merged(&dest, &pages);
+            for t in &pc.samples.tumor_ids {
+                let p = plot_path(t);
+                if std::path::Path::new(&p).exists() {
+                    hmf_common::debug!("Deleting plot file: {p}");
+                    let _ = std::fs::remove_file(&p);
+                }
+            }
+            merged.map_err(|e| {
+                hmf_common::error!("Failed to merge plots to file: {dest}: {e:#}");
+                e
+            })?;
         }
     }
     hmf_common::info!("Completed plotting QC metrics");

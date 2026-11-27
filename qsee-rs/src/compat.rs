@@ -28,7 +28,7 @@ pub fn java(id: &'static str) -> bool {
 }
 
 /// The number of findings, QS1 to QS<FINDINGS>; raise it when a finding is added.
-pub const FINDINGS: u32 = 12;
+pub const FINDINGS: u32 = 14;
 
 fn valid_id(id: &str) -> bool {
     numbered_id(id, "QS", FINDINGS)

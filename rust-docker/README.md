@@ -69,7 +69,7 @@ subcommands:
 | `com.hartwig.hmftools.chord.ChordApplication` (or none), `ChordDataPrep`, `ChordModel` | `chord-rs` (it takes the classes itself; the prediction needs no R) |
 | `com.hartwig.hmftools.neo.epitope.NeoEpitopeFinder` (or none), `com.hartwig.hmftools.neo.score.NeoScorer` | `neo-rs` (it takes the classes itself) |
 | `com.hartwig.hmftools.cup.prep.CuppaDataPrep`, `cup.cli.PredictionRunner` (or none) | `cuppa-rs` (it takes the classes itself) |
-| `com.hartwig.hmftools.qsee.QseeApplication` (or none) and qsee's other entry points | `qsee-rs` (it takes the classes itself; without Rscript on PATH the wrapper adds `-skip_plot`) |
+| `com.hartwig.hmftools.qsee.QseeApplication` (or none) and qsee's other entry points | `qsee-rs` (it takes the classes itself and draws the visual report natively, PNG and PDF) |
 | `com.hartwig.hmftools.isofox.Isofox` (or none) | `isofox-rs` (ISOFOX 2.1 for bwa-mem3 + TARS RNA BAMs, 2.0.1 for STAR: `-isofox_version`) |
 | `com.hartwig.hmftools.orange.OrangeApplication` (or none) | `orange-rs` (the JSON report, the plot copies and the PDF report) |
 

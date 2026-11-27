@@ -157,6 +157,13 @@ Corrected by default, Java's or pycuppa's behaviour with `-java_compat`:
   more therefore saturate the max scaling at 1, and the alt-SJ classifier sees nearly binary features. RNA runs
   only (the pipeline runs DNA). Corrected: the counts are log-transformed when the features are read (the features
   file stays as Java writes it). Cases rna_all, rna_group_rna, unit test cu8.
+- **CU9 (plot_predictions.R): a signature quantile of -Inf is drawn as "0", with an "NA" legend key.** pycuppa's
+  SigCohortQuantileTransformer gives -(first quantile / value) below the cohort's range, which is -Inf when the
+  sample has none of a signature that every sample of the class has (a sample with few SNVs). The script bins the
+  quantiles with `cut(breaks = c(-Inf, -0.004, ...))`, whose first interval is open at -Inf, so -Inf becomes NA:
+  the cell takes `na.value` (grey95, the colour of "0", in the expected range) and the legend gains a key "NA",
+  while its label says "-Inf". Corrected: -Inf is in the first class, "<0 (below expected range)" (light cyan),
+  and the legend has no NA key; the cell's label stays "-Inf". Case syn4_empty (empty inputs).
 
 Not reproduced:
 - **CU1 (Java PredictionRunner): the Python command is one string for `bash -c`.** The arguments are joined with
@@ -175,6 +182,57 @@ Kept as Java and pycuppa do, recorded:
 - pycuppa logs some errors with arguments its format does not use (duplicated features, missing snv_count), and
   raises a TypeError instead of its CalledProcessError when R is missing; cosmetic, the port logs plain messages.
 
+## The summary plot
+
+`<sample>.cuppa.vis.png` (one sample) and `cuppa.vis.pdf` (several; one page per sample) are drawn natively
+(`src/plot.rs`, with hmf-plot-rs's `ggp`, `gtable`, `patchwork`, `rdev` and `pdf_figure`), as pycuppa's
+`plot_predictions.R` draws them in the pipeline's CUPPA 2.5.1 image (R 4.2.3, ggplot2 3.5.1, ggh4x 0.2.8, patchwork
+1.2.0; Cairo png() with DejaVu Sans; that image's render of HG008's vis data is byte-identical to the pipeline's
+PNG). `cuppa-rs predict` draws it where pycuppa does: not in RNA-only mode, a PDF for several samples, nothing
+above 10 samples without `--force_plot`; `cuppa-rs plot <vis_data> <out>` draws it from a vis data file.
+
+How it was checked (2026-11-27, the ports in Java mode): R drew each case in the image (docker, amd64 emulated),
+and again with every grid viewport's device box dumped; the port wrote its grobs' boxes. Layout: the boxes paired
+by name (gtable and grid's own levels dropped), then every box without a name partner looked for by position
+among all of the other side's; the PNG compared pixel by pixel; the PDFs by pages and page size, `pdftotext
+-layout`, every word's box (`pdftotext -bbox`) against R's, and the pages at 100 dpi.
+
+| case | input | R in the image: s, MB | port: s, MB | PNG pixels differing by >10% / >25% / >50% | PDF |
+|---|---|---|---|---|---|
+| hg008 | HG008's vis data (DNA) | 8.20, 284 | 0.26, 221 | 108,755 / 50,249 / 7,030 of 19.8 M | |
+| t0 | the private pair | 7.57, 278 | 0.24, 207 | 98,251 / 39,371 / 7,510 | |
+| rna_all | DNA + synthetic RNA | 8.62, 292 | 0.30, 249 | 131,308 / 63,892 / 7,576 | |
+| syn4_empty | empty inputs (CU9 in Java mode) | 7.29, 277 | 0.24, 206 | 105,403 / 46,531 / 11,335 | |
+| syn2_msi | MSI and drivers | 7.86, 292 | 0.29, 240 | 109,543 / 47,871 / 5,953 | |
+| hg008_categories | snv, sv, driver only | 7.32, 283 | 0.26, 220 | 109,058 / 50,313 / 7,030 | |
+| syn1_virus | a virus | 8.38, 297 | 0.29, 250 | 118,727 / 50,754 / 7,069 | |
+| rna_only | RNA only | stops (no `snv_count`) | stops, same message | | |
+| cohort2 | HG008-T and a private tumour | 11.34, 195 | 0.03, 9 | | 2 pages, text identical, 2,267 words at 0.000 pt, 0 / 0 pixels |
+| rna_cohort | DNA + RNA cohort | 17.27, 199 | 0.04, 11 | | 3 pages, text identical, 3,668 words, 0 / 0 / 0 pixels |
+| cohort12 | 12 samples | 58.97, 207 | 0.13, 30 | | 12 pages, text identical, 14,053 words, 0 pixels on every page |
+
+- Size: R's in every case (6000 x 3075 to 6000 x 3750 at 300 dpi; PDF pages 1440 x 900 pt).
+- Layout (hg008, t0, rna_all, syn4_empty): the 185 (rna_all 192) elements paired by name are within 0.0000 px of
+  R's. Of the rest, the port's 76 (133) panel boxes of the probability heatmap are cells of R's grid (R's dump has
+  no viewports below that panel group, but its rows and columns are R's axes and strips), and R's unpaired boxes
+  are 248 (214) of zero size, 251 (259) axis viewports sharing three edges with the port's cell (an axis's own
+  viewport, as wide as its labels), and 26 (28) label columns inside axes, which the port does not record.
+- Visible differences (PNG; none at normal size): text is rasterised by hmf-plot-rs with whole-pixel glyph
+  positions (Cairo positions glyphs to a fraction of a pixel; the bold titles are BUI's synthetic bold); panels
+  clip to whole pixels, so a border drawn inside a clipped panel differs in its outermost pixel line (9% of the
+  pixels differing by >25% on hg008, none by >50%); anti-aliasing of lines and tiles is BUI's. Nothing is drawn
+  in another place, colour or size.
+- PDF: identical to R's at 100 dpi on every page (after three fixes on 2026-11-27: legend key backgrounds,
+  rectangle outlines written as R writes them, and PDF dash lengths; hmf-plot-rs README).
+- Determinism: a second run gives the same bytes; built on Linux arm64 (`rust:1.97-bookworm`) the HG008 PNG has
+  the same bytes as on macOS arm64.
+- Speed and memory against native R on the same Mac (one thread, three runs each): the HG008 PNG 0.26 s and
+  220 MB against 4.3-4.8 s and 432 MB; the 12-page cohort PDF 0.12 s and 29 MB against 41 s and 400 MB. The
+  port's memory is mostly the 6000 x 3300 canvas.
+- ORANGE: with the port's plot in `cuppa/`, ORANGE's JSON has `cuppaSummaryPlot` as Java's (the whole JSON
+  byte-identical to Java's on HG008) and its CUPPA chapter shows the plot; without it (before this) the JSON had
+  null there and the chapter had no plot.
+
 ## Open points
 
 - **The platform's exp:** the softmax takes `f64::exp` from the platform's math library, as numpy does, so the
@@ -191,9 +249,9 @@ Kept as Java and pycuppa do, recorded:
   pycuppa's last digits differ (OpenBLAS's Haswell/SkylakeX kernels, numpy's AVX512 exp/log/pow); the port gives
   its macOS numbers there too, apart from the C library's exp, log1p, pow and log10 (glibc and Apple's libm agree
   in all but rare last-bit cases; not checked on Linux).
-- **Plots:** `<sample>.cuppa.vis.png` (or `cuppa.vis.pdf`) is not drawn; pycuppa draws it from the vis data with
-  `cuppa/visualization/plot_predictions.R` (ggplot2, ggh4x, stringr, patchwork). ORANGE shows that PNG, so in the
-  pipeline the plot step needs R (the port's vis data is identical) or a native plot later.
+- **Plots:** drawn natively since 2026-11-27 (see "The summary plot" above); text in the PNG is rasterised by
+  hmf-plot-rs (whole-pixel glyphs), and panels clip to whole pixels, so pixels at glyph and panel edges differ
+  from R's.
 - **Other classifiers:** need the exporter (Python with scikit-learn 1.3.0) once; a pickle reader in Rust (as
   chord-rs reads .rds) would remove that.
 - **hmf-common-rs:** `variant_context::is_symbolic_allele` (and so `VcfRecord::variant_type`) calls `*`
@@ -224,5 +282,6 @@ HG008 rerun 11 on Google Batch ran CUPPA as the port (the image's `cuppa`, and i
 `python -m cuppa.predict`), in Java mode, with every other step from the cache. The features file is identical
 to the first run's. The prediction summary and vis data differ from the pipeline's pycuppa (Linux x86-64) only in
 the last digits: 10 and 247 values, at most 2.4e-13 relative. ORANGE, which ran again on them, carried those
-digits into its JSON and reported no CUPPA plot (the port draws none); everything else in the JSON was unchanged.
+digits into its JSON and reported no CUPPA plot (the port drew none then; it does since 2026-11-27, see "The
+summary plot"); everything else in the JSON was unchanged.
 CUPPA took 1.7 s and 21 MB, against Java and pycuppa's 16 s and 494 MB. The rerun's tasks cost $0.02.

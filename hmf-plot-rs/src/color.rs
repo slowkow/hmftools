@@ -99,6 +99,12 @@ pub fn r_colour(name: &str) -> Option<Rgba> {
         "purple" => (160, 32, 240),
         "cyan" => (0, 255, 255),
         "magenta" => (255, 0, 255),
+        // R's names used by CUPPA's and qsee's R scripts (grDevices colors())
+        "mediumseagreen" => (60, 179, 113),
+        "indianred" => (205, 92, 92),
+        "lightgrey" | "lightgray" => (211, 211, 211),
+        "darkgrey" | "darkgray" => (169, 169, 169),
+        "lightcyan2" => (209, 238, 238),
         _ => return None,
     };
     Some(Rgba::rgb8(rgb.0, rgb.1, rgb.2))

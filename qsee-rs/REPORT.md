@@ -2,9 +2,10 @@
 
 This report covers how `qsee-rs` was checked against Java qsee 1.0, the faults found in the Java code, and the
 timings. `qsee-rs` is the QSEE_METRICS step of oncoanalyser: QC features from the PURPLE, BamTools, COBALT, ESVEE
-and REDUX outputs, QC statuses against thresholds, the gene limit-of-detection file, and the R report. The Java
+and REDUX outputs, QC statuses against thresholds, the gene limit-of-detection file, and the report. The Java
 reference is this repository's `qsee/target/qsee-1.0-jar-with-dependencies.jar` (sources following upstream
-ca04e6c39d of 2026-11-20), on Java 23. `resources/plot_qc.R` is the jar's R script, unchanged. Options and
+ca04e6c39d of 2026-11-20), on Java 23. `resources/plot_qc.R` is the jar's R script, unchanged; since 2026-11-27
+the port draws its report natively (no R). Options and
 outputs are in [README.md](README.md).
 
 ## What is ported
@@ -20,20 +21,18 @@ All of qsee 1.0's main code, every entry point:
 | status: ComparisonOperator, QcStatusType, QcStatus (with the BigDecimal display), ThresholdKey, QcThreshold, ThresholdRegistry, ThresholdOverridesFile, PurpleQCStatusConverter, QcStatusFile, DefaultThresholdsWriter | `status.rs` |
 | lod: LimitOfDetectionCalcs, GeneLodCalculator, GeneLodFile, VariantDetectabilityStatus | `lod.rs` |
 | cohort: FeatureMatrix, PercentileTransformer, FeaturePercentiles, CohortPercentiles(File), CohortPercentilesTrainer, CohortFeaturesWriter | `cohort.rs` |
-| plot: VisDataFile, QseePlot, QseePlotTask (RExecutor) | `vis.rs` |
+| plot: VisDataFile, QseePlot (with PDFBox's merging), QseePlotTask; `plot_qc.R` | `vis.rs`; `plot/` (native, hmf-plot-rs) |
 | hmf-common: DelimFileReader/Writer, createBufferedWriter (gzip), BqrFile, DuplicateFrequency, JitterCountsTableFile, CobaltGcMedianFile, EsveeDiscordantStats, PurplePurity (full), PurityContextFile.readWithQC | hmf-common-rs additions (below) and `prep.rs` |
 
-Not ported: PDFBox's merging of the per-sample PDFs for `-merge_plots` (multi-sample mode only; the port
-keeps the per-sample PDFs and warns), and `compare_cohorts.R`, which no Java class runs.
+Not ported: `compare_cohorts.R`, which no Java class runs.
 
 ### The plot step
 
-The port runs the jar's `plot_qc.R` with the 8 arguments QseePlotTask passes (`Rscript`, the script from a
-temporary file, as RExecutor), unless `-skip_plot`. The R step reads only the vis data file and the cohort
-percentiles file. On the two pipeline cases the reports drawn from the port's files equal Java's: the PNG
-byte for byte, the PDF apart from its CreationDate and ModDate. Panels and their data: `qsee-rs/README.md`.
-R here: `/usr/local/bin/Rscript` with dplyr, ggplot2, patchwork and scales already installed (nothing was
-installed; the scripts set R_PROFILE_USER and R_ENVIRON_USER to /dev/null).
+Until 2026-11-27 the port ran the jar's `plot_qc.R` with the 8 arguments QseePlotTask passes (`Rscript`, the
+script from a temporary file, as RExecutor); the R step reads only the vis data file and the cohort
+percentiles file, and on the two pipeline cases the reports drawn from the port's files equalled Java's (the
+PNG byte for byte, the PDF apart from its CreationDate and ModDate). The rows below marked "R report
+included" are from then. The port now draws the report itself; see "The report, drawn natively" below.
 
 ## Java behaviour reproduced (not faults)
 
@@ -224,6 +223,61 @@ files except in these cases, each a finding:
 
 Every other case gives Java's files in the default mode too, QS4's line apart.
 
+## The report, drawn natively
+
+`<tumor>.qsee.vis.report.pdf` and (single patient) `.png` are drawn by `src/plot/` with hmf-plot-rs (`ggp`,
+`gtable`, `patchwork`, `rdev`, `pdf_figure`), as the repository's `plot_qc.R` draws them with R 4.5.3, ggplot2
+4.0.3 and patchwork 1.3.2 in the qsee 1.0 image (whose own jar has an older `plot_qc.R`; the references run the
+repository's script there, as the pipeline's qsee 1.1-beta.1 does). Multi-sample mode writes one PDF per tumor
+(no PNG), and `-merge_plots` one `multisample.qsee.vis.report.pdf` with the per-sample PDFs deleted, as Java.
+
+How it was checked (2026-11-27, the port in Java mode): R drew each case in the image (docker, amd64 emulated),
+and again with every grid viewport's device box dumped, for the PNG (300 dpi) and the PDF (points); the port wrote
+its grobs' boxes and its label boxes. Layout: boxes paired by name (gtable and grid's own levels dropped), then
+every box without a name partner looked for by position among all of the other side's. PNG: pixels compared.
+PDF: pages and page size, `pdftotext -layout`, every word's box against R's, the page at 100 dpi.
+
+| case | R in the image: s, MB | port: s, MB | PNG pixels differing by >10% / >25% / >50% (of 15.3 M) | layout elements, largest difference (PNG and PDF) | PDF: text, words at R's position, pixels >25% at 100 dpi |
+|---|---|---|---|---|---|
+| hg008 | 18.58, 298 | 0.31, 186 | 59,617 / 24,900 / 3,073 | 728, 0.0000 px | identical, 569 (0.000 pt), 2 |
+| t0 (private pair) | 18.88, 299 | 0.31, 183 | 60,368 / 26,662 / 2,938 | 737, 0.0000 | identical, 609, 13 |
+| hg008_tumor_only | 17.89, 320 | 0.28, 179 | 64,014 / 26,689 / 3,151 | 728, 0.0000 | identical, 556, 3 |
+| t0_tumor_only | 14.53, 336 | 0.24, 174 | 61,947 / 26,388 / 2,973 | 737, 0.0000 | identical, 602, 15 |
+| hg008_no_cohort | 16.01, 303 | 0.25, 175 | 59,796 / 24,986 / 3,088 | 728, 0.0000 | identical, 570, 2 |
+| edge_purity_low | 14.84, 304 | 0.26, 176 | 58,072 / 25,059 / 3,047 | 737, 0.0000 | identical, 594, 4 |
+| edge_fail_contamination | 15.35, 303 | 0.25, 175 | 60,070 / 25,082 / 2,993 | 728, 0.0000 | identical, 575, 3 |
+| edge_disc_stats_zero_total | 14.75, 336 | 0.25, 176 | 60,259 / 25,889 / 3,253 | 728, 0.0000 | identical, 549, 2 |
+| missing_no_purple_allow (QS14, Java mode) | exit 1, 4.44, 211 | exit 1, 0.02, 6 | no PNG (as R) | | blank page as R's, 0 |
+| missing_no_purple_fixed (QS14 corrected, R patched) | 13.27, 310 | 0.24, 175 | 50,802 / 21,302 / 2,830 | 728, 0.0000 | identical, 517, 1 |
+| missing_no_esvee_cobalt_allow | 14.67, 336 | 0.26, 180 | 60,148 / 25,832 / 3,244 | 728, 0.0000 | identical, 549, 2 |
+| missing_no_bam_summary_allow | 14.83, 303 | 0.25, 175 | 59,581 / 24,946 / 3,088 | 728, 0.0000 | identical, 564, 2 |
+| edge_header_only_bqr | 14.78, 332 | 0.24, 175 | 59,713 / 24,977 / 3,088 | 728, 0.0000 | identical, 570, 2 |
+| hg008_targeted | 19.07, 298 | 0.31, 180 | 63,137 / 27,109 / 3,168 | 728, 0.0000 | identical, 584, 9 |
+
+- Every port box has an R viewport at the same place (0.01 px). The R viewports without a port box draw nothing:
+  the legend patch's empty title, subtitle, caption and tag cells, legend.box.background, the QC-status keys'
+  zero-size anchors, and (three cases) the second facet's axis viewports, which share three edges with the cell
+  the port records.
+- Multi-sample mode (6 tumor/normal pairs, private): 0.37 s and 44 MB for the 6 PDFs (R: about 11 s and 225 MB
+  per sample); samples 1 and 6 against R: text identical, every word at R's position, 5 and 2 pixels differ at
+  100 dpi; `-merge_plots`: 6 pages, page i sample i's report (0.46 s, 35 MB).
+- Visible differences (PNG; none at normal size): text is rasterised by hmf-plot-rs with whole-pixel glyph
+  positions (Cairo positions glyphs to a fraction of a pixel): horizontal text lands at R's position, the bold
+  title 1 px lower (BUI's synthetic bold), and a rotated axis title drifts by up to 2 px along its length; panels
+  clip to whole pixels, so a panel border differs in its outermost pixel line (13% of the pixels differing by
+  >25% on hg008, none by >50%); anti-aliasing is BUI's. QS15's cut strip label is as in R.
+- Fixed on 2026-11-27 after the first comparison: the summary table's extra nesting level that `free()` adds
+  (`merge()`), the geom_label boxes (half a descent too low), the QC-status keys' border width, the legend key
+  backgrounds, the PDF's dash lengths for lines thinner than lwd 1, rectangles in the PDF written as R writes them,
+  and empty (zero-height) panels, which drew a line (hmf-plot-rs README).
+- Determinism: a second run gives the same bytes; built on Linux arm64 (`rust:1.97-bookworm`) the HG008 PNG and
+  PDF have the same bytes as on macOS arm64.
+- Speed and memory against native R on the same Mac (one thread, three runs): 0.31 s and 181 MB for HG008's PDF
+  and PNG against 8.8-9.1 s and 321 MB.
+- ORANGE: with the port's report in `qsee/`, ORANGE's JSON has `qSeePlot` as Java's (byte-identical to Java's
+  JSON on HG008) and its PDF has the qsee page (9 pages as Java's); without it the JSON had null there and the
+  PDF 8 pages.
+
 ## Findings
 
 Each corrected by default behind `compat::java("QSn")`, `-java_compat` gives Java's behaviour; QS8 and QS10
@@ -336,8 +390,52 @@ have no switch (see each).
   - **Evidence:** `train_increment_tenth`: Java exit 1 "Percentile increment should evenly divide 100".
   - **Corrected:** the increment must divide 100 to within 1e-7; 0.1 gives 1,001 percentiles (as
     `-num_percentiles 1001`).
+- **QS13 (plot_qc.R, coverage and fragment length panels): the mirrored y axis loses its decimals.**
+  - **What R does:** the normal sample is drawn below zero and the axis labelled
+    `scales::label_percent()(abs(x))`. The breaks carry rounding noise (`abs(-0.025)` and `abs(0.025)` differ
+    in the last bits), so `scales::precision` sees a gap below sqrt(machine eps) between them and labels at
+    accuracy 1: 2.5% on both sides becomes "2%" above zero and "3%" below, and an axis of 0.25% steps reads
+    "0%" at every break.
+  - **Evidence:** HG008's report (R's in the qsee image, as the pipeline's): the coverage axis, in steps of
+    2.5%, reads 2%, 0%, 3%, 5%, and the fragment length axis 0%, 0%, 0%; the port in Java mode draws the same
+    labels.
+  - **Corrected:** the absolute values are taken at 12 significant digits before labelling, so the labels
+    have the accuracy the breaks need: on HG008 2.5%, 0.0%, 2.5%, 5.0% and 0.25%, 0.00%, 0.25%. The breaks
+    are unchanged; the wider labels narrow those two panels by their extra width.
+- **QS14 (plot_qc.R with ggplot2 4.0.3): without PURPLE's outputs the report is not drawn and qsee fails.**
+  - **What R and Java do:** with `-allow_missing_input` and no PURPLE files, the summary table's two LOG10
+    sub-tables (Copy number, Mutational burden) have no rows. Their dummy limit points inherit the empty data,
+    so the log scale is never trained; ggplot2 4.0.3's `guide_axis_logticks` then gets no parameters, and
+    under `coord_flip` its transform calls `setNames(NULL, ...)`: "Error in names(object) <- nm : attempt to
+    set an attribute on NULL". R leaves a blank one-page PDF and no PNG; QseePlotTask throws a
+    RuntimeException, so qsee exits 1 after writing its data files.
+  - **Evidence:** case missing_no_purple_allow (the Java baseline's vis data, R in the qsee image): R exit 1;
+    the call stack ends in `GuideAxisLogticks$transform` -> `CoordFlip$transform` -> `flip_axis_labels` ->
+    `setNames`. The port in Java mode: exit 1, the same blank page (no pixel differs at 100 dpi), no PNG.
+  - **Corrected:** the report is drawn as R draws it once the guide skips an empty scale (as `guide_axis`
+    does; `scripts/ggplot2_logticks_fix.R` outside this repository applies that to R for the reference): the
+    empty sub-tables keep their titles and zero-height panels (R's y axis there, trained only by the div lines
+    at `seq(1.5, 0)`, prints 0.50 to 1.50 on top of each other, and the port draws them so). Case
+    missing_no_purple_fixed: the layout equals patched R's, pdftotext identical, every word at R's position.
+
+Kept as R draws it, recorded:
+- **QS15 (plot_qc.R): the MS indel panels' last strip label is cut off.** The four repeat-type strips of
+  panels J and K share the panel width, and ">=3bp repeat" is wider than its strip at 8.4 pt, so R clips both
+  of its ends in the PNG (DejaVu Sans; Helvetica in the PDF is narrower). Fixing it needs a layout choice
+  (a smaller strip font, shorter labels or wider panels) that belongs to the script; the port clips as R.
+- **QS16 (ggplot2 4.0.3's draw_key_label, in the report's QC-status legend): a size in mm used as points.** The
+  key is raised by `font_descent(size = data$size)`, the label size in mm passed where a font size in points is
+  expected (the key's text is set at `size * .pt`), so the raise is the descent of a font about a third of the
+  size: 3.7 px at 300 dpi in R's viewports, where the label's own descent is about 9 px. The intent is unclear:
+  with 4.0.3's labelGrob, which centres the box on its point, no raise at all would centre the box in its key
+  cell, so the slip brings it closer to the centre than consistent units would. Cosmetic; the port draws the keys
+  where R does (hmf-plot-rs `ggp::geom::key_label`, tested against R's box).
 
 Remarks, not findings:
+- The report's legend is built while R's `pdf(NULL)` device is open, so in the PNG too its keys and texts
+  are sized with Helvetica's metrics and drawn in DejaVu Sans (slightly wider); the port does the same.
+- `plot_qc.R` in the qsee 1.0 biocontainer's jar is older than this repository's (and than the pipeline's
+  qsee 1.1-beta.1); the port follows the repository's.
 - The discordant fragment features divide fragment counts by total reads (ESVEE notes its counts are in
   fragment terms, "hence see doubling in rate calc"), so they are half the share of reads; the cohort
   percentiles use the same definition, so the comparison is consistent and nothing is changed.
@@ -351,7 +449,9 @@ The port is 14 (HG008) and 16 (private pair) times faster than Java on the pipel
 fortieth of the memory: 0.21 s and 34 MB against 2.92 s and 1,359 MB (HG008), 0.27 s and 38 MB against 4.22 s
 and 1,433 MB (private pair), both with `-skip_plot`. With the R report (the pipeline's command) both take
 about 9 s more, R's time: 9.0 s against 12.3 s (HG008), 9.6 s against 14.2 s; R's peak (about 330 MB) is then
-the port's. In multi-sample mode (12 synthetic samples) 1.0 s against 13.8 s.
+the port's. In multi-sample mode (12 synthetic samples) 1.0 s against 13.8 s. (Those rows ran R. Since
+2026-11-27 the port draws the report itself in about 0.1 s: 0.31 s and 181 MB for HG008 with the report, the
+memory mostly the 5100 x 3000 canvas.)
 
 Where the port's 0.19 s of CPU goes (HG008, from the log's time stamps):
 - the tumor's ten categories: 7 ms; the normal's and the cohort file (1.1 MB gzip, 4,000 rows of 101
@@ -386,7 +486,10 @@ Additions only; no existing behaviour changed. `cargo test --release` in hmf-com
 
 ## Open points
 
-- `-merge_plots` (multi-sample PDF merging with PDFBox) is not ported; the per-sample PDFs are kept.
+- The report's PNG text and clipping are hmf-plot-rs's (whole-pixel glyphs and clips; see "The report, drawn
+  natively"); matching Cairo there needs sub-pixel glyph positioning and partial-coverage clipping in the
+  rasteriser.
+
 - SBX and ULTIMA: only the BQR quality bins depend on the sequencing type; checked with HG008's (Illumina)
   BQR file run as SBX and ULTIMA and with synthetic BQR rows (DUAL / SINGLE read types, MEDIUM qualities),
   not with real SBX or Ultima REDUX output (none at hand).
@@ -398,4 +501,6 @@ Additions only; no existing behaviour changed. `cargo test --release` in hmf-com
 HG008 rerun 11 on Google Batch ran qsee as the port, in Java mode, with every other step from the cache. The
 image has no R, so its wrapper added `-skip_plot`. The three data files (gene limit of detection, status, vis
 data) are identical to the first run's (qsee 1.1-beta.1); the R report was not drawn. ORANGE ran on them and
-reported no qsee plot. qsee took 2.6 s and 21 MB, against Java's 38 s and 1.1 GB (with R).
+reported no qsee plot. qsee took 2.6 s and 21 MB, against Java's 38 s and 1.1 GB (with R). Since 2026-11-27
+qsee-rs draws the report; for the pipeline to get it the image's `qsee` wrapper must stop adding `-skip_plot`
+(it added it whenever Rscript was missing), after which ORANGE gets its qsee page as with Java.

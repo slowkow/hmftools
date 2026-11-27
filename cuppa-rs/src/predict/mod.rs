@@ -1,7 +1,7 @@
 //! pycuppa's prediction (`python -m cuppa.predict`, cuppa/runners/prediction_runner.py) in Rust: the
-//! features file in, `<sample>.cuppa.pred_summ.tsv` and `<sample>.cuppa.vis_data.tsv` out. The plot
+//! features file in, `<sample>.cuppa.pred_summ.tsv` and `<sample>.cuppa.vis_data.tsv` out, then the plot
 //! `<sample>.cuppa.vis.png` (or `cuppa.vis.pdf` for several samples), which pycuppa draws with the R script
-//! cuppa/visualization/plot_predictions.R (ggplot2, ggh4x, patchwork), is not drawn.
+//! cuppa/visualization/plot_predictions.R (ggplot2, ggh4x, patchwork) and the port draws natively (`crate::plot`).
 
 pub mod classifier;
 pub mod cv;
@@ -293,10 +293,13 @@ pub fn run(a: &PredictArgs) -> Result<()> {
         );
         return Ok(());
     }
-    pylog::warning(
-        "CuppaVisPlotter",
-        "plot",
-        &format!("Not drawing {plot_path}: pycuppa draws it with the R script cuppa/visualization/plot_predictions.R from the vis data"),
-    );
+    // pycuppa runs `Rscript --vanilla plot_predictions.R <vis data> <plot>`; the port draws it natively. A plot that
+    // R could not draw (no snv_count feature, no CV performance) fails the run as pycuppa's CalledProcessError does,
+    // after the data files are written.
+    pylog::info("RscriptExecutor", "run", &format!("Drawing the plot natively: {plot_path}"));
+    if let Err(e) = crate::plot::draw(&vis_path, &plot_path) {
+        pylog::error("RscriptExecutor", "raise_if_error", &format!("Plotting failed: {e:#}"));
+        bail!("CalledProcessError");
+    }
     Ok(())
 }

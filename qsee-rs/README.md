@@ -5,7 +5,7 @@ from the PURPLE, BamTools, COBALT, ESVEE and REDUX outputs of a tumor (and its n
 thresholds, the limit of detection of variants per exon of the reportable driver genes, and a comparison
 with a cohort. It takes the same options and writes the same files as the Java `QseeApplication`; with
 `-java_compat` they are byte-identical to Java's (gzip bytes included). Faults found in the Java code are
-corrected by default (findings QS1-QS12 in [REPORT.md](REPORT.md)).
+corrected by default (findings QS1-QS16 in [REPORT.md](REPORT.md); QS15 and QS16 are kept as R draws them).
 
 ## Build and run
 
@@ -28,7 +28,7 @@ as the first argument:
   `-num_percentiles` (101), `-percentile_increment` and `-write_cohort_features`;
 - `DefaultThresholdsWriter`: `qsee.thresholds.default.tsv`, with `-targeted_mode` and `-no_overridable_only`;
 - `GeneLodCalculator`: the gene limit of detection file only;
-- `QseePlot`: the R report only, from an existing vis data file (`-vis_data_file`).
+- `QseePlot`: the report only, from an existing vis data file (`-vis_data_file`).
 
 ## Options
 
@@ -41,7 +41,7 @@ As Java's (`qsee-rs -help` lists them):
   `*` in a directory is replaced by the sample id. `-allow_missing_input`: a missing input is a warning and its
   features are left out, rather than an error.
 - **Resources:** `-driver_gene_panel` (the reportable genes of the missed-variant likelihood and the LoD),
-  `-cohort_percentiles_file` (only checked here, for features the cohort lacks; the R report draws it),
+  `-cohort_percentiles_file` (checked for features the cohort lacks; the report draws its percentiles),
   `-threshold_overrides_file`.
 - **Other:** `-sequencing_type` (ILLUMINA, SBX, ULTIMA: the base quality bins of the BQR features),
   `-targeted_mode` (the targeted thresholds), `-skip_categories` (comma-separated), `-write_lod_details`
@@ -59,18 +59,26 @@ As Java's (`qsee-rs -help` lists them):
 - `<tumor>.qsee.status.tsv.gz`: the features with a QC status (PASS, WARN, FAIL) and the condition.
 - `<tumor>.qsee.gene_lod.tsv.gz`: per exon of the reportable genes, the sample and tumor VAF at which a
   variant is detected 95% of the time, and PASS / WARN_HET_UNRELIABLE / FAIL.
-- `<tumor>.qsee.vis.report.pdf` and `.png`: the R report (`resources/plot_qc.R`, the jar's script),
-  drawn by `Rscript` as Java does it, unless `-skip_plot`.
+- `<tumor>.qsee.vis.report.pdf` and (for a single patient) `.png`: the report that Java has R draw with
+  `plot_qc.R`, drawn natively (`src/plot/`, with hmf-plot-rs), unless `-skip_plot`. With `-merge_plots` in
+  multi-sample mode the reports' pages go into `multisample.qsee.vis.report.pdf` and the per-sample PDFs are
+  deleted, as Java does with PDFBox.
 
 The gzip files are written as java.util.zip writes them (zlib level 6, OS 255), so their bytes are Java's.
 
-## The R report
+## The report
 
-The port runs the jar's `plot_qc.R` (copied unchanged into `resources/`) with the same arguments as
-QseePlotTask: tumor id, reference id or NA, the vis data file, the cohort percentiles file or NA, the PDF
-path, show warnings, single patient, the log level. It needs R with dplyr, ggplot2, patchwork and scales;
-`-skip_plot` writes the data files only (the image of the ports has no R). With `-merge_plots` in
-multi-sample mode Java merges the PDFs with PDFBox; the port keeps the per-sample PDFs and says so.
+The port draws what the repository's `plot_qc.R` (copied unchanged into `resources/` as the reference, not
+run) draws with R 4.5, ggplot2 4.0.3 and patchwork 1.3.2, from the same inputs as QseePlotTask: tumor id,
+reference id or none, the vis data file, the cohort percentiles file or none, the PDF path, single patient.
+R is not needed. The layout equals R's (every element within 0.01 px of R's viewports, in the PNG and the PDF);
+text in the PNG is DejaVu Sans as in the qsee image but rasterised by hmf-plot-rs (whole-pixel glyph positions),
+so pixels at glyph edges, at panel edges (whole-pixel clipping) and of anti-aliased lines differ from Cairo's.
+The PDF has R's page, text and word positions (Helvetica with R's metrics and kerning) and draws as R's at
+100 dpi to within a few pixels. The legend is sized with PDF metrics in the PNG too, as the script builds it
+while R's `pdf(NULL)` device is open. The comparisons are in [REPORT.md](REPORT.md), "The report, drawn
+natively". In the image, the `qsee` wrapper must pass `-skip_plot` on only when the caller gives it (the old
+wrapper added it whenever Rscript was missing).
 
 What the report draws, and from which data (all from the vis data file, with the cohort percentiles file's
 5th, 25th, 50th, 75th and 95th percentiles where given):
@@ -105,4 +113,6 @@ StrictMath.log10, which is what Java's Math.log10 is on the aarch64 machine of t
 
 `cargo test --release` runs the Java unit tests of qsee (16 classes, `src/tests/java_tests.rs`) and tests of
 the port (`src/tests/port.rs`: number formats, the threshold display, key order, quality bins per sequencing
-type, and the corrected findings in both modes). The comparisons with Java are in [REPORT.md](REPORT.md).
+type, and the corrected findings in both modes; `src/plot/`: R's merge order of the cohort rows, the label boxes
+against R's). The report's layout model is tested in hmf-plot-rs (`ggp`, `patchwork`, `pdf_figure`, `raster`).
+The comparisons with Java and R are in [REPORT.md](REPORT.md).

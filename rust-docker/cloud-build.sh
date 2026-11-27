@@ -46,8 +46,8 @@ git -C "$root" archive HEAD \
     peach-rs/Cargo.toml peach-rs/Cargo.lock peach-rs/src peach-rs/testdata \
     chord-rs/Cargo.toml chord-rs/Cargo.lock chord-rs/src chord-rs/resources chord-rs/testdata \
     neo-rs/Cargo.toml neo-rs/Cargo.lock neo-rs/src neo-rs/resources \
-    cuppa-rs/Cargo.toml cuppa-rs/Cargo.lock cuppa-rs/src cuppa-rs/resources cuppa-rs/testdata \
-    qsee-rs/Cargo.toml qsee-rs/Cargo.lock qsee-rs/src qsee-rs/resources qsee-rs/testdata \
+    cuppa-rs/Cargo.toml cuppa-rs/Cargo.lock cuppa-rs/.cargo cuppa-rs/src cuppa-rs/resources cuppa-rs/testdata \
+    qsee-rs/Cargo.toml qsee-rs/Cargo.lock qsee-rs/.cargo qsee-rs/src qsee-rs/resources qsee-rs/testdata \
     orange-rs/Cargo.toml orange-rs/Cargo.lock orange-rs/src orange-rs/resources \
     isofox-rs/Cargo.toml isofox-rs/Cargo.lock isofox-rs/src \
     rust-docker/Dockerfile rust-docker/Dockerfile.dockerignore rust-docker/bin \

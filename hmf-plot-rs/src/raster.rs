@@ -180,7 +180,7 @@ impl Raster {
             // BUI_raster_text_run places the pen at floor(x + 0.5), floor(y + 0.5)
             let family = font.c_family();
             unsafe {
-                let run = bui::BUI_text_prepare(family.as_ptr(), 0, size as f32, s.as_ptr().cast(), s.len() as c_int, std::ptr::null_mut());
+                let run = bui::BUI_text_prepare(family.as_ptr(), font.bui_flags(), size as f32, s.as_ptr().cast(), s.len() as c_int, std::ptr::null_mut());
                 if !run.is_null() {
                     raster_text_run(self.r, x as f32, y as f32, run, rgba.as_ptr());
                 }
@@ -234,6 +234,12 @@ impl Drop for Raster {
 
 fn clip_box(c: Option<(f64, f64, f64, f64)>) -> Option<(i32, i32, i32, i32)> {
     c.map(|(x, y, w, h)| {
+        // an empty clip (a viewport of zero width or height, e.g. the panel of an empty ggplot2 sub-table) shows
+        // nothing, as with Cairo: a one-pixel clip outside the canvas (BUI takes a 0 x 0 clip for none). Added for
+        // CUPPA's and qsee's plots; PURPLE's panels are never empty.
+        if w < 1e-6 || h < 1e-6 {
+            return (-2, -2, 1, 1);
+        }
         let (x0, y0) = (x.round() as i32, y.round() as i32);
         let (x1, y1) = ((x + w).round() as i32, (y + h).round() as i32);
         (x0, y0, (x1 - x0).max(1), (y1 - y0).max(1))
@@ -337,4 +343,25 @@ pub fn render(fig: &Figure) -> Vec<u8> {
         out.extend_from_slice(&[(p >> 16) as u8, (p >> 8) as u8, *p as u8]);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A clip of zero height (an empty panel) hides what is drawn in it; a clip of some size shows its area.
+    #[test]
+    fn empty_clip_shows_nothing() {
+        let mut fig = Figure::new(20, 20, Rgba::WHITE);
+        fig.clip(Some((2.0, 10.0, 16.0, 0.0)));
+        fig.rect(0.0, 0.0, 20.0, 20.0, Rgba::BLACK);
+        fig.clip(None);
+        assert!(render(&fig).iter().all(|&v| v == 255), "an empty clip let a pixel through");
+        let mut fig = Figure::new(20, 20, Rgba::WHITE);
+        fig.clip(Some((2.0, 10.0, 16.0, 4.0)));
+        fig.rect(0.0, 0.0, 20.0, 20.0, Rgba::BLACK);
+        let px = render(&fig);
+        let dark = px.chunks(3).filter(|p| p[0] == 0).count();
+        assert_eq!(dark, 16 * 4);
+    }
 }

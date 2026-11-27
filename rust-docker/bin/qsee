@@ -1,24 +1,14 @@
 #!/usr/bin/env bash
 # `qsee` as oncoanalyser calls the Java tool, run by qsee-rs: JVM options are dropped; qsee-rs takes the Java main
-# classes itself (QseeApplication, the default, and the jar's other entry points). The visual report is drawn by
-# the jar's R script, as Java does; where Rscript is not on PATH (as in this image), `-skip_plot` is added, so
-# every data file is written and the report is not (ORANGE does not use it). -java_compat or QSEE_JAVA_COMPAT=1
-# selects Java's behaviour.
+# classes itself (QseeApplication, the default, and the jar's other entry points). qsee-rs draws the visual report
+# (<tumor>.qsee.vis.report.pdf and .png) natively, as the jar's R script does, so no R is needed; `-skip_plot` is
+# passed on only when the caller gives it. -java_compat or QSEE_JAVA_COMPAT=1 selects Java's behaviour.
 set -euo pipefail
 args=()
-skip=0
-run=0
 for a in "$@"; do
     case "$a" in
         -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
-        -skip_plot) skip=1; args+=("$a") ;;
-        -output_dir) run=1; args+=("$a") ;;
         *) args+=("$a") ;;
     esac
 done
-# only for a run (with -output_dir): `qsee -version` and `-help` take no other option
-if [ "$run" = 1 ] && [ "$skip" = 0 ] && ! command -v Rscript > /dev/null 2>&1; then
-    echo "qsee (Rust port): Rscript not found; writing the data files without the visual report (-skip_plot)" >&2
-    args+=("-skip_plot")
-fi
 exec qsee-rs ${args[@]+"${args[@]}"}
