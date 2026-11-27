@@ -445,7 +445,9 @@ pub fn process_bam(params: &TelbamParams) -> Result<()> {
     std::fs::File::create(params.telbam_file).with_context(|| format!("creating {}", params.telbam_file))?;
     let header_view = reader.header().clone();
     let contigs = Contigs::from_header(&header_view);
-    let header = bam::Header::from_template(&header_view);
+    // htsjdk writes the input header with its own version, VN:1.6, whatever the input's
+    let text = hmf_common::sam_header::htsjdk_header_version(&String::from_utf8_lossy(header_view.as_bytes()));
+    let header = bam::Header::from_template(&bam::HeaderView::from_bytes(text.as_bytes()));
     let coordinate_sorted = sort_order(&header_view) == Some("coordinate".to_string());
 
     let mut w = RecordWriter {

@@ -26,6 +26,7 @@ so that their output equals the Java tools'.
 | `blosum` | BlosumMapping: BLOSUM62 with the stop codon penalty |
 | `csv` | commons-csv's CSVPrinter as the Kotlin tools write TSV: MINIMAL quoting, null string |
 | `kotlin_random` | kotlin.random.Random(seed), the XorWow generator (nextInt, nextBits, nextDouble) |
+| `sam_header` | SAM header lines as htsjdk writes them: `@HD VN:1.6` (SAMFileHeader.CURRENT_VERSION) whatever the version of the header read, as REDUX, TEAL and CIDER write their BAMs |
 | `ref_coords` | RefGenomeCoordinates: the GRCh37 and GRCh38 lengths of chromosomes 1-22, X and Y (resources refgenome/lengths.*.tsv) |
 
 The ports take it as a path dependency (`hmf-common = { path = "../hmf-common-rs" }`, with

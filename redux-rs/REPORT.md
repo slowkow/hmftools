@@ -613,3 +613,19 @@ partition was complete, in the default mode it runs beside the other partitions.
 down to Java mode's would mean making the deep partition wait again, which is what costs Java mode its
 wall time; this was not done. The peak also varies between runs of one mode by as much as the modes
 differ in the second pair.
+
+## 7. The BAM header version (2026-11-27)
+
+Java REDUX writes `@HD VN:1.6` whatever the input header says. htsjdk's text header decoder does not
+keep the input's version: the decoded SAMFileHeader keeps the one its constructor sets,
+SAMFileHeader.CURRENT_VERSION (1.6), and the BAM writer writes that. redux-rs kept the input's version.
+- **Where it shows:** in the pipeline, bwa-mem3's BAMs say `VN:1.3`. The T0 Java run's REDUX BAM says
+  `VN:1.6`, and the Rust run's said `VN:1.3`. Every local comparison used inputs that already said 1.6.
+- **Fix:** from hmftools 2026-11-27 redux-rs writes `VN:1.6`, in both modes, since this is library
+  behaviour, not a fault.
+- **Check:** on an IGH-locus slice of the public HG008 tumor BAM (`VN:1.5`), Java REDUX and redux-rs in
+  Java mode give identical headers, all 1,154,615 records, and every other output file.
+
+TEAL's telbam and CIDER's cider.bam had the same fault, fixed the same way.
+The fix is in hmf-common-rs (`sam_header`): `VN:1.6` first, then the line's other tags in their order.
+

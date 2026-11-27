@@ -563,7 +563,8 @@ pub fn htsjdk_header_text(text: &[u8]) -> String {
         }
     }
     let mut out = String::new();
-    out.push_str(&hd.unwrap_or_else(|| "@HD\tVN:1.6".to_string()));
+    // htsjdk's decoded header has its own version (VN:1.6), not the input's
+    out.push_str(&hd.map(|l| hmf_common::sam_header::htsjdk_hd_line(&l)).unwrap_or_else(|| "@HD\tVN:1.6".to_string()));
     out.push('\n');
     for l in sq.iter().chain(&rg).chain(&pg).chain(&co) {
         out.push_str(l);

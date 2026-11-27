@@ -21,6 +21,7 @@
 //! - `bwa` (with the `bwa` feature): BWA-MEM alignment through the vendored bwa, as gatk-bwamem-jni.
 //! - `csv`: commons-csv's CSVPrinter as the Kotlin tools use it (tab-delimited, MINIMAL quoting).
 //! - `kotlin_random`: kotlin.random.Random(seed), the XorWow generator.
+//! - `sam_header`: SAM header lines as htsjdk writes them (`@HD VN:1.6` whatever the input's version).
 
 pub mod args;
 pub mod blosum;
@@ -44,5 +45,6 @@ pub mod log;
 pub mod metrics;
 pub mod ref_coords;
 pub mod refgenome;
+pub mod sam_header;
 pub mod regions;
 pub mod segmentation;

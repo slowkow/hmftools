@@ -58,6 +58,18 @@ writes and the pipeline's 1.2 build does not: the two "1.2" builds are not the s
 writes the fork's columns. That the whole BAM and its cider.bam give the same VDJ sequences also means no
 mate read outside cider.bam extended a sequence in this sample.
 
+**In the pipeline (HG008 on Google Batch, 2026-11-27).** The port in Java mode against that pipeline
+output, now on the whole HG008 BAM. It took 20 s and 0.52 GB against Java's 37 s and 6.2 GB.
+- **Columns:** the vdj.tsv rows have the fork's two extra columns, as above.
+- **One extra read:** cider.bam has 31,408 reads against 31,407 (flag 147 at chr14:106,356,136, MAPQ 0),
+  so the IGH counts in locus_stats are one higher. Java CIDER 1.2 of the fork includes that read too, at 1
+  and at 6 threads, on an IGH-locus slice of the same BAM. So the difference is the pipeline's other
+  1.2 build, not the port.
+- **Header:** cider.bam's `@HD VN` was the input's 1.5, while Java writes htsjdk's 1.6. htsjdk's decoded
+  header does not keep the input's version. Fixed on 2026-11-27 in both modes (hmf-common-rs
+  `sam_header`). On that slice the port's five outputs, cider.bam included, are then byte-identical to
+  the fork's Java. Every local input said 1.6.
+
 ## 2. Findings
 
 Each finding with a switch is corrected by default; `-java_compat` (or `-java_compat_except CIn,...`)

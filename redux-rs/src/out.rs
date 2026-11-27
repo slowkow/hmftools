@@ -325,6 +325,8 @@ pub fn build_combined_header(bam_files: &[String], ref_genome: &str) -> Result<b
     }
     let hd_line = match hd {
         Some(l) => {
+            // htsjdk writes its own version (VN:1.6) whatever the input's (bwa-mem3 writes VN:1.3)
+            let l = hmf_common::sam_header::htsjdk_hd_line(&l);
             let mut fields: Vec<String> = l.split('\t').filter(|f| !f.starts_with("SO:")).map(str::to_string).collect();
             fields.insert(fields.len().min(2), "SO:coordinate".to_string());
             fields.join("\t")

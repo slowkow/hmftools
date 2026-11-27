@@ -105,6 +105,21 @@ whole-genome telbams:
 
 **Not yet compared:** the whole-genome prep against Java (section 5).
 
+### In the pipeline (GIAB HG008, 2026-11-27)
+
+The port in Java mode ran TEAL_PREP and TEAL_PIPELINE on Google Batch, against the Java TEAL 1.4 of the
+first HG008 run on the same inputs.
+- **Lengths and break ends:** both tellength files and the breakend file are identical.
+- **Telbams:** the same records in the same order (165,022 tumor, 104,103 normal), although Java's prep ran
+  at 16 threads (TE6). The headers differed only in `@HD VN`: Java writes htsjdk's version, 1.6, and the
+  port kept the input's 1.5. From 2026-11-27 the port writes 1.6 too (hmf-common-rs `sam_header`). A
+  `VN:1.5` slice of the HG008 tumor BAM then gives a byte-identical telbam header from both. Every local
+  input said 1.6.
+- **Time:** TealPipelineApp took 7.4 s and 0.4 GB against Java's 35 s and 2.3 GB. The prep took 15.5
+  minutes at 165% CPU and 1.1 GB, against Java's 13.8 minutes at 1112% CPU and 8.6 GB (n2-highmem-16,
+  BAMs through gcsfuse). The port reads the two BAMs one after the other, each as one stream, and one
+  gcsfuse stream gives about 160 MB/s. Java's 15 reader threads read in parallel (section 5).
+
 ## 2. How the prep reproduces Java
 
 BamProcessor runs `max(threads - 1, 1)` reader threads. With one, at `-threads` up to 2, the writer sees:
@@ -216,3 +231,7 @@ at whole-genome sizes), plus up to 2 x threads + 2 inflated batches of about 4 M
 - **Whole-genome prep against Java:** the Java reference was not ready when this was written.
 - **TE3 and TE5** are questions for Hartwig.
 - **Not run:** Java with 3 or more threads (TE6 says why its result varies), and a whole-genome CRAM.
+- **Prep reading on Batch:** on BAMs read through a bucket mount the prep is bound by one stream per BAM
+  (section 1, in the pipeline). Two remedies keep the single-reader result:
+  - read the tumor and normal at the same time;
+  - give the BGZF reader several concurrent ranged reads ahead of the record it is at.
