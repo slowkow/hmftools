@@ -266,3 +266,10 @@ parallel.
   last frame shows everything in colour.
 
 Not ported: cohort vis files (`-load_cohort_files`) and `-specific_regions`.
+
+## In the pipeline: the visualiser (GIAB HG008, 2026-11-27)
+
+HG008 rerun 16 on Google Batch ran LINX_VISUALISER as the port (both of the step's calls, all plots and
+`-plot_reportable`), on purple-rs's outputs from the cache. It wrote the 49 and 8 plots Java wrote, under the same
+names, drawn natively; ORANGE then embedded the reportable ones in its PDF, whose text and layout equal Java's.
+24 s and 0.9 GB, against Java's 5 min and 12 GB with Circos and R.
