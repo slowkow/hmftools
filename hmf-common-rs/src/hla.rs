@@ -146,3 +146,61 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Addition for ORANGE (2026-11-27): LilacQcData, LILAC's `<sample>.lilac.qc.tsv` (read)
+
+/// LilacQcData (the fields the reader parses)
+#[derive(Clone, Debug, PartialEq)]
+pub struct LilacQcData {
+    pub genes: String,
+    pub status: String,
+    pub total_fragments: i32,
+    pub fitted_fragments: i32,
+    pub discarded_indels: i32,
+    pub discarded_alignment_fragments: i32,
+    pub hla_y_allele: String,
+}
+
+/// LilacQcData.generateFilename: checkAddDirSeparator(basePath) + sample + ".lilac.qc.tsv"
+pub fn lilac_qc_filename(base_path: &str, sample: &str) -> String {
+    let base = if base_path.ends_with('/') { base_path.to_string() } else { format!("{base_path}/") };
+    format!("{base}{sample}.lilac.qc.tsv")
+}
+
+/// LilacQcData.read: as LilacAllele.read, the `.csv` fallback, the delimiter by extension, lines split
+/// without a limit and Genes optional
+pub fn read_lilac_qc(path: &str) -> Result<Vec<LilacQcData>> {
+    let filename = check_file_extension_rename(path);
+    let delim = infer_file_delimiter(&filename);
+    let lines = read_lines(&filename).with_context(|| format!("java.nio.file.NoSuchFileException: {filename}"))?;
+    let header = lines.first().ok_or_else(|| anyhow!("{filename}: IndexOutOfBoundsException: Index 0 out of bounds for length 0"))?;
+    let f = fields_index_map(header, delim);
+    let genes_index = f.get("Genes").copied();
+    let mut out = Vec::new();
+    for line in &lines[1..] {
+        let v = split(line, delim);
+        let at = |i: usize| -> Result<&str> {
+            v.get(i).copied().ok_or_else(|| anyhow!("{filename}: ArrayIndexOutOfBoundsException: index {i} of {}", v.len()))
+        };
+        let g = |n: &str| -> Result<&str> { at(f.get(n).copied().ok_or_else(|| anyhow!("{filename}: missing column {n}"))?) };
+        let int = |n: &str| -> Result<i32> {
+            let s = g(n)?;
+            parse_int(s).ok_or_else(|| anyhow!("NumberFormatException: For input string: \"{s}\""))
+        };
+        let genes = match genes_index {
+            Some(i) => at(i)?.to_string(),
+            None => MHC_CLASS_I.to_string(),
+        };
+        out.push(LilacQcData {
+            genes,
+            status: g("Status")?.to_string(),
+            total_fragments: int("TotalFragments")?,
+            fitted_fragments: int("FittedFragments")?,
+            discarded_alignment_fragments: int("DiscardedAlignmentFragments")?,
+            discarded_indels: int("DiscardedIndels")?,
+            hla_y_allele: g("HlaYAllele")?.to_string(),
+        });
+    }
+    Ok(out)
+}

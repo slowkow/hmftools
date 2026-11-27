@@ -1,0 +1,18 @@
+[package]
+name = "orange-rs"
+version = "0.1.0"
+edition = "2024"
+description = "hmftools ORANGE 5.1 (the JSON report) in Rust"
+
+[[bin]]
+name = "orange-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+hmf-common = { path = "../hmf-common-rs" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4

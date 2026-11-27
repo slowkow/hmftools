@@ -28,7 +28,7 @@ so that their output equals the Java tools'.
 | `kotlin_random` | kotlin.random.Random(seed), the XorWow generator (nextInt, nextBits, nextDouble) |
 | `sam_header` | SAM header lines as htsjdk writes them: `@HD VN:1.6` (SAMFileHeader.CURRENT_VERSION) whatever the version of the header read, as REDUX, TEAL and CIDER write their BAMs |
 | `sv` | structural variants from a VCF: StructuralVariantType, the record reader with htsjdk's attribute rules, StructuralVariantFactory, EnrichedStructuralVariantFactory, StructuralVariantData (LINX) |
-| `purple_files` | PURPLE's files: PurpleCopyNumber, PurityContext (purity, ploidy, gender, WGD) and the full PurplePurity, GeneCopyNumber, DriverCatalog (read and write), `write_lines` as Files.write |
+| `purple_files` | PURPLE's files: PurpleCopyNumber, PurityContext (purity, ploidy, gender, WGD) and the full PurplePurity, GeneCopyNumber, DriverCatalog (read and write), ChrArmCopyNumber, GermlineAmpDel, HumanChromosome.fromString, `write_lines` as Files.write |
 | `known_fusion` | KnownFusionCache and KnownFusionData (the known fusion file), KnownFusionType, FusionCommon's constants |
 | `transcript_utils` | TranscriptUtils: coding bases and phases |
 | `poisson` | re-exports `commons_math`'s PoissonDistribution, logGamma and regularized gamma functions (AMBER, LINX), and PoissonCalcs.calcPoissonNoiseValue (NEO) |
@@ -39,7 +39,8 @@ so that their output equals the Java tools'.
 | `java_strictmath` | StrictMath exp, log, log10 and pow (FdLibm) |
 | `kernel_estimator` | hmf-common KernelEstimator |
 | `config_builder` | hmf-common ConfigBuilder: registered items, hasValue, path and number checks, -version and -help (PURPLE) |
-| `neo`, `hla`, `rna` | the neoepitope files of LINX and NEO, LILAC's allele file, ISOFOX's transcript expression and the cohort expression matrix (NEO) |
+| `neo`, `hla`, `rna` | the neoepitope files of LINX and NEO, LILAC's allele and QC files, ISOFOX's transcript and gene expression, summary statistics, RNA fusions and novel splice junctions, and the cohort expression matrix (NEO) |
+| `linx_files`, `small_variant`, `tool_results`, `cytobands` | LINX's SV annotations, breakends, clusters, fusions, drivers and germline disruptions; PURPLE's small variants as SmallVariantFactory reads them (filters, impacts, pathogenicity); CHORD, PEACH, SIGS, Virus Interpreter and CUPPA result files and the pipeline version file; the cytoband tables (resources/refgenome) (ORANGE) |
 | `sigs` | hmf-common sigs: LeastSquaresFit, Matrix / loadMatrixDataFile, SnvSigUtils (bucket names, variantContext, the COSMIC SNV signatures resource) and PositionFrequencies' functions (SIGS, CUPPA) |
 | `delim_file` | DelimFileReader (named columns), and the plain or gzip writer of FileWriterUtils.createBufferedWriter with DelimFileWriter's rows |
 | `redux_files`, `cobalt_files`, `esvee_files` | REDUX's BQR, duplicate frequency and jitter count files, COBALT's GC median file, ESVEE's discordant fragment statistics (qsee) |

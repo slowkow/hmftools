@@ -35,6 +35,9 @@
 //!   distributions, StrictMath, KernelEstimator and ConfigBuilder as the Java tools use them.
 //! - `neo`, `hla`, `rna`: the neoepitope files of LINX, NEO and ISOFOX, LILAC's allele file, and ISOFOX's
 //!   transcript expression and the cohort expression matrix (NEO).
+//! - `linx_files`, `small_variant`, `cytobands`, `tool_results` (added for ORANGE): LINX's output files,
+//!   SmallVariantFactory (PURPLE's VCFs as SmallVariants), CytoBands, and the result files of CHORD, PEACH,
+//!   SIGS, Virus Interpreter and CUPPA and the pipeline version file.
 
 pub mod args;
 pub mod blosum;
@@ -46,6 +49,7 @@ pub mod commons_math;
 pub mod config_builder;
 pub mod compat;
 pub mod csv;
+pub mod cytobands;
 pub mod delim_file;
 pub mod driver_panel;
 pub mod ensembl;
@@ -63,6 +67,7 @@ pub mod java_strictmath;
 pub mod java_text;
 pub mod kernel_estimator;
 pub mod known_fusion;
+pub mod linx_files;
 pub mod kotlin_random;
 pub mod log;
 pub mod metrics;
@@ -77,7 +82,9 @@ pub mod poisson;
 pub mod purple_files;
 pub mod segmentation;
 pub mod sigs;
+pub mod small_variant;
 pub mod sv;
+pub mod tool_results;
 pub mod transcript_utils;
 pub mod variant_context;
 pub mod vcf;

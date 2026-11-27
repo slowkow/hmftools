@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# `orange` as oncoanalyser calls the Java tool (ORANGE), run by orange-rs: JVM options are dropped. orange-rs writes
+# the JSON report and copies the plots; it does not write the PDF (an optional output of the pipeline's step).
+# -java_compat selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec orange-rs ${args[@]+"${args[@]}"}

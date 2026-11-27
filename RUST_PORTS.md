@@ -212,6 +212,15 @@ Second batch, merged on 2026-11-27:
   shown as `>` where PURPLE uses `>=` (QS4, every run), PURPLE's WARN_CONTAMINATION shown as PASS (QS5), a
   missing BQR file fatal despite `-allow_missing_input` (QS1).
 
+- **ORANGE** (`orange-rs`): the JSON report and the plot copies byte-identical to Java ORANGE 5.1 on 33 cases (24
+  identical JSONs; in 9 both fail): HG008 with the pipeline's command, a private pair, tumor-only, targeted, minimal
+  and option cases, the Java tests' run with RNA, and a synthetic case reaching fusions, germline findings, viruses
+  and ISOFOX results. On HG008 0.28 s and 43 MB against 9.0 s and 764 MB (1.0 s and 350 MB for Java's JSON part
+  alone). Findings OR1-OR11: `-primary_tumor_doids` never resolves (OR1), CUPPA's `simpleDups32To200B` read from the
+  20 kb-1 Mb deletion feature (OR5: HG008 5 instead of 1), TAPBP misspelt "TABBP" in the immune escape genes (OR9),
+  and every tumor/normal run without CHORD, so every targeted tumor/normal run, failing in the PDF writer before
+  the JSON is written (OR10). The PDF is not drawn yet.
+
 For the R and Python parts, the first version keeps calling the same scripts, so plots and
 predictions stay identical. Replacing them is a separate decision per program: a random forest or a
 fitted classifier can be reproduced exactly in Rust; plots and the PDF cannot be byte-identical and
@@ -221,7 +230,7 @@ would be checked by eye.
 
 | Program | Size | Notes |
 |---|---|---|
-| ISOFOX | 27,800 | RNA transcript counts and fusions; not in the run above, so its cost is not measured yet |
+| ISOFOX | 27,800 | RNA transcript counts and fusions; not in the run above, so its cost is not measured yet. Being ported (2026-11-27) on a tumor RNA sample run through STAR, oncoanalyser's upstream RNA route |
 | Viridian | 4,100 | Hartwig's replacement for VIRUSBreakend and Virus Interpreter; not yet in oncoanalyser 3.0.0 |
 
 SAGE append, used for RNA, is already part of `sage-rs`.

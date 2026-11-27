@@ -5,6 +5,7 @@
 !hmf-common-rs/src
 !hmf-common-rs/build.rs
 !hmf-common-rs/vendor
+!hmf-common-rs/resources
 !hmf-common/src/test/resources/segmentation
 !hmf-common/src/test/resources/pcf
 !sage-rs/Cargo.toml
@@ -92,4 +93,7 @@
 !qsee-rs/src
 !qsee-rs/resources
 !qsee-rs/testdata
+!orange-rs/Cargo.toml
+!orange-rs/Cargo.lock
+!orange-rs/src
 !rust-docker/bin

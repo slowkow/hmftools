@@ -713,3 +713,187 @@ mod purple_purity_tests {
         assert_eq!(purple_purity_filename("", "S"), "/S.purple.purity.tsv");
     }
 }
+
+/// PurityContextFile.readWithQC: the QC file, then the purity file
+pub fn read_purity_context_with_qc(qc_file: &str, purity_file: &str) -> Result<(PurpleQc, PurplePurity)> {
+    let qc = read_purple_qc(qc_file)?;
+    let purity = read_purple_purity(purity_file)?;
+    Ok((qc, purity))
+}
+
+/// DriverCatalogFile.generateGermlineFilename
+pub fn driver_catalog_germline_filename(base_path: &str, sample: &str) -> String {
+    format!("{base_path}/{sample}.purple.driver.catalog.germline.tsv")
+}
+
+/// ChrArmCopyNumber (chromosome as HumanChromosome's name: "1".."22", "X", "Y"; arm "P" or "Q")
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChrArmCopyNumber {
+    pub chromosome: String,
+    pub arm: String,
+    pub mean_copy_number: f64,
+    pub median_copy_number: f64,
+    pub min_copy_number: f64,
+    pub max_copy_number: f64,
+}
+
+/// HumanChromosome.fromString: the enum name without a "chr" prefix (any case); Err where valueOf throws
+pub fn human_chromosome(chromosome: &str) -> Result<String> {
+    let name = if chromosome.len() >= 3 && chromosome[..3].eq_ignore_ascii_case("chr") { &chromosome[3..] } else { chromosome };
+    if crate::ref_coords::chromosome_length(name, false).is_some() {
+        Ok(name.to_string())
+    } else {
+        bail!("java.lang.IllegalArgumentException: No enum constant HumanChromosome._{name}")
+    }
+}
+
+/// ChrArmCopyNumbersFile.generateFilename
+pub fn chr_arm_copy_number_filename(base_path: &str, sample: &str) -> String {
+    format!("{}{sample}.purple.chromosome_arm.tsv", check_add_dir_separator(base_path))
+}
+
+/// ChrArmCopyNumbersFile.read
+pub fn read_chr_arm_copy_numbers(path: &str) -> Result<Vec<ChrArmCopyNumber>> {
+    let lines = read_lines(path).with_context(|| format!("java.nio.file.NoSuchFileException: {path}"))?;
+    let Some(header) = lines.first() else { bail!("{path}: IndexOutOfBoundsException: Index 0 out of bounds for length 0") };
+    let f = fields_index_map(header, '\t');
+    let c = |n: &str| col(&f, n, path);
+    let (chr, arm, mean, median, min, max) =
+        (c("chromosome")?, c("arm")?, c("meanCopyNumber")?, c("medianCopyNumber")?, c("minCopyNumber")?, c("maxCopyNumber")?);
+    let mut out = Vec::new();
+    for line in lines.iter().skip(1) {
+        let v: Vec<&str> = line.split('\t').collect();
+        let g = |i: usize| v.get(i).copied().ok_or_else(|| anyhow!("{path}: short line: {line}"));
+        let arm_value = g(arm)?;
+        if arm_value != "P" && arm_value != "Q" {
+            bail!("java.lang.IllegalArgumentException: No enum constant segmentation.Arm.{arm_value}");
+        }
+        out.push(ChrArmCopyNumber {
+            chromosome: human_chromosome(g(chr)?)?,
+            arm: arm_value.to_string(),
+            mean_copy_number: dbl(g(mean)?)?,
+            median_copy_number: dbl(g(median)?)?,
+            min_copy_number: dbl(g(min)?)?,
+            max_copy_number: dbl(g(max)?)?,
+        });
+    }
+    Ok(out)
+}
+
+const GERMLINE_DETECTION_METHODS: [&str; 2] = ["SEGMENT", "EXON_COVERAGE"];
+/// purple.GermlineStatus names
+pub const GERMLINE_STATUSES: [&str; 9] =
+    ["HOM_DELETION", "HET_DELETION", "AMPLIFICATION", "NOISE", "DIPLOID", "LIKELY_DIPLOID", "EXCLUDED", "CENTROMETIC", "UNKNOWN"];
+const REPORTED_STATUSES: [&str; 3] = ["NONE", "NOT_REPORTED", "REPORTED"];
+
+/// GermlineAmpDel; enum values kept as their names
+#[derive(Clone, Debug, PartialEq)]
+pub struct GermlineAmpDel {
+    pub gene_name: String,
+    pub transcript: String,
+    pub chromosome: String,
+    pub chromosome_band: String,
+    pub region_start: i32,
+    pub region_end: i32,
+    pub depth_window_count: i32,
+    pub exon_start: i32,
+    pub exon_end: i32,
+    pub is_partial: bool,
+    pub detection_method: String,
+    pub normal_status: String,
+    pub tumor_status: String,
+    pub germline_copy_number: f64,
+    pub tumor_copy_number: f64,
+    pub filter: String,
+    pub cohort_frequency: i32,
+    pub reported: String,
+}
+
+/// GermlineAmpDel.generateFilename
+pub fn germline_amp_del_filename(base_path: &str, sample: &str) -> String {
+    format!("{base_path}/{sample}.purple.germline_amp_del.tsv")
+}
+
+/// GermlineAmpDel.read (with the pre-v3.0 `reported` column and the optional transcript and isPartial)
+pub fn read_germline_amp_dels(path: &str) -> Result<Vec<GermlineAmpDel>> {
+    let lines = read_lines(path).with_context(|| format!("java.nio.file.NoSuchFileException: {path}"))?;
+    let Some(header) = lines.first() else { bail!("{path}: IndexOutOfBoundsException: Index 0 out of bounds for length 0") };
+    let f = fields_index_map(header, '\t');
+    let reported_status_i = f.get("reportedStatus").copied();
+    let reported_i = f.get("reported").copied();
+    let transcript_i = f.get("transcript").copied();
+    let partial_i = f.get("isPartial").copied();
+    let mut out = Vec::new();
+    for line in lines.iter().skip(1) {
+        let v: Vec<&str> = line.split('\t').collect();
+        let at = |i: usize| v.get(i).copied().ok_or_else(|| anyhow!("{path}: ArrayIndexOutOfBoundsException: Index {i}"));
+        let g = |n: &str| -> Result<&str> { at(col(&f, n, path)?) };
+        let reported = match reported_status_i {
+            Some(i) => enum_value(at(i)?, &REPORTED_STATUSES, "purple.ReportedStatus")?,
+            None => {
+                let i = reported_i.ok_or_else(|| anyhow!("{path}: NullPointerException: no reported column"))?;
+                if parse_bool(at(i)?) { "REPORTED".to_string() } else { "NONE".to_string() }
+            }
+        };
+        out.push(GermlineAmpDel {
+            gene_name: g("gene")?.to_string(),
+            transcript: match transcript_i {
+                Some(_) => g("transcript")?.to_string(),
+                None => String::new(),
+            },
+            chromosome: g("chromosome")?.to_string(),
+            chromosome_band: g("chromosomeBand")?.to_string(),
+            region_start: int(g("regionStart")?)?,
+            region_end: int(g("regionEnd")?)?,
+            depth_window_count: int(g("depthWindowCount")?)?,
+            exon_start: int(g("exonStart")?)?,
+            exon_end: int(g("exonEnd")?)?,
+            is_partial: match partial_i {
+                Some(i) => parse_bool(at(i)?),
+                None => false,
+            },
+            detection_method: enum_value(g("detectionMethod")?, &GERMLINE_DETECTION_METHODS, "purple.GermlineDetectionMethod")?,
+            normal_status: enum_value(g("germlineStatus")?, &GERMLINE_STATUSES, "purple.GermlineStatus")?,
+            tumor_status: enum_value(g("tumorStatus")?, &GERMLINE_STATUSES, "purple.GermlineStatus")?,
+            germline_copy_number: dbl(g("germlineCopyNumber")?)?,
+            tumor_copy_number: dbl(g("tumorCopyNumber")?)?,
+            filter: g("filter")?.to_string(),
+            cohort_frequency: int(g("cohortFrequency")?)?,
+            reported,
+        });
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod orange_addition_tests {
+    use super::*;
+
+    #[test]
+    fn chromosome_names() {
+        assert_eq!(human_chromosome("chr1").unwrap(), "1");
+        assert_eq!(human_chromosome("CHRX").unwrap(), "X");
+        assert_eq!(human_chromosome("22").unwrap(), "22");
+        assert!(human_chromosome("chrM").is_err());
+        assert!(human_chromosome("x").is_err());
+    }
+
+    #[test]
+    fn purity_and_arms() {
+        let dir = std::env::temp_dir().join(format!("purple_orange_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("S.purple.purity.tsv");
+        std::fs::write(&p, "purity\tnormFactor\tscore\tdiploidProportion\tploidy\tgender\tstatus\tpolyclonalProportion\tminPurity\tmaxPurity\tminPloidy\tmaxPloidy\tminDiploidProportion\tmaxDiploidProportion\tsomaticPenalty\twholeGenomeDuplication\tmsIndelsPerMb\tmsStatus\ttml\ttmlStatus\ttmbPerMb\ttmbStatus\tsvTumorMutationalBurden\trunMode\ttargeted\n\
+0.5000\t1.0000\t0.2000\t0.9000\t2.1000\tFEMALE\tNORMAL\t0.0000\t0.4500\t0.5500\t2.0000\t2.2000\t0.8000\t1.0000\t0.0000\tfalse\t0.1000\tMSS\t50\tLOW\t2.5000\tLOW\t30\tTUMOR_GERMLINE\tfalse\n").unwrap();
+        let pp = read_purple_purity(p.to_str().unwrap()).unwrap();
+        assert_eq!(pp.ploidy, 2.1);
+        assert_eq!(pp.tml, 50);
+        assert_eq!(pp.run_mode, "TUMOR_GERMLINE");
+        let a = dir.join("S.purple.chromosome_arm.tsv");
+        std::fs::write(&a, "chromosome\tarm\tmeanCopyNumber\tmedianCopyNumber\tminCopyNumber\tmaxCopyNumber\nchr1\tP\t2.0\t2.0\t1.5\t2.5\nchrX\tQ\t1.0\t1.0\t1.0\t1.0\n").unwrap();
+        let arms = read_chr_arm_copy_numbers(a.to_str().unwrap()).unwrap();
+        assert_eq!(arms[1].chromosome, "X");
+        assert_eq!(arms[0].arm, "P");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

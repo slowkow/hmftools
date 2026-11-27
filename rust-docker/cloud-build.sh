@@ -17,7 +17,7 @@ case "${image##*/}" in
     *:*) ;;
     *) image="$image:$(git -C "$root" rev-parse --short=10 HEAD)" ;;
 esac
-if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs sigs-rs virus-interpreter-rs peach-rs chord-rs neo-rs cuppa-rs qsee-rs rust-docker)" ]; then
+if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs sigs-rs virus-interpreter-rs peach-rs chord-rs neo-rs cuppa-rs qsee-rs orange-rs rust-docker)" ]; then
     echo "note: uncommitted changes are not part of the build; it uses HEAD" >&2
 fi
 
@@ -25,7 +25,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 # only what the Dockerfile copies, as committed: no build folders, nothing uncommitted
 git -C "$root" archive HEAD \
-    hmf-common-rs/Cargo.toml hmf-common-rs/Cargo.lock hmf-common-rs/build.rs hmf-common-rs/src hmf-common-rs/vendor \
+    hmf-common-rs/Cargo.toml hmf-common-rs/Cargo.lock hmf-common-rs/build.rs hmf-common-rs/src hmf-common-rs/vendor hmf-common-rs/resources \
     hmf-common/src/test/resources/segmentation hmf-common/src/test/resources/pcf \
     sage-rs/Cargo.toml sage-rs/Cargo.lock sage-rs/src sage-rs/resources \
     redux-rs/Cargo.toml redux-rs/Cargo.lock redux-rs/src \
@@ -47,6 +47,7 @@ git -C "$root" archive HEAD \
     neo-rs/Cargo.toml neo-rs/Cargo.lock neo-rs/src neo-rs/resources \
     cuppa-rs/Cargo.toml cuppa-rs/Cargo.lock cuppa-rs/src cuppa-rs/resources cuppa-rs/testdata \
     qsee-rs/Cargo.toml qsee-rs/Cargo.lock qsee-rs/src qsee-rs/resources qsee-rs/testdata \
+    orange-rs/Cargo.toml orange-rs/Cargo.lock orange-rs/src \
     rust-docker/Dockerfile rust-docker/Dockerfile.dockerignore rust-docker/bin \
     | tar -x -C "$tmp"
 
