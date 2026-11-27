@@ -7,14 +7,17 @@
 set -euo pipefail
 args=()
 skip=0
+run=0
 for a in "$@"; do
     case "$a" in
         -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
         -skip_plot) skip=1; args+=("$a") ;;
+        -output_dir) run=1; args+=("$a") ;;
         *) args+=("$a") ;;
     esac
 done
-if [ "$skip" = 0 ] && ! command -v Rscript > /dev/null 2>&1; then
+# only for a run (with -output_dir): `qsee -version` and `-help` take no other option
+if [ "$run" = 1 ] && [ "$skip" = 0 ] && ! command -v Rscript > /dev/null 2>&1; then
     echo "qsee (Rust port): Rscript not found; writing the data files without the visual report (-skip_plot)" >&2
     args+=("-skip_plot")
 fi
