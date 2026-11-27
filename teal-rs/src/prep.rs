@@ -234,7 +234,8 @@ impl RecordWriter {
 /// the smallest type: the attributes of a record read from CRAM come out that way (from BAM their bytes
 /// are kept). Checked on the HG008 SBX CRAMs: the telbams' uncompressed bytes equal Java's.
 pub fn sort_tags_as_htsjdk(rec: &mut bam::Record) {
-    // and a record without a position gets bin 0 (from BAM, htsjdk keeps the stored bin)
+    // and a record without a reference gets bin 0 (htsjdk writes 0 for those whatever their stored bin;
+    // `write_bam` does the same for records from a BAM)
     if rec.tid() < 0 {
         rec.set_bin(0);
     }
@@ -746,7 +747,16 @@ pub fn write_bam(path: &str, header: &bam::Header, records: &[Read], threads: i3
         writer.set_threads((threads - 1) as usize).context("setting writer threads")?;
     }
     for r in records {
-        writer.write(r.raw.as_ref().expect("a record to write")).with_context(|| format!("writing {path}"))?;
+        let rec = r.raw.as_ref().expect("a record to write");
+        // htsjdk's BAMRecordCodec writes bin 0 for a record without a reference, whatever its stored bin
+        // (htslib-written inputs have 4680, reg2bin(-1, 0)); placed records keep theirs
+        if rec.tid() < 0 && rec.inner().core.bin != 0 {
+            let mut c = rec.clone();
+            c.set_bin(0);
+            writer.write(&c).with_context(|| format!("writing {path}"))?;
+        } else {
+            writer.write(rec).with_context(|| format!("writing {path}"))?;
+        }
     }
     Ok(())
 }

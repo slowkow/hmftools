@@ -115,6 +115,12 @@ first HG008 run on the same inputs.
   port kept the input's 1.5. From 2026-11-27 the port writes 1.6 too (hmf-common-rs `sam_header`). A
   `VN:1.5` slice of the HG008 tumor BAM then gives a byte-identical telbam header from both. Every local
   input said 1.6.
+- **Unplaced records:** after that fix, the telbams were identical as SAM text but not as BAM bytes.
+  11,792 unplaced records had the input's bin, 4680, where htsjdk writes 0 for any record without a
+  reference. The port now writes 0 for them too. On a public HG008 test BAM (the start of chr1 and
+  200,000 unplaced reads), Java and the port give a byte-identical telbam (uncompressed, 1,916 records).
+- **Reading on Batch:** the read-ahead (several handles, in file order) took the prep from 15.5 to 7.5
+  minutes at 420% CPU, against Java's 13.8 (HG008 rerun, 2026-11-27).
 - **Time:** TealPipelineApp took 7.4 s and 0.4 GB against Java's 35 s and 2.3 GB. The prep took 15.5
   minutes at 165% CPU and 1.1 GB, against Java's 13.8 minutes at 1112% CPU and 8.6 GB (n2-highmem-16,
   BAMs through gcsfuse). The port reads the two BAMs one after the other, each as one stream, and one

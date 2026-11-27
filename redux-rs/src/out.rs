@@ -57,7 +57,13 @@ impl RawBamOut {
             }
             unsafe { hts_idx_amend_last(self.idx, self.tell()) };
         }
-        if unsafe { htslib::bam_write1(self.fp, &rec.inner) } < 0 {
+        // htsjdk (BAMRecordCodec) writes bin 0 for a record without a reference, whatever its stored bin;
+        // htslib-written inputs and reg2bin(-1, 0) give 4680. Library behaviour, so in both modes.
+        let mut inner = rec.inner;
+        if inner.core.tid < 0 {
+            inner.core.bin = 0;
+        }
+        if unsafe { htslib::bam_write1(self.fp, &inner) } < 0 {
             bail!("failed to write a record to {}", self.path);
         }
         self.written += 1;

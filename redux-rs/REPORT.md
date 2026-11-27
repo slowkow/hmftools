@@ -627,5 +627,14 @@ SAMFileHeader.CURRENT_VERSION (1.6), and the BAM writer writes that. redux-rs ke
   Java mode give identical headers, all 1,154,615 records, and every other output file.
 
 TEAL's telbam and CIDER's cider.bam had the same fault, fixed the same way.
+
+The same rerun showed a second htsjdk behaviour: BAMRecordCodec writes bin 0 for every record without
+a reference, whatever its stored bin. Records written by htslib, and the SAM specification's
+`reg2bin(-1, 0)`, give 4680. redux-rs wrote 4680 for the unplaced reads. From 2026-11-27 it writes 0,
+in both modes, as htsjdk does; no index or reader uses the bin of an unplaced read.
+
+Checked on a small public BAM: the start of the HG008 normal's chr1 and its first 200,000 unplaced reads,
+`VN:1.5`, bins 4680, 252,284 records. Java REDUX and redux-rs in Java mode give byte-identical records
+(uncompressed), the 200,000 unplaced ones included, and the same header apart from `@PG`.
 The fix is in hmf-common-rs (`sam_header`): `VN:1.6` first, then the line's other tags in their order.
 
