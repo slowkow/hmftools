@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# `teal` as oncoanalyser calls the Java tool, run by teal-rs, which itself takes the Java main classes
+# (TealPipelineTelbamApp, TealPipelineApp, TealApplication) and drops JVM options.
+# -java_compat or TEAL_JAVA_COMPAT=1 selects Java's behaviour.
+set -euo pipefail
+exec teal-rs "$@"

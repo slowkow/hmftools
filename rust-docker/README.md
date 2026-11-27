@@ -1,6 +1,7 @@
 # Running the Rust ports in oncoanalyser
 
-The Rust ports of SAGE, REDUX and ESVEE, packaged for use in place of the Java tools in oncoanalyser
+The Rust ports of SAGE, REDUX, ESVEE, AMBER, COBALT, the BamTools metrics and TEAL, packaged for use in
+place of the Java tools in oncoanalyser
 (https://github.com/slowkow/oncoanalyser, branch `rust-ports`, profile `rust_ports`). Two forms:
 
 **A folder on the host**, for running these steps without a container (oncoanalyser's
@@ -27,7 +28,8 @@ in `cloudbuild.yaml`. With Docker, from the repository root:
 docker build --platform linux/amd64 -f rust-docker/Dockerfile -t hmftools-rust:dev .
 ```
 
-`Dockerfile.dockerignore` limits the build context to the three crates and the wrappers. The build
+`Dockerfile.dockerignore` limits the build context to the crates, the Java test resources their tests
+read, and the wrappers. The build
 runs every crate's unit tests on Linux and fails if one fails; the first Linux build found a crash
 that macOS hid (rust-htslib's `fetch_seq` freeing htslib's buffer with the Rust allocator), now fixed.
 For AWS, build the same Dockerfile and push it to ECR.
@@ -36,8 +38,8 @@ For AWS, build the same Dockerfile and push it to ECR.
 
 | Command | What it is |
 |---|---|
-| `sage-rs`, `redux-rs`, `esvee-rs` | the ports (`sage-rs/`, `redux-rs/`, `esvee-rs/`) |
-| `sage`, `redux`, `esvee` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them |
+| `sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`, `bam-tools-rs`, `teal-rs` | the ports (the folders of the same names) |
+| `sage`, `redux`, `esvee`, `amber`, `cobalt`, `bamtools`, `teal` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them |
 | `samtools`, `sambamba` | given to REDUX and ESVEE as `-bamtool`; the ports only check that the path exists (they sort and index BAMs themselves), so on the host these must be on `PATH` too |
 
 The wrappers drop JVM options (`-Xmx...`, `-XX:...`, `-D...=...`) and turn Java main classes into
@@ -51,10 +53,14 @@ subcommands:
 | `com.hartwig.hmftools.redux.ReduxApplication` (or none) | `redux-rs` |
 | `com.hartwig.hmftools.esvee.EsveeApplication` (or none) | `esvee-rs` (all four steps) |
 | `com.hartwig.hmftools.esvee.prep.PrepApplication` and the other three steps | `esvee-rs prep`, `assembly`, `depth`, `caller` |
+| `com.hartwig.hmftools.amber.AmberApplication` (or none) | `amber-rs` |
+| `com.hartwig.hmftools.cobalt.CobaltApplication` (or none) | `cobalt-rs` |
+| `com.hartwig.hmftools.bamtools.metrics.BamMetrics` (or none) | `bam-tools-rs` |
+| `com.hartwig.hmftools.teal.TealPipelineTelbamApp`, `TealPipelineApp`, `TealApplication` | `teal-rs` with the class (teal-rs takes the classes itself) |
 
 Any other main class is refused with exit code 2. `-version` prints the version in Java's form, for
 example `Sage version 5.1`.
 
-`SAGE_JAVA_COMPAT=1`, `REDUX_JAVA_COMPAT=1` and `ESVEE_JAVA_COMPAT=1` (or `-java_compat`) make each port
-reproduce the Java tool's output exactly; by default the ports correct the faults listed in their
+`-java_compat` (or `<TOOL>_JAVA_COMPAT=1`, for example `SAGE_JAVA_COMPAT=1`) makes each port reproduce
+the Java tool's output exactly; by default the ports correct the faults listed in their
 REPORT.md files.

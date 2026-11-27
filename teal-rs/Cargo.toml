@@ -1,0 +1,27 @@
+[package]
+name = "teal-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A port of hmftools TEAL 1.4 (telomere content, length and telomeric rearrangements) to Rust"
+
+[[bin]]
+name = "teal-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+# zlib, as Java's java.util.zip: the same deflate bytes for the gzip output
+flate2 = { version = "1.1.11", default-features = false, features = ["zlib"] }
+hmf-common = { path = "../hmf-common-rs" }
+mimalloc = { version = "0.1.52", default-features = false, optional = true }
+libdeflate-sys = "1.26.1"
+rust-htslib = { version = "1.0.2", default-features = false, features = ["libdeflate", "bzip2", "lzma"] }
+
+[features]
+default = ["mimalloc"]
+# a faster allocator; build with --no-default-features to use the system one
+mimalloc = ["dep:mimalloc"]
+
+[profile.release]
+panic = "abort"
+debug = 1

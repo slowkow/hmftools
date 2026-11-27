@@ -34,4 +34,8 @@
 !bam-tools-rs/src
 !bam-tools-rs/resources
 !bam-tools-rs/testdata
+!teal-rs/Cargo.toml
+!teal-rs/Cargo.lock
+!teal-rs/src
+!teal-rs/resources
 !rust-docker/bin

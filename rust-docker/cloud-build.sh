@@ -17,7 +17,7 @@ case "${image##*/}" in
     *:*) ;;
     *) image="$image:$(git -C "$root" rev-parse --short=10 HEAD)" ;;
 esac
-if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs rust-docker)" ]; then
+if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs rust-docker)" ]; then
     echo "note: uncommitted changes are not part of the build; it uses HEAD" >&2
 fi
 
@@ -34,6 +34,7 @@ git -C "$root" archive HEAD \
     cobalt-rs/Cargo.toml cobalt-rs/Cargo.lock cobalt-rs/build.rs cobalt-rs/src cobalt-rs/resources \
     cobalt/src/test/resources \
     bam-tools-rs/Cargo.toml bam-tools-rs/Cargo.lock bam-tools-rs/src bam-tools-rs/resources bam-tools-rs/testdata \
+    teal-rs/Cargo.toml teal-rs/Cargo.lock teal-rs/src teal-rs/resources \
     rust-docker/Dockerfile rust-docker/Dockerfile.dockerignore rust-docker/bin \
     | tar -x -C "$tmp"
 

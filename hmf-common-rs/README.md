@@ -21,6 +21,7 @@ so that their output equals the Java tools'.
 | `driver_panel` | the driver gene panel file (read, write) and DriverGeneRegions (the coding exon regions of the panel's canonical transcripts) |
 | `metrics` | the BamTools metrics files: summary, coverage, fragment lengths, flag counts (BamFlagStats), gene and exon depth (GeneDepthFile); writers and readers |
 | `java_text` | Java's Integer/Long/Double/Boolean parsing, String.split, String.compareTo, createFieldsIndexMap, BufferedReader line splitting (streamed, gzip) |
+| `ref_coords` | RefGenomeCoordinates: the GRCh37 and GRCh38 lengths of chromosomes 1-22, X and Y (resources refgenome/lengths.*.tsv) |
 
 The ports take it as a path dependency (`hmf-common = { path = "../hmf-common-rs" }`), so each keeps
 its own `Cargo.lock` and build folder. `cargo test --release` here runs the shared tests; each port's
