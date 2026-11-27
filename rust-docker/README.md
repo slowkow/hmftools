@@ -1,7 +1,7 @@
 # Running the Rust ports in oncoanalyser
 
 The Rust ports of SAGE, REDUX, ESVEE, AMBER, COBALT, the BamTools metrics, TEAL, LILAC,
-CIDER, PAVE, PURPLE, LINX, SIGS, Virus Interpreter, PEACH, CHORD, NEO and CUPPA, packaged for use in
+CIDER, PAVE, PURPLE, LINX, SIGS, Virus Interpreter, PEACH, CHORD, NEO, CUPPA and qsee, packaged for use in
 place of the Java tools in oncoanalyser
 (https://github.com/slowkow/oncoanalyser, branch `rust-ports`, profile `rust_ports`). Two forms:
 
@@ -39,8 +39,8 @@ For AWS, build the same Dockerfile and push it to ECR.
 
 | Command | What it is |
 |---|---|
-| `sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`, `bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, `chord-rs`, `neo-rs`, `cuppa-rs` | the ports (the folders of the same names) |
-| `sage`, `redux`, `esvee`, `amber`, `cobalt`, `bamtools`, `teal`, `lilac`, `cider`, `pave`, `purple`, `linx`, `sigs`, `virusinterpreter`, `peach`, `chord`, `neo`, `cuppa` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them |
+| `sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`, `bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, `chord-rs`, `neo-rs`, `cuppa-rs`, `qsee-rs` | the ports (the folders of the same names) |
+| `sage`, `redux`, `esvee`, `amber`, `cobalt`, `bamtools`, `teal`, `lilac`, `cider`, `pave`, `purple`, `linx`, `sigs`, `virusinterpreter`, `peach`, `chord`, `neo`, `cuppa`, `qsee` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them |
 | `samtools`, `sambamba` | given to REDUX and ESVEE as `-bamtool`; the ports only check that the path exists (they sort and index BAMs themselves), so on the host these must be on `PATH` too |
 
 The wrappers drop JVM options (`-Xmx...`, `-XX:...`, `-D...=...`) and turn Java main classes into
@@ -69,6 +69,7 @@ subcommands:
 | `com.hartwig.hmftools.chord.ChordApplication` (or none), `ChordDataPrep`, `ChordModel` | `chord-rs` (it takes the classes itself; the prediction needs no R) |
 | `com.hartwig.hmftools.neo.epitope.NeoEpitopeFinder` (or none), `com.hartwig.hmftools.neo.score.NeoScorer` | `neo-rs` (it takes the classes itself) |
 | `com.hartwig.hmftools.cup.prep.CuppaDataPrep`, `cup.cli.PredictionRunner` (or none) | `cuppa-rs` (it takes the classes itself) |
+| `com.hartwig.hmftools.qsee.QseeApplication` (or none) and qsee's other entry points | `qsee-rs` (it takes the classes itself; without Rscript on PATH the wrapper adds `-skip_plot`) |
 
 The image also has a `python` that runs only `python -m cuppa.predict` (as `cuppa-rs predict`), the second
 command of oncoanalyser's CUPPA task; there is no Python in the image.

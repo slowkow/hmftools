@@ -87,4 +87,9 @@
 !cuppa-rs/src
 !cuppa-rs/resources
 !cuppa-rs/testdata
+!qsee-rs/Cargo.toml
+!qsee-rs/Cargo.lock
+!qsee-rs/src
+!qsee-rs/resources
+!qsee-rs/testdata
 !rust-docker/bin

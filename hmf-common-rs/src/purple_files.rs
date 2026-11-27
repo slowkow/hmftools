@@ -598,3 +598,118 @@ mod purple_qc_tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------
+// PurplePurity (added 2026-11-27 for qsee): every column of `.purple.purity.tsv`
+
+const RUN_MODES: [&str; 3] = ["TUMOR_GERMLINE", "TUMOR", "GERMLINE"];
+const MICROSATELLITE_STATUSES: [&str; 3] = ["MSI", "MSS", "UNKNOWN"];
+const TUMOR_MUTATIONAL_STATUSES: [&str; 3] = ["HIGH", "LOW", "UNKNOWN"];
+
+/// PurplePurity, as PurplePurity.read gives it; enum values kept as their names
+#[derive(Clone, Debug, PartialEq)]
+pub struct PurplePurity {
+    pub purity: f64,
+    pub norm_factor: f64,
+    pub score: f64,
+    pub diploid_proportion: f64,
+    pub ploidy: f64,
+    /// Gender: MALE or FEMALE
+    pub sex: String,
+    /// FittedPurityMethod (the `status` column)
+    pub fit_method: String,
+    pub polyclonal_proportion: f64,
+    pub min_purity: f64,
+    pub max_purity: f64,
+    pub min_ploidy: f64,
+    pub max_ploidy: f64,
+    pub min_diploid_proportion: f64,
+    pub max_diploid_proportion: f64,
+    pub somatic_penalty: f64,
+    pub whole_genome_duplication: bool,
+    pub ms_indels_per_mb: f64,
+    pub ms_status: String,
+    pub tml: i32,
+    pub tml_status: String,
+    pub tmb_per_mb: f64,
+    pub tmb_status: String,
+    pub sv_tumor_mutational_burden: i32,
+    pub run_mode: String,
+    pub targeted: bool,
+}
+
+/// PurplePurity.generateFilename: basePath + File.separator + sample + ".purple.purity.tsv" (no check for
+/// a separator already there, so an empty base path gives a path at the file system root, as in Java)
+pub fn purple_purity_filename(base_path: &str, sample: &str) -> String {
+    format!("{base_path}/{sample}.purple.purity.tsv")
+}
+
+/// PurplePurity.read: the header and the first values line; a missing column, a short line, a number
+/// that does not parse or an unknown enum name is an error, as Java's NullPointerException,
+/// ArrayIndexOutOfBoundsException, NumberFormatException and IllegalArgumentException
+pub fn read_purple_purity(path: &str) -> Result<PurplePurity> {
+    let lines = read_lines(path).with_context(|| format!("java.nio.file.NoSuchFileException: {path}"))?;
+    purple_purity_from_lines(&lines).with_context(|| format!("reading {path}"))
+}
+
+/// PurplePurity.read on lines already read
+pub fn purple_purity_from_lines(lines: &[String]) -> Result<PurplePurity> {
+    if lines.len() < 2 {
+        bail!("java.lang.IndexOutOfBoundsException: no values line");
+    }
+    let f = fields_index_map(&lines[0], '\t');
+    let v: Vec<&str> = lines[1].split('\t').collect();
+    let g = |n: &str| -> Result<&str> {
+        let i = f.get(n).copied().ok_or_else(|| anyhow!("java.lang.NullPointerException: no column {n}"))?;
+        v.get(i).copied().ok_or_else(|| anyhow!("java.lang.ArrayIndexOutOfBoundsException: no value for {n}"))
+    };
+    let d = |n: &str| -> Result<f64> { dbl(g(n)?) };
+    let e = |n: &str, names: &[&str], enum_name: &str| -> Result<String> { enum_value(g(n)?, names, enum_name) };
+    Ok(PurplePurity {
+        purity: d("purity")?,
+        norm_factor: d("normFactor")?,
+        score: d("score")?,
+        diploid_proportion: d("diploidProportion")?,
+        ploidy: d("ploidy")?,
+        sex: e("gender", &GENDERS, "purple.Gender")?,
+        fit_method: e("status", &FITTED_PURITY_METHODS, "purple.FittedPurityMethod")?,
+        polyclonal_proportion: d("polyclonalProportion")?,
+        min_purity: d("minPurity")?,
+        max_purity: d("maxPurity")?,
+        min_ploidy: d("minPloidy")?,
+        max_ploidy: d("maxPloidy")?,
+        min_diploid_proportion: d("minDiploidProportion")?,
+        max_diploid_proportion: d("maxDiploidProportion")?,
+        somatic_penalty: d("somaticPenalty")?,
+        whole_genome_duplication: parse_bool(g("wholeGenomeDuplication")?),
+        ms_indels_per_mb: d("msIndelsPerMb")?,
+        ms_status: e("msStatus", &MICROSATELLITE_STATUSES, "purple.MicrosatelliteStatus")?,
+        tml: int(g("tml")?)?,
+        tml_status: e("tmlStatus", &TUMOR_MUTATIONAL_STATUSES, "purple.TumorMutationalStatus")?,
+        tmb_per_mb: d("tmbPerMb")?,
+        tmb_status: e("tmbStatus", &TUMOR_MUTATIONAL_STATUSES, "purple.TumorMutationalStatus")?,
+        sv_tumor_mutational_burden: int(g("svTumorMutationalBurden")?)?,
+        run_mode: e("runMode", &RUN_MODES, "purple.RunMode")?,
+        targeted: parse_bool(g("targeted")?),
+    })
+}
+
+#[cfg(test)]
+mod purple_purity_tests {
+    use super::*;
+
+    #[test]
+    fn reads_every_column() {
+        let header = "purity\tnormFactor\tscore\tdiploidProportion\tploidy\tgender\tstatus\tpolyclonalProportion\tminPurity\tmaxPurity\tminPloidy\tmaxPloidy\tminDiploidProportion\tmaxDiploidProportion\tsomaticPenalty\twholeGenomeDuplication\tmsIndelsPerMb\tmsStatus\ttml\ttmlStatus\ttmbPerMb\ttmbStatus\tsvTumorMutationalBurden\truntimeMode";
+        let header = header.replace("runtimeMode", "runMode\ttargeted");
+        let values = "0.5000\t1.0\t0.6\t0.3\t3.1000\tMALE\tSOMATIC\t0.01\t0.45\t0.55\t3.0\t3.2\t0.2\t0.4\t0.1\ttrue\t0.25\tMSS\t120\tLOW\t5.5\tLOW\t77\tTUMOR\tfalse";
+        let p = purple_purity_from_lines(&[header.clone(), values.to_string()]).unwrap();
+        assert_eq!((p.purity, p.ploidy, p.sex.as_str(), p.fit_method.as_str()), (0.5, 3.1, "MALE", "SOMATIC"));
+        assert_eq!((p.tml, p.sv_tumor_mutational_burden, p.whole_genome_duplication, p.targeted), (120, 77, true, false));
+        assert_eq!((p.ms_indels_per_mb, p.tmb_per_mb, p.run_mode.as_str()), (0.25, 5.5, "TUMOR"));
+        assert!(purple_purity_from_lines(&[header.clone(), values.replace("MALE", "OTHER")]).is_err());
+        assert!(purple_purity_from_lines(&[header.replace("tmbPerMb", "x"), values.to_string()]).is_err());
+        assert!(purple_purity_from_lines(&[header]).is_err());
+        assert_eq!(purple_purity_filename("", "S"), "/S.purple.purity.tsv");
+    }
+}

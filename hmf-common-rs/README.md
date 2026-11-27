@@ -1,7 +1,7 @@
 # hmf-common-rs
 
 Code shared by the Rust ports of hmftools (`sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`,
-`bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, `chord-rs`, `neo-rs`, `cuppa-rs`, and the ports that follow).
+`bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, `chord-rs`, `neo-rs`, `cuppa-rs`, `qsee-rs`, and the ports that follow).
 It plays the part of the Java `hmf-common` module, plus the Java library behaviour the ports reproduce
 so that their output equals the Java tools'.
 
@@ -28,7 +28,7 @@ so that their output equals the Java tools'.
 | `kotlin_random` | kotlin.random.Random(seed), the XorWow generator (nextInt, nextBits, nextDouble) |
 | `sam_header` | SAM header lines as htsjdk writes them: `@HD VN:1.6` (SAMFileHeader.CURRENT_VERSION) whatever the version of the header read, as REDUX, TEAL and CIDER write their BAMs |
 | `sv` | structural variants from a VCF: StructuralVariantType, the record reader with htsjdk's attribute rules, StructuralVariantFactory, EnrichedStructuralVariantFactory, StructuralVariantData (LINX) |
-| `purple_files` | PURPLE's files: PurpleCopyNumber, PurityContext (purity, ploidy, gender, WGD), GeneCopyNumber, DriverCatalog (read and write), `write_lines` as Files.write |
+| `purple_files` | PURPLE's files: PurpleCopyNumber, PurityContext (purity, ploidy, gender, WGD) and the full PurplePurity, GeneCopyNumber, DriverCatalog (read and write), `write_lines` as Files.write |
 | `known_fusion` | KnownFusionCache and KnownFusionData (the known fusion file), KnownFusionType, FusionCommon's constants |
 | `transcript_utils` | TranscriptUtils: coding bases and phases |
 | `poisson` | re-exports `commons_math`'s PoissonDistribution, logGamma and regularized gamma functions (AMBER, LINX), and PoissonCalcs.calcPoissonNoiseValue (NEO) |
@@ -41,6 +41,8 @@ so that their output equals the Java tools'.
 | `config_builder` | hmf-common ConfigBuilder: registered items, hasValue, path and number checks, -version and -help (PURPLE) |
 | `neo`, `hla`, `rna` | the neoepitope files of LINX and NEO, LILAC's allele file, ISOFOX's transcript expression and the cohort expression matrix (NEO) |
 | `sigs` | hmf-common sigs: LeastSquaresFit, Matrix / loadMatrixDataFile, SnvSigUtils (bucket names, variantContext, the COSMIC SNV signatures resource) and PositionFrequencies' functions (SIGS, CUPPA) |
+| `delim_file` | DelimFileReader (named columns), and the plain or gzip writer of FileWriterUtils.createBufferedWriter with DelimFileWriter's rows |
+| `redux_files`, `cobalt_files`, `esvee_files` | REDUX's BQR, duplicate frequency and jitter count files, COBALT's GC median file, ESVEE's discordant fragment statistics (qsee) |
 | `ref_coords` | RefGenomeCoordinates: the GRCh37 and GRCh38 lengths of chromosomes 1-22, X and Y (resources refgenome/lengths.*.tsv) |
 
 The ports take it as a path dependency (`hmf-common = { path = "../hmf-common-rs" }`, with

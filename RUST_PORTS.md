@@ -203,6 +203,13 @@ Second batch, merged on 2026-11-27:
   log-transformed counts that it never gets (CU8, RNA runs), a missing sex feature means male (CU2), and a
   sample's probabilities depend on the cohort it is predicted in (CU7). The plot (R) is not drawn.
 
+- **qsee** (`qsee-rs`): every data file byte-identical to Java qsee 1.0 on 107 cases (gzip bytes included),
+  which also equal the pipeline's qsee 1.1-beta.1 outputs on HG008 and a private pair; without the R report 0.2 s
+  and 34 MB against 2.9 s and 1.36 GB. It still runs the jar's R script for the report unless `-skip_plot` (the
+  image's wrapper adds it when R is absent; ORANGE does not use the report). Findings QS1-QS12: contamination
+  shown as `>` where PURPLE uses `>=` (QS4, every run), PURPLE's WARN_CONTAMINATION shown as PASS (QS5), a
+  missing BQR file fatal despite `-allow_missing_input` (QS1).
+
 For the R and Python parts, the first version keeps calling the same scripts, so plots and
 predictions stay identical. Replacing them is a separate decision per program: a random forest or a
 fitted classifier can be reproduced exactly in Rust; plots and the PDF cannot be byte-identical and

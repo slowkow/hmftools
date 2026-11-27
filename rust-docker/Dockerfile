@@ -1,10 +1,10 @@
 # Image with the Rust ports of SAGE, REDUX, ESVEE, AMBER, COBALT, BamTools (metrics), TEAL, LILAC,
-# CIDER, PAVE, PURPLE, LINX, SIGS, Virus Interpreter, PEACH, CHORD, NEO and CUPPA, callable the way oncoanalyser calls the Java tools.
+# CIDER, PAVE, PURPLE, LINX, SIGS, Virus Interpreter, PEACH, CHORD, NEO, CUPPA and qsee, callable the way oncoanalyser calls the Java tools.
 # Build from the repository root:
 #   docker build -f rust-docker/Dockerfile -t hmftools-rust:dev .
 # Commands: sage-rs, redux-rs, esvee-rs, amber-rs, cobalt-rs, bam-tools-rs, teal-rs, lilac-rs, cider-rs, pave-rs,
-# purple-rs, linx-rs, sigs-rs, virus-interpreter-rs, peach-rs, chord-rs, neo-rs, cuppa-rs, and the wrappers sage, redux, esvee, amber,
-# cobalt, bamtools, teal, lilac, cider, pave, purple, linx, sigs, virusinterpreter, peach, chord, neo and cuppa (rust-docker/bin), a `python`
+# purple-rs, linx-rs, sigs-rs, virus-interpreter-rs, peach-rs, chord-rs, neo-rs, cuppa-rs, qsee-rs, and the wrappers sage, redux, esvee, amber,
+# cobalt, bamtools, teal, lilac, cider, pave, purple, linx, sigs, virusinterpreter, peach, chord, neo, cuppa and qsee (rust-docker/bin), a `python`
 # that only runs `python -m cuppa.predict` (by cuppa-rs), plus
 # samtools and sambamba, which REDUX and ESVEE are given as -bamtool, and procps (`ps`), which Nextflow
 # uses to record each task's CPU and memory.
@@ -38,12 +38,13 @@ COPY peach-rs peach-rs
 COPY chord-rs chord-rs
 COPY neo-rs neo-rs
 COPY cuppa-rs cuppa-rs
+COPY qsee-rs qsee-rs
 # build each port and run its unit tests (and those of the shared crate) on this platform; a failing
 # test fails the image build
 RUN rustc --version \
     && (cd hmf-common-rs && cargo test --release --locked && cargo test --release --locked --features bwa) \
     && for crate in sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs \
-            sigs-rs virus-interpreter-rs peach-rs chord-rs neo-rs cuppa-rs; do \
+            sigs-rs virus-interpreter-rs peach-rs chord-rs neo-rs cuppa-rs qsee-rs; do \
         (cd $crate && cargo build --release --locked && cargo test --release --locked) || exit 1; \
         install -m 755 $crate/target/release/$crate /usr/local/bin/; \
     done
@@ -57,10 +58,10 @@ COPY --from=build /usr/local/bin/sage-rs /usr/local/bin/redux-rs /usr/local/bin/
     /usr/local/bin/lilac-rs /usr/local/bin/cider-rs /usr/local/bin/pave-rs \
     /usr/local/bin/purple-rs /usr/local/bin/linx-rs /usr/local/bin/sigs-rs /usr/local/bin/virus-interpreter-rs \
     /usr/local/bin/peach-rs /usr/local/bin/chord-rs /usr/local/bin/neo-rs \
-    /usr/local/bin/cuppa-rs /usr/local/bin/
+    /usr/local/bin/cuppa-rs /usr/local/bin/qsee-rs /usr/local/bin/
 COPY rust-docker/bin/sage rust-docker/bin/redux rust-docker/bin/esvee rust-docker/bin/amber rust-docker/bin/cobalt \
     rust-docker/bin/bamtools rust-docker/bin/teal rust-docker/bin/lilac \
     rust-docker/bin/cider rust-docker/bin/pave rust-docker/bin/purple rust-docker/bin/linx \
     rust-docker/bin/sigs rust-docker/bin/virusinterpreter rust-docker/bin/peach rust-docker/bin/chord rust-docker/bin/neo \
-    rust-docker/bin/cuppa rust-docker/bin/python /usr/local/bin/
-RUN sage -version && redux -version && esvee -version && amber -version && cobalt -version && bamtools -version && teal -version && lilac -version && cider -version && pave -version && purple -version && linx -version && sigs -version && virusinterpreter -version && peach -version && chord -version && neo -version && cuppa -version && samtools --version | head -1 && sambamba --version 2>&1 | head -2
+    rust-docker/bin/cuppa rust-docker/bin/python rust-docker/bin/qsee /usr/local/bin/
+RUN sage -version && redux -version && esvee -version && amber -version && cobalt -version && bamtools -version && teal -version && lilac -version && cider -version && pave -version && purple -version && linx -version && sigs -version && virusinterpreter -version && peach -version && chord -version && neo -version && cuppa -version && qsee -version && samtools --version | head -1 && sambamba --version 2>&1 | head -2

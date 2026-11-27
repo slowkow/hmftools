@@ -23,6 +23,9 @@
 //! - `kotlin_random`: kotlin.random.Random(seed), the XorWow generator.
 //! - `sam_header`: SAM header lines as htsjdk writes them (`@HD VN:1.6` whatever the input's version).
 //! - `gz`: fast gzip / BGZF text reading (zlib-rs) with a line reader.
+//! - `delim_file`, `redux_files`, `cobalt_files`, `esvee_files`: DelimFileReader, the plain or gzip
+//!   writer of FileWriterUtils.createBufferedWriter and DelimFileWriter's rows; REDUX's BQR, duplicate
+//!   frequency and jitter count files, COBALT's GC median file and ESVEE's discordant statistics (qsee).
 //! - `vcf`: VCF headers, records and the writer as htsjdk 2.23 has them, with the BGZF stream and the
 //!   tabix index written as Java writes them.
 //! - `variant_context`: VCF records with htsjdk's typed attributes and lazy genotypes (VariantContext),
@@ -38,12 +41,15 @@ pub mod blosum;
 #[cfg(feature = "bwa")]
 pub mod bwa;
 pub mod codon;
+pub mod cobalt_files;
 pub mod commons_math;
 pub mod config_builder;
 pub mod compat;
 pub mod csv;
+pub mod delim_file;
 pub mod driver_panel;
 pub mod ensembl;
+pub mod esvee_files;
 pub mod faidx;
 pub mod fmt;
 pub mod gz;
@@ -63,6 +69,7 @@ pub mod metrics;
 pub mod neo;
 pub mod ref_coords;
 pub mod refgenome;
+pub mod redux_files;
 pub mod sam_header;
 pub mod regions;
 pub mod rna;

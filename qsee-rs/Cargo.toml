@@ -1,0 +1,17 @@
+[package]
+name = "qsee-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A Rust port of hmftools qsee 1.0: QC features of the pipeline outputs, QC statuses and the gene limit of detection"
+
+[[bin]]
+name = "qsee-rs"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+hmf-common = { path = "../hmf-common-rs" }
+
+[profile.release]
+panic = "abort"
+debug = 1
