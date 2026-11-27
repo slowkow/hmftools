@@ -67,6 +67,12 @@ fn main() {
     if let Some(kb) = std::env::var("AMBER_FILE_BLOCK_KB").ok().and_then(|v| v.parse::<i32>().ok()) {
         bam::FILE_BLOCK_KB.store(kb.max(0), std::sync::atomic::Ordering::Relaxed);
     }
+    if let Some(kb) = std::env::var("AMBER_STREAM_GAP_KB").ok().and_then(|v| v.parse::<i32>().ok()) {
+        bam::STREAM_GAP_BP.store(kb.clamp(0, i32::MAX / 1000) * 1000, std::sync::atomic::Ordering::Relaxed);
+    }
+    if let Some(mb) = std::env::var("AMBER_STREAM_CHUNK_MB").ok().and_then(|v| v.parse::<i32>().ok()) {
+        bam::STREAM_CHUNK_BP.store(mb.clamp(0, 2000) * 1_000_000, std::sync::atomic::Ordering::Relaxed);
+    }
     let config = match AmberConfig::from(&cb) {
         Ok(c) => c,
         Err(e) => {

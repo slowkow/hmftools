@@ -251,9 +251,35 @@ The whole-genome runs were bound by the USB disk holding the BAMs: twice as many
 `read` as in decompression. Each BAM reader asks htslib for 1 MB blocks; `AMBER_FILE_BLOCK_KB` changes
 it, and 0 gives htslib's default.
 
-A small `-position_gap` is slow in both tools (chr21 at 500: Java 125 s, Rust 39 s). Each region task
-is an index query, so close tasks decompress the same reads again. The default gaps of 4,000 (BAM) and
-10,000 (CRAM) give long tasks.
+A small `-position_gap` is slow in Java (chr21 at 500: 125 s). Each region task is an index query, so
+close tasks decompress the same reads again. The default gaps of 4,000 (BAM) and 10,000 (CRAM) give long
+tasks.
+
+### Reading through a bucket mount (2026-11-27)
+
+On Google Batch, with the BAMs read through gcsfuse, the first version took 10.8 min on HG008 at 13% CPU
+use. COBALT and BamTools, which read sequentially, took 3-4 min. Java AMBER took 12.2 min.
+- **Cause:** Java reads each region task with its own index query: 22,829 tasks on the germline sites,
+  covering 2,672 Mb. With 16 threads taking tasks in turn, each reader jumps through the file, and the
+  bucket mount serves each query as a new ranged request; gcsfuse also shortens the requests of a reader
+  that seeks.
+- **Change:** a queue item is now a run of consecutive tasks of one chromosome, up to 10 Mb. A BAM's item
+  is read with one index query over its span, and each read is given to the tasks whose regions it
+  overlaps. The test is htslib's own for a query `[start - 1, end)`: read start < end, and `bam_endpos` >
+  start - 1.
+- **Why the counts cannot change:** a query returns the BAM's reads passing that test, in file order. One
+  query over a run of tasks therefore returns a superset of each task's reads, in the same order, and the
+  dispatch picks out exactly the reads a task's own query would return.
+- **Gaps and CRAM:** a gap above 256 kb between tasks starts a new query. Gaps up to that size are about
+  160 Mb of the genome (5%), read and discarded. A CRAM keeps one query per task, because htslib's CRAM
+  iterator filters with CRAM's own alignment end, but one reader still takes the consecutive tasks.
+- **Settings:** `AMBER_STREAM_CHUNK_MB` and `AMBER_STREAM_GAP_KB` set the two sizes, and
+  `AMBER_STREAM_GAP_KB=0` gives one query per task.
+- **Checks:** all 17 small cases are byte-identical to Java with the change, including the CRAM cases.
+  So are three more runs with 1 Mb items and with 5 kb and 20 kb gap splits.
+- **Speed:** on local files the two modes take the same time (small cases back to back: 24.0/23.7 s
+  against 25.9/24.2 s, and 28.1/25.3 s against 27.5/26.3 s). With `-position_gap 500` the change is
+  faster, 10.7 s against 39 s, as close regions are no longer decompressed again.
 
 ## 5. Left out, and open points
 

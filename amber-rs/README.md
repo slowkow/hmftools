@@ -49,6 +49,15 @@ As Java's (`amber-rs -help` lists them with their defaults):
   `-java_compat_except AM5,...` gives it for all but those listed. The environment variables
   `AMBER_JAVA_COMPAT=1` and `AMBER_JAVA_COMPAT_EXCEPT` do the same.
 
+Reading is tuned by environment variables, which are not Java options and do not change any output:
+- `AMBER_STREAM_CHUNK_MB` (default 10) and `AMBER_STREAM_GAP_KB` (default 256). A reader thread takes
+  consecutive region tasks of one chromosome spanning up to the chunk size. It reads a BAM's tasks with
+  one index query over their span, starting a new run where a gap between tasks exceeds the gap size.
+  `AMBER_STREAM_GAP_KB=0` gives each region its own query, as Java does. A CRAM always gets one query
+  per region.
+- `AMBER_FILE_BLOCK_KB` (default 1024): the block size htslib reads the file in; 0 gives htslib's
+  default.
+
 ## Outputs
 
 In `-output_dir`, as Java writes them:
