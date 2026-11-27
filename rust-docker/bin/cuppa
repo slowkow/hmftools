@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# `cuppa` as oncoanalyser calls the Java tool, run by cuppa-rs: JVM options are dropped; cuppa-rs takes the Java
+# main classes itself (CuppaDataPrep; PredictionRunner, the default). -java_compat or CUPPA_JAVA_COMPAT=1 selects
+# Java's (and pycuppa's) behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec cuppa-rs ${args[@]+"${args[@]}"}

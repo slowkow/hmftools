@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Stands in for the Python that oncoanalyser's CUPPA task calls as `python -m cuppa.predict ...`: the image has no
+# Python, and cuppa-rs makes pycuppa's prediction itself. Anything else (such as the `python --version` and
+# `python -c "import ..."` lines of versions.yml) fails, so those version fields stay empty.
+set -euo pipefail
+if [ "${1:-}" = "-m" ] && [ "${2:-}" = "cuppa.predict" ]; then
+    shift 2
+    exec cuppa-rs predict "$@"
+fi
+echo "python (Rust ports image): only 'python -m cuppa.predict' is provided, by cuppa-rs" >&2
+exit 1

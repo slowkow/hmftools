@@ -1,7 +1,7 @@
 # hmf-common-rs
 
 Code shared by the Rust ports of hmftools (`sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`,
-`bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, `chord-rs`, `neo-rs`, and the ports that follow).
+`bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, `chord-rs`, `neo-rs`, `cuppa-rs`, and the ports that follow).
 It plays the part of the Java `hmf-common` module, plus the Java library behaviour the ports reproduce
 so that their output equals the Java tools'.
 
@@ -40,6 +40,7 @@ so that their output equals the Java tools'.
 | `kernel_estimator` | hmf-common KernelEstimator |
 | `config_builder` | hmf-common ConfigBuilder: registered items, hasValue, path and number checks, -version and -help (PURPLE) |
 | `neo`, `hla`, `rna` | the neoepitope files of LINX and NEO, LILAC's allele file, ISOFOX's transcript expression and the cohort expression matrix (NEO) |
+| `sigs` | hmf-common sigs: LeastSquaresFit, Matrix / loadMatrixDataFile, SnvSigUtils (bucket names, variantContext, the COSMIC SNV signatures resource) and PositionFrequencies' functions (SIGS, CUPPA) |
 | `ref_coords` | RefGenomeCoordinates: the GRCh37 and GRCh38 lengths of chromosomes 1-22, X and Y (resources refgenome/lengths.*.tsv) |
 
 The ports take it as a path dependency (`hmf-common = { path = "../hmf-common-rs" }`, with

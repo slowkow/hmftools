@@ -21,7 +21,7 @@ const PERC_ROUND: i32 = 5;
 
 /// The SNV signatures hmf-common carries as a resource (sigs/snv_cosmic_signatures.csv), used without
 /// -signatures_file
-const DEFAULT_SIGNATURES: &str = include_str!("../resources/snv_cosmic_signatures.csv");
+const DEFAULT_SIGNATURES: &str = hmf_common::sigs::SNV_COSMIC_SIGNATURES;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SignatureAllocation {

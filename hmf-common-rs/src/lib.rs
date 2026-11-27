@@ -69,6 +69,7 @@ pub mod rna;
 pub mod poisson;
 pub mod purple_files;
 pub mod segmentation;
+pub mod sigs;
 pub mod sv;
 pub mod transcript_utils;
 pub mod variant_context;

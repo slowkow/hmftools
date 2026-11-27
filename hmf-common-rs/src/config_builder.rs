@@ -287,6 +287,57 @@ impl ConfigBuilder {
     }
 }
 
+/// ConfigUtils.convertWildcardSamplePath(path, sampleId): `samplePath.replaceAll("\\*", sampleId)`, the
+/// sample id read as a Matcher replacement string ('\' escapes, '$0' the match, other '$' references
+/// rejected), as Java does. (Added for CUPPA from chord-rs's copy.)
+pub fn convert_wildcard_sample_path(sample_path: &str, sample_id: &str) -> Result<String> {
+    if !sample_path.contains('*') {
+        return Ok(sample_path.to_string());
+    }
+    let replacement = java_replacement(sample_id, "*")?;
+    Ok(sample_path.replace('*', &replacement))
+}
+
+/// Matcher.appendReplacement's reading of a replacement string for a pattern without groups whose match
+/// is `group0`
+pub fn java_replacement(replacement: &str, group0: &str) -> Result<String> {
+    let chars: Vec<char> = replacement.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' {
+            i += 1;
+            if i == chars.len() {
+                return Err(anyhow!("java.lang.IllegalArgumentException: character to be escaped is missing"));
+            }
+            out.push(chars[i]);
+            i += 1;
+        } else if c == '$' {
+            i += 1;
+            if i == chars.len() {
+                return Err(anyhow!("java.lang.IllegalArgumentException: Illegal group reference: group index is missing"));
+            }
+            if chars[i] == '{' {
+                let name: String = chars[i + 1..].iter().take_while(|c| **c != '}').collect();
+                return Err(anyhow!("java.lang.IllegalArgumentException: No group with name {{{name}}}"));
+            }
+            let Some(d) = chars[i].to_digit(10) else {
+                return Err(anyhow!("java.lang.IllegalArgumentException: Illegal group reference"));
+            };
+            i += 1;
+            if d != 0 {
+                return Err(anyhow!("java.lang.IndexOutOfBoundsException: No group {d}"));
+            }
+            out.push_str(group0);
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    Ok(out)
+}
+
 /// FileWriterUtils.checkAddDirSeparator
 pub fn check_add_dir_separator(dir: &str) -> String {
     if dir.ends_with('/') { dir.to_string() } else { format!("{dir}/") }

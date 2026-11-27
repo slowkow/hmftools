@@ -1,0 +1,1241 @@
+sample_id	data_type	clf_group	clf_name	feat_name	feat_value	cancer_type	data_value	rank	rank_group
+HG008-T	prob	dna	dna_combined			Anogenital	0.39593293399613794	1	0
+HG008-T	prob	dna	dna_combined			Bone/Soft tissue: Cartilaginous neoplasm	0.0025018029926599686	13	0
+HG008-T	prob	dna	dna_combined			Bone/Soft tissue: GIST	0.0	17	0
+HG008-T	prob	dna	dna_combined			Bone/Soft tissue: Leiomyosarcoma	0.0	18	0
+HG008-T	prob	dna	dna_combined			Bone/Soft tissue: Liposarcoma	0.0	19	0
+HG008-T	prob	dna	dna_combined			Bone/Soft tissue: Osteosarcoma	0.0	20	0
+HG008-T	prob	dna	dna_combined			Bone/Soft tissue: Undiff. sarcoma	0.0	21	0
+HG008-T	prob	dna	dna_combined			Bone/Soft tissue: Other	0.001981795243461659	14	0
+HG008-T	prob	dna	dna_combined			Breast: Triple negative	0.0	22	0
+HG008-T	prob	dna	dna_combined			Breast: Other	0.0011246551519369203	16	0
+HG008-T	prob	dna	dna_combined			CNS: Glioma	0.0	23	0
+HG008-T	prob	dna	dna_combined			CNS: Medulloblastoma	0.0	24	0
+HG008-T	prob	dna	dna_combined			CNS: Pilocytic astrocytoma	0.0	25	0
+HG008-T	prob	dna	dna_combined			Colorectum/Small intestine/Appendix	0.012247812561782855	7	0
+HG008-T	prob	dna	dna_combined			Esophagus/Stomach	0.011459644074473035	9	0
+HG008-T	prob	dna	dna_combined			Gynecologic: Endometrium	0.0	26	0
+HG008-T	prob	dna	dna_combined			Gynecologic: Ovary/Fallopian tube	0.045838599192093155	4	0
+HG008-T	prob	dna	dna_combined			HPB: Bile duct/Gallbladder	0.01907339886779369	6	0
+HG008-T	prob	dna	dna_combined			HPB: Liver	0.0029503148701217844	12	0
+HG008-T	prob	dna	dna_combined			HPB: Pancreas	0.2892574788998769	2	0
+HG008-T	prob	dna	dna_combined			Head and neck: Adenoid cystic	0.0	27	0
+HG008-T	prob	dna	dna_combined			Head and neck: Salivary gland	0.0	28	0
+HG008-T	prob	dna	dna_combined			Head and neck: Other	0.019444563208023225	5	0
+HG008-T	prob	dna	dna_combined			Kidney: Chromophobe	0.0	29	0
+HG008-T	prob	dna	dna_combined			Kidney: Other	0.003349742114076735	11	0
+HG008-T	prob	dna	dna_combined			Lung: Non-small cell: LUAD	0.004047086197304604	10	0
+HG008-T	prob	dna	dna_combined			Lung: Non-small cell: LUSC	0.011643488631817526	8	0
+HG008-T	prob	dna	dna_combined			Lung: Small cell	0.0	30	0
+HG008-T	prob	dna	dna_combined			Lymphoid tissue	0.0	31	0
+HG008-T	prob	dna	dna_combined			Mesothelium	0.0	32	0
+HG008-T	prob	dna	dna_combined			Myeloid: Acute myeloid leukemia	0.0	33	0
+HG008-T	prob	dna	dna_combined			Myeloid: Myeloproliferative neoplasm	0.0	34	0
+HG008-T	prob	dna	dna_combined			NET: Colorectum/Small intestine	0.0	35	0
+HG008-T	prob	dna	dna_combined			NET: Lung	0.0	36	0
+HG008-T	prob	dna	dna_combined			NET: Pancreas	0.0	37	0
+HG008-T	prob	dna	dna_combined			Prostate	0.0	38	0
+HG008-T	prob	dna	dna_combined			Skin: Melanoma	0.0018934615938691315	15	0
+HG008-T	prob	dna	dna_combined			Skin: Other	0.0	39	0
+HG008-T	prob	dna	dna_combined			Thyroid gland	0.0	40	0
+HG008-T	prob	dna	dna_combined			Urothelial tract	0.1772532224045709	3	0
+HG008-T	prob	dna	gen_pos			Anogenital	0.6329810278497957	1	1
+HG008-T	prob	dna	gen_pos			Bone/Soft tissue: Cartilaginous neoplasm	1.1828952731626532e-07	40	1
+HG008-T	prob	dna	gen_pos			Bone/Soft tissue: GIST	0.00011990860217008873	28	1
+HG008-T	prob	dna	gen_pos			Bone/Soft tissue: Leiomyosarcoma	0.0007524418452227549	21	1
+HG008-T	prob	dna	gen_pos			Bone/Soft tissue: Liposarcoma	2.1398926315994884e-05	34	1
+HG008-T	prob	dna	gen_pos			Bone/Soft tissue: Osteosarcoma	0.0004930927720466279	23	1
+HG008-T	prob	dna	gen_pos			Bone/Soft tissue: Undiff. sarcoma	7.097598429940436e-05	30	1
+HG008-T	prob	dna	gen_pos			Bone/Soft tissue: Other	0.0011259074379349598	19	1
+HG008-T	prob	dna	gen_pos			Breast: Triple negative	0.003280292663338733	13	1
+HG008-T	prob	dna	gen_pos			Breast: Other	0.006032273982736525	12	1
+HG008-T	prob	dna	gen_pos			CNS: Glioma	1.915925492094476e-05	36	1
+HG008-T	prob	dna	gen_pos			CNS: Medulloblastoma	0.00017340993027204082	27	1
+HG008-T	prob	dna	gen_pos			CNS: Pilocytic astrocytoma	0.0006104700342026197	22	1
+HG008-T	prob	dna	gen_pos			Colorectum/Small intestine/Appendix	0.007034994611973306	9	1
+HG008-T	prob	dna	gen_pos			Esophagus/Stomach	0.021246200804495005	5	1
+HG008-T	prob	dna	gen_pos			Gynecologic: Endometrium	0.019905302261727226	6	1
+HG008-T	prob	dna	gen_pos			Gynecologic: Ovary/Fallopian tube	0.023780395939549063	4	1
+HG008-T	prob	dna	gen_pos			HPB: Bile duct/Gallbladder	0.12709469400139387	2	1
+HG008-T	prob	dna	gen_pos			HPB: Liver	0.0004613031572333093	24	1
+HG008-T	prob	dna	gen_pos			HPB: Pancreas	0.09388224713732853	3	1
+HG008-T	prob	dna	gen_pos			Head and neck: Adenoid cystic	6.573515808329774e-07	39	1
+HG008-T	prob	dna	gen_pos			Head and neck: Salivary gland	0.0015212990968038315	18	1
+HG008-T	prob	dna	gen_pos			Head and neck: Other	0.007011674797249801	10	1
+HG008-T	prob	dna	gen_pos			Kidney: Chromophobe	1.9422077312595085e-05	35	1
+HG008-T	prob	dna	gen_pos			Kidney: Other	0.0002043536804820639	26	1
+HG008-T	prob	dna	gen_pos			Lung: Non-small cell: LUAD	0.014418011398291686	8	1
+HG008-T	prob	dna	gen_pos			Lung: Non-small cell: LUSC	0.019506183257095244	7	1
+HG008-T	prob	dna	gen_pos			Lung: Small cell	0.002739713970685601	15	1
+HG008-T	prob	dna	gen_pos			Lymphoid tissue	1.1661270453788206e-05	37	1
+HG008-T	prob	dna	gen_pos			Mesothelium	6.073184824874692e-05	31	1
+HG008-T	prob	dna	gen_pos			Myeloid: Acute myeloid leukemia	3.935152251621226e-06	38	1
+HG008-T	prob	dna	gen_pos			Myeloid: Myeloproliferative neoplasm	0.0010241893919260927	20	1
+HG008-T	prob	dna	gen_pos			NET: Colorectum/Small intestine	0.00024379151324546637	25	1
+HG008-T	prob	dna	gen_pos			NET: Lung	0.0015853116404678327	17	1
+HG008-T	prob	dna	gen_pos			NET: Pancreas	0.00011698381832353472	29	1
+HG008-T	prob	dna	gen_pos			Prostate	3.066506714150165e-05	33	1
+HG008-T	prob	dna	gen_pos			Skin: Melanoma	4.291351697949176e-05	32	1
+HG008-T	prob	dna	gen_pos			Skin: Other	0.002684518150904927	16	1
+HG008-T	prob	dna	gen_pos			Thyroid gland	0.003031352864579258	14	1
+HG008-T	prob	dna	gen_pos			Urothelial tract	0.006657014649491904	11	1
+HG008-T	prob	dna	snv96			Anogenital	0.12310371399840221	4	2
+HG008-T	prob	dna	snv96			Bone/Soft tissue: Cartilaginous neoplasm	2.631374683004715e-08	37	2
+HG008-T	prob	dna	snv96			Bone/Soft tissue: GIST	4.341022141947503e-05	25	2
+HG008-T	prob	dna	snv96			Bone/Soft tissue: Leiomyosarcoma	1.4777023536502262e-05	30	2
+HG008-T	prob	dna	snv96			Bone/Soft tissue: Liposarcoma	2.2270946728106533e-05	28	2
+HG008-T	prob	dna	snv96			Bone/Soft tissue: Osteosarcoma	0.005333351075227852	9	2
+HG008-T	prob	dna	snv96			Bone/Soft tissue: Undiff. sarcoma	0.00010937977464343917	21	2
+HG008-T	prob	dna	snv96			Bone/Soft tissue: Other	0.0003922294147562562	19	2
+HG008-T	prob	dna	snv96			Breast: Triple negative	0.0009322678050927929	17	2
+HG008-T	prob	dna	snv96			Breast: Other	0.0028964871834149175	13	2
+HG008-T	prob	dna	snv96			CNS: Glioma	7.028099183152138e-07	35	2
+HG008-T	prob	dna	snv96			CNS: Medulloblastoma	2.3811673221621373e-07	36	2
+HG008-T	prob	dna	snv96			CNS: Pilocytic astrocytoma	3.425206897166947e-11	40	2
+HG008-T	prob	dna	snv96			Colorectum/Small intestine/Appendix	7.59112365651365e-05	22	2
+HG008-T	prob	dna	snv96			Esophagus/Stomach	0.004945761288717408	11	2
+HG008-T	prob	dna	snv96			Gynecologic: Endometrium	0.00496293428776344	10	2
+HG008-T	prob	dna	snv96			Gynecologic: Ovary/Fallopian tube	0.0024212730861126078	14	2
+HG008-T	prob	dna	snv96			HPB: Bile duct/Gallbladder	0.1520529169315641	3	2
+HG008-T	prob	dna	snv96			HPB: Liver	4.969174651457072e-05	24	2
+HG008-T	prob	dna	snv96			HPB: Pancreas	0.0039019086115086887	12	2
+HG008-T	prob	dna	snv96			Head and neck: Adenoid cystic	1.0493618004088755e-05	32	2
+HG008-T	prob	dna	snv96			Head and neck: Salivary gland	0.021247833441952475	6	2
+HG008-T	prob	dna	snv96			Head and neck: Other	0.45035423008899544	1	2
+HG008-T	prob	dna	snv96			Kidney: Chromophobe	1.575984050585764e-06	33	2
+HG008-T	prob	dna	snv96			Kidney: Other	0.0021305231907915514	15	2
+HG008-T	prob	dna	snv96			Lung: Non-small cell: LUAD	0.006187512401054934	8	2
+HG008-T	prob	dna	snv96			Lung: Non-small cell: LUSC	0.006653953650699302	7	2
+HG008-T	prob	dna	snv96			Lung: Small cell	0.0003239556320584767	20	2
+HG008-T	prob	dna	snv96			Lymphoid tissue	1.0615556836924155e-06	34	2
+HG008-T	prob	dna	snv96			Mesothelium	2.4255441569222746e-05	27	2
+HG008-T	prob	dna	snv96			Myeloid: Acute myeloid leukemia	2.2417225028468156e-08	38	2
+HG008-T	prob	dna	snv96			Myeloid: Myeloproliferative neoplasm	2.308875645446324e-10	39	2
+HG008-T	prob	dna	snv96			NET: Colorectum/Small intestine	3.165280929154297e-05	26	2
+HG008-T	prob	dna	snv96			NET: Lung	5.47040827260553e-05	23	2
+HG008-T	prob	dna	snv96			NET: Pancreas	0.0018115703641962784	16	2
+HG008-T	prob	dna	snv96			Prostate	1.4136055434068255e-05	31	2
+HG008-T	prob	dna	snv96			Skin: Melanoma	0.0004083681134359324	18	2
+HG008-T	prob	dna	snv96			Skin: Other	0.02181432947784786	5	2
+HG008-T	prob	dna	snv96			Thyroid gland	1.8300476126164185e-05	29	2
+HG008-T	prob	dna	snv96			Urothelial tract	0.1876522690613526	2	2
+HG008-T	prob	dna	event			Anogenital	0.0028627917777741263	7	3
+HG008-T	prob	dna	event			Bone/Soft tissue: Cartilaginous neoplasm	1.53442151203188e-08	40	3
+HG008-T	prob	dna	event			Bone/Soft tissue: GIST	5.5979520902430626e-05	27	3
+HG008-T	prob	dna	event			Bone/Soft tissue: Leiomyosarcoma	0.00012490663260988338	22	3
+HG008-T	prob	dna	event			Bone/Soft tissue: Liposarcoma	0.00014731128352473387	19	3
+HG008-T	prob	dna	event			Bone/Soft tissue: Osteosarcoma	7.655425431315602e-05	26	3
+HG008-T	prob	dna	event			Bone/Soft tissue: Undiff. sarcoma	9.984291812453386e-05	23	3
+HG008-T	prob	dna	event			Bone/Soft tissue: Other	0.0005072927684860144	12	3
+HG008-T	prob	dna	event			Breast: Triple negative	0.0028911146131426	6	3
+HG008-T	prob	dna	event			Breast: Other	0.00041808078598008113	15	3
+HG008-T	prob	dna	event			CNS: Glioma	0.00046918163908523454	14	3
+HG008-T	prob	dna	event			CNS: Medulloblastoma	9.328355494695689e-06	32	3
+HG008-T	prob	dna	event			CNS: Pilocytic astrocytoma	1.5265296140102766e-05	30	3
+HG008-T	prob	dna	event			Colorectum/Small intestine/Appendix	0.0014738392890436822	9	3
+HG008-T	prob	dna	event			Esophagus/Stomach	0.0016892593459276858	8	3
+HG008-T	prob	dna	event			Gynecologic: Endometrium	0.004284650527018908	5	3
+HG008-T	prob	dna	event			Gynecologic: Ovary/Fallopian tube	0.14853423318845888	2	3
+HG008-T	prob	dna	event			HPB: Bile duct/Gallbladder	0.09655589513839676	3	3
+HG008-T	prob	dna	event			HPB: Liver	8.721091612171092e-05	24	3
+HG008-T	prob	dna	event			HPB: Pancreas	0.7304330423613821	1	3
+HG008-T	prob	dna	event			Head and neck: Adenoid cystic	2.516122741304838e-07	39	3
+HG008-T	prob	dna	event			Head and neck: Salivary gland	0.00039455489156519155	16	3
+HG008-T	prob	dna	event			Head and neck: Other	0.00013446563726109704	21	3
+HG008-T	prob	dna	event			Kidney: Chromophobe	4.3931307143522417e-07	38	3
+HG008-T	prob	dna	event			Kidney: Other	4.527128339506356e-05	29	3
+HG008-T	prob	dna	event			Lung: Non-small cell: LUAD	0.005755585541527465	4	3
+HG008-T	prob	dna	event			Lung: Non-small cell: LUSC	0.0006242768810705508	11	3
+HG008-T	prob	dna	event			Lung: Small cell	8.255202127960391e-05	25	3
+HG008-T	prob	dna	event			Lymphoid tissue	4.249916621858761e-06	35	3
+HG008-T	prob	dna	event			Mesothelium	1.3102356158195085e-05	31	3
+HG008-T	prob	dna	event			Myeloid: Acute myeloid leukemia	5.233273430791598e-06	33	3
+HG008-T	prob	dna	event			Myeloid: Myeloproliferative neoplasm	1.4843890076524324e-06	37	3
+HG008-T	prob	dna	event			NET: Colorectum/Small intestine	0.00030463060487536834	18	3
+HG008-T	prob	dna	event			NET: Lung	5.128246767072349e-06	34	3
+HG008-T	prob	dna	event			NET: Pancreas	0.000325515571448635	17	3
+HG008-T	prob	dna	event			Prostate	1.562812894906821e-06	36	3
+HG008-T	prob	dna	event			Skin: Melanoma	4.985986489365043e-05	28	3
+HG008-T	prob	dna	event			Skin: Other	0.00014226627637863864	20	3
+HG008-T	prob	dna	event			Thyroid gland	0.0004848815220642404	13	3
+HG008-T	prob	dna	event			Urothelial tract	0.0008888920278721011	10	3
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Anogenital	0.42066701121819233	37	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Bone/Soft tissue: Cartilaginous neoplasm	150.10119047619045	2	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Bone/Soft tissue: GIST	2.1540104211155717	11	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Bone/Soft tissue: Leiomyosarcoma	1.577442762417115	13	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Bone/Soft tissue: Liposarcoma	1.9236402471584404	12	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Bone/Soft tissue: Osteosarcoma	0.9800489968774939	20	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Bone/Soft tissue: Undiff. sarcoma	1.0377793324828182	14	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Bone/Soft tissue: Other	0.960283829370025	25	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Breast: Triple negative	0.8600636651484109	31	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Breast: Other	0.7033664308375737	32	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	CNS: Glioma	0.9818979749171628	19	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	CNS: Medulloblastoma	21.552991452991453	6	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	CNS: Pilocytic astrocytoma	277.1098901098901	1	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Colorectum/Small intestine/Appendix	0.9646718287738778	24	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Esophagus/Stomach	0.8675913922737879	30	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Gynecologic: Endometrium	0.9249880803385183	27	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Gynecologic: Ovary/Fallopian tube	0.9686832256413537	23	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	HPB: Bile duct/Gallbladder	0.9064253027425833	28	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	HPB: Liver	0.999625313417968	15	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	HPB: Pancreas	0.9757049989807244	22	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Head and neck: Adenoid cystic	27.056866952789697	5	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Head and neck: Salivary gland	0.8891246220538414	29	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Head and neck: Other	0.5852732240437158	34	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Kidney: Chromophobe	4.671545016672842	7	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Kidney: Other	0.9886889425657542	18	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Lung: Non-small cell: LUAD	0.4944950946175685	35	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Lung: Non-small cell: LUSC	0.370580439968195	38	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Lung: Small cell	0.6858036363636363	33	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Lymphoid tissue	0.9916959811792467	17	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Mesothelium	2.381883441957117	10	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Myeloid: Acute myeloid leukemia	131.33854166666666	3	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Myeloid: Myeloproliferative neoplasm	103.77366255144032	4	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	NET: Colorectum/Small intestine	2.5059127496770346	9	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	NET: Lung	3.0726209333495795	8	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	NET: Pancreas	0.9789662934684238	21	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Prostate	0.9957516205988621	16	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Skin: Melanoma	0.24762031248517735	39	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Skin: Other	0.45318274205469333	36	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Thyroid gland	0.9580672498100562	26	4
+HG008-T	sig_quantile			AID/APOBEC (SBS2/13)	2521.7	Urothelial tract	0.24062662001036805	40	4
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Anogenital	0.8930353929083926	34	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Bone/Soft tissue: Cartilaginous neoplasm	inf	1	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Bone/Soft tissue: GIST	4.465214335910049	10	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Bone/Soft tissue: Leiomyosarcoma	0.9876737311478347	22	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Bone/Soft tissue: Liposarcoma	56.73214285714286	8	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Bone/Soft tissue: Osteosarcoma	0.9889709790581482	20	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Bone/Soft tissue: Undiff. sarcoma	3.1362290227048373	11	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Bone/Soft tissue: Other	1.7567044512026542	13	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Breast: Triple negative	0.9803326258093985	26	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Breast: Other	0.982238600836719	24	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	CNS: Glioma	inf	2	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	CNS: Medulloblastoma	4.665198237885463	9	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	CNS: Pilocytic astrocytoma	inf	3	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Colorectum/Small intestine/Appendix	0.9804572735666919	25	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Esophagus/Stomach	0.9905989987462409	19	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Gynecologic: Endometrium	1.1133695461713684	16	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Gynecologic: Ovary/Fallopian tube	0.9682671604993361	29	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	HPB: Bile duct/Gallbladder	0.9485790071996969	33	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	HPB: Liver	0.7848562091503268	36	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	HPB: Pancreas	1.2792430038252467	15	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Head and neck: Adenoid cystic	1.608607594936709	14	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Head and neck: Salivary gland	0.9633960302764513	31	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Head and neck: Other	0.8741021671826625	35	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Kidney: Chromophobe	264.75	7	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Kidney: Other	0.9621659019736364	32	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Lung: Non-small cell: LUAD	0.39898522692232224	38	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Lung: Non-small cell: LUSC	0.07726060347419571	39	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Lung: Small cell	0.04905057604376734	40	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Lymphoid tissue	inf	4	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Mesothelium	0.9741353383458646	28	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Myeloid: Acute myeloid leukemia	1.8476301250363478	12	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Myeloid: Myeloproliferative neoplasm	inf	5	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	NET: Colorectum/Small intestine	inf	6	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	NET: Lung	0.9782792322391403	27	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	NET: Pancreas	0.9675213675213675	30	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Prostate	0.9887378290067813	21	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Skin: Melanoma	0.9935421153259918	18	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Skin: Other	0.9832697698676576	23	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Thyroid gland	0.9950996107167391	17	5
+HG008-T	sig_quantile			Smoking (SBS4)	635.4	Urothelial tract	0.7464095744680853	37	5
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Anogenital	0.0	1	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Bone/Soft tissue: Cartilaginous neoplasm	0.0	2	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Bone/Soft tissue: GIST	0.0	3	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Bone/Soft tissue: Leiomyosarcoma	0.0	4	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Bone/Soft tissue: Liposarcoma	0.0	5	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Bone/Soft tissue: Osteosarcoma	0.0	6	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Bone/Soft tissue: Undiff. sarcoma	0.0	7	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Bone/Soft tissue: Other	0.0	8	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Breast: Triple negative	0.0	9	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Breast: Other	0.0	10	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	CNS: Glioma	0.0	11	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	CNS: Medulloblastoma	0.0	12	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	CNS: Pilocytic astrocytoma	0.0	13	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Colorectum/Small intestine/Appendix	0.0	14	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Esophagus/Stomach	0.0	15	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Gynecologic: Endometrium	0.0	16	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Gynecologic: Ovary/Fallopian tube	0.0	17	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	HPB: Bile duct/Gallbladder	0.0	18	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	HPB: Liver	0.0	19	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	HPB: Pancreas	0.0	20	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Head and neck: Adenoid cystic	0.0	21	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Head and neck: Salivary gland	0.0	22	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Head and neck: Other	0.0	23	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Kidney: Chromophobe	0.0	24	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Kidney: Other	0.0	25	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Lung: Non-small cell: LUAD	0.0	26	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Lung: Non-small cell: LUSC	0.0	27	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Lung: Small cell	0.0	28	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Lymphoid tissue	0.0	29	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Mesothelium	0.0	30	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Myeloid: Acute myeloid leukemia	0.0	31	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Myeloid: Myeloproliferative neoplasm	0.0	32	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	NET: Colorectum/Small intestine	0.0	33	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	NET: Lung	0.0	34	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	NET: Pancreas	0.0	35	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Prostate	0.0	36	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Skin: Melanoma	0.0	37	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Skin: Other	0.0	38	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Thyroid gland	0.0	39	6
+HG008-T	sig_quantile			MMRD (SBS6)	0.0	Urothelial tract	0.0	40	6
+HG008-T	sig_quantile			UV (SBS7)	241.2	Anogenital	0.7506182665794935	35	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Bone/Soft tissue: Cartilaginous neoplasm	17.605839416058394	3	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Bone/Soft tissue: GIST	2.227146814404432	9	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Bone/Soft tissue: Leiomyosarcoma	0.9962582596926995	15	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Bone/Soft tissue: Liposarcoma	1.041900647948164	12	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Bone/Soft tissue: Osteosarcoma	0.9801116757638498	22	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Bone/Soft tissue: Undiff. sarcoma	0.9331204026325978	29	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Bone/Soft tissue: Other	0.9737591842855	25	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Breast: Triple negative	0.9169937205651492	30	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Breast: Other	0.9429688283051018	28	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	CNS: Glioma	4.401459854014599	4	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	CNS: Medulloblastoma	3.941176470588235	5	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	CNS: Pilocytic astrocytoma	20.099999999999998	2	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Colorectum/Small intestine/Appendix	0.9853041695146959	20	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Esophagus/Stomach	0.9793103448275863	23	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Gynecologic: Endometrium	0.9631230622466015	26	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Gynecologic: Ovary/Fallopian tube	0.9630973986690865	27	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	HPB: Bile duct/Gallbladder	0.8828054298642534	32	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	HPB: Liver	0.9902781802376123	17	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	HPB: Pancreas	0.984423322457086	21	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Head and neck: Adenoid cystic	3.470503597122302	6	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Head and neck: Salivary gland	0.8870737913486005	31	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Head and neck: Other	0.7643589743589744	34	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Kidney: Chromophobe	1.5754408883082953	10	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Kidney: Other	0.9865156707360604	18	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Lung: Non-small cell: LUAD	0.6363636363636364	38	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Lung: Non-small cell: LUSC	0.6873496873496873	36	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Lung: Small cell	0.775	33	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Lymphoid tissue	0.9955350856771001	16	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Mesothelium	0.9765812131805528	24	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Myeloid: Acute myeloid leukemia	3.2159999999999997	7	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Myeloid: Myeloproliferative neoplasm	402.0	1	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	NET: Colorectum/Small intestine	1.445176752546435	11	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	NET: Lung	0.986267166042447	19	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	NET: Pancreas	0.9984931755231682	13	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Prostate	0.9976079003249162	14	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Skin: Melanoma	0.12090645423978758	40	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Skin: Other	0.31623701370468615	39	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Thyroid gland	2.269049858889934	8	7
+HG008-T	sig_quantile			UV (SBS7)	241.2	Urothelial tract	0.6374759152215799	37	7
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Anogenital	0.0	1	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Bone/Soft tissue: Cartilaginous neoplasm	0.0	2	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Bone/Soft tissue: GIST	0.0	3	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Bone/Soft tissue: Leiomyosarcoma	0.0	4	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Bone/Soft tissue: Liposarcoma	0.0	5	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Bone/Soft tissue: Osteosarcoma	0.0	6	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Bone/Soft tissue: Undiff. sarcoma	0.0	7	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Bone/Soft tissue: Other	0.0	8	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Breast: Triple negative	0.0	9	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Breast: Other	0.0	10	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	CNS: Glioma	0.0	11	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	CNS: Medulloblastoma	0.0	12	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	CNS: Pilocytic astrocytoma	0.0	13	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Colorectum/Small intestine/Appendix	0.0	14	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Esophagus/Stomach	0.0	15	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Gynecologic: Endometrium	0.0	16	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Gynecologic: Ovary/Fallopian tube	0.0	17	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	HPB: Bile duct/Gallbladder	0.0	18	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	HPB: Liver	0.0	19	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	HPB: Pancreas	0.0	20	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Head and neck: Adenoid cystic	0.0	21	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Head and neck: Salivary gland	0.0	22	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Head and neck: Other	0.0	23	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Kidney: Chromophobe	0.0	24	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Kidney: Other	0.0	25	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Lung: Non-small cell: LUAD	0.0	26	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Lung: Non-small cell: LUSC	0.0	27	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Lung: Small cell	0.0	28	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Lymphoid tissue	0.0	29	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Mesothelium	0.0	30	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Myeloid: Acute myeloid leukemia	0.0	31	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Myeloid: Myeloproliferative neoplasm	0.0	32	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	NET: Colorectum/Small intestine	0.0	33	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	NET: Lung	0.0	34	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	NET: Pancreas	0.0	35	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Prostate	0.0	36	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Skin: Melanoma	0.0	37	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Skin: Other	0.0	38	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Thyroid gland	0.0	39	8
+HG008-T	sig_quantile			ROS/5FU (SBS17)	0.0	Urothelial tract	0.0	40	8
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Anogenital	1.0	17	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Bone/Soft tissue: Cartilaginous neoplasm	0.8965181405087218	37	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Bone/Soft tissue: GIST	1.0	18	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Bone/Soft tissue: Leiomyosarcoma	1.0	19	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Bone/Soft tissue: Liposarcoma	0.9999867602177601	30	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Bone/Soft tissue: Osteosarcoma	0.8924650601734435	38	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Bone/Soft tissue: Undiff. sarcoma	0.9999968563856115	28	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Bone/Soft tissue: Other	1.0014936343814902	11	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Breast: Triple negative	0.9999961049107529	29	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Breast: Other	1.0056528322161988	10	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	CNS: Glioma	0.9999996581671382	27	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	CNS: Medulloblastoma	0.8733794765289002	39	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	CNS: Pilocytic astrocytoma	0.81298273876049	40	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Colorectum/Small intestine/Appendix	1.0000609298571705	12	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Esophagus/Stomach	1.0000038838156413	16	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Gynecologic: Endometrium	1.0	20	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Gynecologic: Ovary/Fallopian tube	1.0	21	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	HPB: Bile duct/Gallbladder	1.0000234311633438	13	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	HPB: Liver	1.0476382735915437	8	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	HPB: Pancreas	1.0	22	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Head and neck: Adenoid cystic	1.0	23	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Head and neck: Salivary gland	0.9999292200077351	31	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Head and neck: Other	1.0000160284385642	14	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Kidney: Chromophobe	0.931896844860433	35	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Kidney: Other	1.0231703409501072	9	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Lung: Non-small cell: LUAD	1.1264193676702154	4	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Lung: Non-small cell: LUSC	1.1079591755293925	5	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Lung: Small cell	1.199782461851417	1	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Lymphoid tissue	1.0	24	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Mesothelium	1.0	25	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Myeloid: Acute myeloid leukemia	0.9923803247508669	33	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Myeloid: Myeloproliferative neoplasm	0.9282901296865894	36	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	NET: Colorectum/Small intestine	1.0853165758683703	6	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	NET: Lung	1.0599083476839082	7	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	NET: Pancreas	0.9947292904346292	32	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Prostate	1.0	26	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Skin: Melanoma	1.1497019710952865	2	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Skin: Other	1.1347119794473646	3	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Thyroid gland	0.9722138128490779	34	9
+HG008-T	feat_contrib	dna	event	tmb.snv_count	9227.0	Urothelial tract	1.0000046310817334	15	9
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Anogenital	1.0	3	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Bone/Soft tissue: Cartilaginous neoplasm	1.0	4	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Bone/Soft tissue: GIST	1.0	5	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Bone/Soft tissue: Leiomyosarcoma	1.0	6	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Bone/Soft tissue: Liposarcoma	1.0	7	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Bone/Soft tissue: Osteosarcoma	1.0	8	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Bone/Soft tissue: Undiff. sarcoma	1.0	9	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Bone/Soft tissue: Other	1.0	10	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Breast: Triple negative	1.0	11	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Breast: Other	1.0	12	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	CNS: Glioma	0.9989258579278067	40	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	CNS: Medulloblastoma	1.0	13	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	CNS: Pilocytic astrocytoma	1.0	14	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Colorectum/Small intestine/Appendix	0.9992132859104125	39	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Esophagus/Stomach	0.9995246945947164	36	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Gynecologic: Endometrium	0.999277637032851	38	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Gynecologic: Ovary/Fallopian tube	1.0	15	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	HPB: Bile duct/Gallbladder	0.999398902329025	37	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	HPB: Liver	1.0	16	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	HPB: Pancreas	1.0	17	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Head and neck: Adenoid cystic	1.0	18	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Head and neck: Salivary gland	1.0	19	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Head and neck: Other	1.0	20	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Kidney: Chromophobe	1.0	21	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Kidney: Other	1.0	22	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Lung: Non-small cell: LUAD	1.0	23	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Lung: Non-small cell: LUSC	1.000405589154052	1	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Lung: Small cell	1.0	24	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Lymphoid tissue	1.0	25	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Mesothelium	1.0	26	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Myeloid: Acute myeloid leukemia	1.0	27	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Myeloid: Myeloproliferative neoplasm	1.0	28	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	NET: Colorectum/Small intestine	1.0	29	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	NET: Lung	1.0	30	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	NET: Pancreas	1.0	31	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Prostate	1.0	32	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Skin: Melanoma	1.0	33	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Skin: Other	1.0003007150452634	2	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Thyroid gland	1.0	34	10
+HG008-T	feat_contrib	dna	event	tmb.indels_per_mb	0.241	Urothelial tract	1.0	35	10
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Anogenital	2.6613787647389047	5	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Bone/Soft tissue: Cartilaginous neoplasm	0.5566741666222337	38	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Bone/Soft tissue: GIST	1.190192699654981	16	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Bone/Soft tissue: Leiomyosarcoma	1.8740509822736062	6	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Bone/Soft tissue: Liposarcoma	0.6398281762630801	35	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Bone/Soft tissue: Osteosarcoma	1.242016560711299	14	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Bone/Soft tissue: Undiff. sarcoma	0.8953785746906445	28	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Bone/Soft tissue: Other	1.2614979830250177	12	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Breast: Triple negative	17.51668765313182	1	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Breast: Other	7.493100522815247	4	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	CNS: Glioma	1.0638419466591846	19	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	CNS: Medulloblastoma	0.9952316464060702	22	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	CNS: Pilocytic astrocytoma	1.2380413562255437	15	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Colorectum/Small intestine/Appendix	1.4406489964772442	9	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Esophagus/Stomach	0.6989426493507852	33	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Gynecologic: Endometrium	11.274029717752777	3	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Gynecologic: Ovary/Fallopian tube	16.447509398687373	2	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	HPB: Bile duct/Gallbladder	1.253246419072587	13	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	HPB: Liver	0.9135258435086703	27	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	HPB: Pancreas	1.2957938882147768	11	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Head and neck: Adenoid cystic	0.9252123173031916	26	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Head and neck: Salivary gland	0.5299588095305305	39	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Head and neck: Other	0.5749990444947942	37	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Kidney: Chromophobe	0.9998352324893278	20	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Kidney: Other	0.6746839066835392	34	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Lung: Non-small cell: LUAD	1.5641470439351635	8	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Lung: Non-small cell: LUSC	0.7007314790644547	32	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Lung: Small cell	1.071903015331709	18	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Lymphoid tissue	0.9391141116710745	24	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Mesothelium	0.7785219266411282	30	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Myeloid: Acute myeloid leukemia	0.8923750500220967	29	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Myeloid: Myeloproliferative neoplasm	0.6193085931041621	36	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	NET: Colorectum/Small intestine	0.772732582924959	31	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	NET: Lung	1.4004263739024752	10	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	NET: Pancreas	0.951388546096709	23	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Prostate	0.14601688658917464	40	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Skin: Melanoma	1.161913782301543	17	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Skin: Other	0.9262583276364443	25	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Thyroid gland	1.722327062392178	7	11
+HG008-T	feat_contrib	dna	event	trait.is_male	0.0	Urothelial tract	0.9966481100423116	21	11
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Anogenital	0.7790453531796049	36	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Bone/Soft tissue: Cartilaginous neoplasm	5.2521006398543895	1	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Bone/Soft tissue: GIST	1.3629700554200639	8	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Bone/Soft tissue: Leiomyosarcoma	1.1463120666849393	11	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Bone/Soft tissue: Liposarcoma	1.616816590790822	4	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Bone/Soft tissue: Osteosarcoma	0.8860836126528505	30	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Bone/Soft tissue: Undiff. sarcoma	1.002500063504902	17	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Bone/Soft tissue: Other	0.8645955984334771	32	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Breast: Triple negative	0.6877477574780287	38	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Breast: Other	0.8736535197807836	31	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	CNS: Glioma	2.262411874473295	2	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	CNS: Medulloblastoma	0.9726953031950446	24	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	CNS: Pilocytic astrocytoma	1.0761004690583806	14	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Colorectum/Small intestine/Appendix	0.8979405910555883	29	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Esophagus/Stomach	1.0017614974263012	18	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Gynecologic: Endometrium	0.941017806244129	28	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Gynecologic: Ovary/Fallopian tube	0.8009936273498642	35	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	HPB: Bile duct/Gallbladder	0.8384380735067823	33	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	HPB: Liver	1.0427730291615394	15	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	HPB: Pancreas	0.947834785123899	26	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Head and neck: Adenoid cystic	1.0820897010412085	13	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Head and neck: Salivary gland	1.4699492964997867	7	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Head and neck: Other	1.0035744258391173	16	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Kidney: Chromophobe	0.9995923206147505	23	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Kidney: Other	1.0	20	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Lung: Non-small cell: LUAD	0.6815867432271556	39	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Lung: Non-small cell: LUSC	0.9608203905576693	25	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Lung: Small cell	1.0000336228026545	19	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Lymphoid tissue	1.7621574034539333	3	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Mesothelium	1.0	21	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Myeloid: Acute myeloid leukemia	0.40632852780686235	40	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Myeloid: Myeloproliferative neoplasm	1.5421812320032704	5	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	NET: Colorectum/Small intestine	1.3568971152317886	9	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	NET: Lung	0.8282770149568799	34	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	NET: Pancreas	0.7441844876635384	37	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Prostate	1.1020778823888546	12	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Skin: Melanoma	1.0	22	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Skin: Other	1.4827220815626059	6	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Thyroid gland	1.18312429629561	10	12
+HG008-T	feat_contrib	dna	event	trait.whole_genome_duplication	0.0	Urothelial tract	0.9430032087903987	27	12
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Anogenital	0.8732434776428953	39	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Bone/Soft tissue: Cartilaginous neoplasm	1.0	8	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Bone/Soft tissue: GIST	1.0	9	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Bone/Soft tissue: Leiomyosarcoma	1.0	10	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Bone/Soft tissue: Liposarcoma	1.0	11	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Bone/Soft tissue: Osteosarcoma	1.0	12	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Bone/Soft tissue: Undiff. sarcoma	1.0	13	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Bone/Soft tissue: Other	1.0	14	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Breast: Triple negative	1.0	15	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Breast: Other	1.0	16	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	CNS: Glioma	1.0	17	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	CNS: Medulloblastoma	1.0	18	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	CNS: Pilocytic astrocytoma	1.0	19	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Colorectum/Small intestine/Appendix	0.583982147336987	40	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Esophagus/Stomach	0.877185961703935	38	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Gynecologic: Endometrium	1.0858227237588705	5	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Gynecologic: Ovary/Fallopian tube	1.0551708913337112	6	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	HPB: Bile duct/Gallbladder	0.9159909076843774	37	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	HPB: Liver	0.9807037317730526	31	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	HPB: Pancreas	0.9765229632779572	32	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Head and neck: Adenoid cystic	1.0	20	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Head and neck: Salivary gland	1.1219707105468015	2	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Head and neck: Other	1.1215557663943796	3	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Kidney: Chromophobe	1.0478253396597716	7	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Kidney: Other	1.0	21	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Lung: Non-small cell: LUAD	1.0	22	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Lung: Non-small cell: LUSC	0.9899109651598593	30	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Lung: Small cell	1.2459332607621632	1	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Lymphoid tissue	1.0	23	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Mesothelium	1.0	24	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Myeloid: Acute myeloid leukemia	1.0	25	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Myeloid: Myeloproliferative neoplasm	1.0	26	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	NET: Colorectum/Small intestine	1.0	27	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	NET: Lung	1.0997404181338226	4	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	NET: Pancreas	0.9407512925137481	36	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Prostate	0.9737159846652742	33	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Skin: Melanoma	0.9518125683605659	34	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Skin: Other	1.0	28	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Thyroid gland	0.9511461192021625	35	13
+HG008-T	feat_contrib	dna	event	driver.APC.mut	-1e-08	Urothelial tract	1.0	29	13
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Anogenital	1.0	19	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Bone/Soft tissue: Cartilaginous neoplasm	0.566351427724348	31	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Bone/Soft tissue: GIST	0.9739157788744504	27	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Bone/Soft tissue: Leiomyosarcoma	1.6508843594458391	8	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Bone/Soft tissue: Liposarcoma	1.0	20	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Bone/Soft tissue: Osteosarcoma	1.642199367250367	9	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Bone/Soft tissue: Undiff. sarcoma	2.6011865478510887	2	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Bone/Soft tissue: Other	1.8226158255280143	6	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Breast: Triple negative	0.9997151547353716	26	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Breast: Other	0.5577327518617465	32	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	CNS: Glioma	2.9679503113926065	1	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	CNS: Medulloblastoma	0.22781090502961784	38	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	CNS: Pilocytic astrocytoma	1.0	21	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Colorectum/Small intestine/Appendix	0.20981842217558014	39	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Esophagus/Stomach	1.198919713467007	15	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Gynecologic: Endometrium	0.35385512583229045	36	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Gynecologic: Ovary/Fallopian tube	0.5151466046937736	33	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	HPB: Bile duct/Gallbladder	2.3612025030369836	4	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	HPB: Liver	0.575128428152837	30	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	HPB: Pancreas	2.1063102845584463	5	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Head and neck: Adenoid cystic	0.8576766225540843	28	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Head and neck: Salivary gland	1.002550617978345	18	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Head and neck: Other	1.2190069018040328	14	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Kidney: Chromophobe	0.12198311367894847	40	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Kidney: Other	1.4657485376865007	10	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Lung: Non-small cell: LUAD	1.1946699718782954	16	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Lung: Non-small cell: LUSC	1.2238339247787189	12	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Lung: Small cell	0.505145050401858	34	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Lymphoid tissue	0.3543664833267593	35	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Mesothelium	2.3945192249873357	3	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Myeloid: Acute myeloid leukemia	1.0	22	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Myeloid: Myeloproliferative neoplasm	1.0	23	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	NET: Colorectum/Small intestine	1.0	24	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	NET: Lung	0.6320902748191581	29	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	NET: Pancreas	1.3928591449140366	11	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Prostate	0.2657183958725725	37	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Skin: Melanoma	1.2201972866299946	13	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Skin: Other	1.0321845688347684	17	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Thyroid gland	0.9999969783367371	25	14
+HG008-T	feat_contrib	dna	event	driver.CDKN2A.mut	1.0	Urothelial tract	1.7568272770363662	7	14
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Anogenital	2.675584337856844	8	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Bone/Soft tissue: Cartilaginous neoplasm	1.0	13	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Bone/Soft tissue: GIST	1.0	14	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Bone/Soft tissue: Leiomyosarcoma	1.1670453526897728	10	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Bone/Soft tissue: Liposarcoma	1.0	15	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Bone/Soft tissue: Osteosarcoma	0.6733223697492922	38	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Bone/Soft tissue: Undiff. sarcoma	0.7601839833208607	35	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Bone/Soft tissue: Other	1.000027268862435	12	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Breast: Triple negative	0.9148894085598376	33	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Breast: Other	1.0	16	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	CNS: Glioma	1.0	17	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	CNS: Medulloblastoma	1.0	18	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	CNS: Pilocytic astrocytoma	1.0	19	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Colorectum/Small intestine/Appendix	10.006061419706104	2	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Esophagus/Stomach	1.0	20	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Gynecologic: Endometrium	4.0340324106060415	7	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Gynecologic: Ovary/Fallopian tube	5.760807871660342	5	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	HPB: Bile duct/Gallbladder	6.215540972005669	4	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	HPB: Liver	1.0	21	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	HPB: Pancreas	64.62906092395626	1	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Head and neck: Adenoid cystic	1.0	22	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Head and neck: Salivary gland	0.7213175233260558	37	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Head and neck: Other	0.7372248985386965	36	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Kidney: Chromophobe	1.0	23	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Kidney: Other	1.0	24	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Lung: Non-small cell: LUAD	6.663550749450947	3	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Lung: Non-small cell: LUSC	1.0	25	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Lung: Small cell	0.47883345600593324	40	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Lymphoid tissue	1.0	26	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Mesothelium	1.0	27	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Myeloid: Acute myeloid leukemia	1.0	28	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Myeloid: Myeloproliferative neoplasm	1.0	29	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	NET: Colorectum/Small intestine	5.22676622021297	6	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	NET: Lung	0.5937053627209191	39	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	NET: Pancreas	2.2051158519336536	9	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Prostate	1.0	30	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Skin: Melanoma	1.0	31	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Skin: Other	0.8685019362316183	34	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Thyroid gland	1.0	32	15
+HG008-T	feat_contrib	dna	event	driver.KRAS.mut	1.0	Urothelial tract	1.1008253797934333	11	15
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Anogenital	1.0	18	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Bone/Soft tissue: Cartilaginous neoplasm	0.9947496397017581	29	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Bone/Soft tissue: GIST	8.057983682199186	2	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Bone/Soft tissue: Leiomyosarcoma	1.0	19	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Bone/Soft tissue: Liposarcoma	4.0878622409905745	4	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Bone/Soft tissue: Osteosarcoma	1.0	20	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Bone/Soft tissue: Undiff. sarcoma	1.0007196838394796	17	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Bone/Soft tissue: Other	1.0	21	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Breast: Triple negative	1.3159842567102487	14	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Breast: Other	1.4112475816581591	13	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	CNS: Glioma	4.0657357998047585	5	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	CNS: Medulloblastoma	0.7818793705293858	32	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	CNS: Pilocytic astrocytoma	6.856228522571105	3	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Colorectum/Small intestine/Appendix	1.0	22	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Esophagus/Stomach	1.0	23	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Gynecologic: Endometrium	1.5434652278593854	12	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Gynecologic: Ovary/Fallopian tube	2.667484603060905	8	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	HPB: Bile duct/Gallbladder	1.289417068549731	15	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	HPB: Liver	0.6873383865723274	34	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	HPB: Pancreas	1.0	24	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Head and neck: Adenoid cystic	1.0	25	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Head and neck: Salivary gland	2.7310766596600873	7	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Head and neck: Other	1.0	26	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Kidney: Chromophobe	0.26147371515660567	40	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Kidney: Other	1.0	27	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Lung: Non-small cell: LUAD	0.9281604206246221	31	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Lung: Non-small cell: LUSC	1.9277580489367565	10	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Lung: Small cell	0.9684240632972634	30	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Lymphoid tissue	0.7553166053087911	33	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Mesothelium	0.6484907593942226	35	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Myeloid: Acute myeloid leukemia	1.0	28	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Myeloid: Myeloproliferative neoplasm	10.451887489210046	1	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	NET: Colorectum/Small intestine	0.37705185045570455	39	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	NET: Lung	1.9103562202733833	11	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	NET: Pancreas	0.5078756900955941	36	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Prostate	0.43793134839579806	37	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Skin: Melanoma	2.8840270564313224	6	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Skin: Other	0.4256237742194363	38	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Thyroid gland	2.2049140245750403	9	16
+HG008-T	feat_contrib	dna	event	driver.NF1.mut	0.7945	Urothelial tract	1.2694262074366833	16	16
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Anogenital	0.8660888666867498	36	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Bone/Soft tissue: Cartilaginous neoplasm	1.0	15	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Bone/Soft tissue: GIST	0.9683331014674054	28	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Bone/Soft tissue: Leiomyosarcoma	0.9590395475248327	29	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Bone/Soft tissue: Liposarcoma	0.8674312325780322	35	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Bone/Soft tissue: Osteosarcoma	0.9830379018360365	26	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Bone/Soft tissue: Undiff. sarcoma	1.1619970658730276	4	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Bone/Soft tissue: Other	1.0251365052348733	10	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Breast: Triple negative	0.8798165828598106	34	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Breast: Other	0.7439333103870959	39	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	CNS: Glioma	0.9157881212402631	32	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	CNS: Medulloblastoma	0.9797661372289328	27	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	CNS: Pilocytic astrocytoma	1.0	16	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Colorectum/Small intestine/Appendix	0.921034451237319	31	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Esophagus/Stomach	0.9347543209007588	30	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Gynecologic: Endometrium	0.7548617197651744	38	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Gynecologic: Ovary/Fallopian tube	1.0	17	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	HPB: Bile duct/Gallbladder	1.0190561273606487	12	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	HPB: Liver	1.0111859492424813	13	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	HPB: Pancreas	1.0442620680527497	7	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Head and neck: Adenoid cystic	1.0	18	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Head and neck: Salivary gland	0.7427649171434361	40	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Head and neck: Other	0.8375208869152475	37	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Kidney: Chromophobe	1.0390457527792143	8	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Kidney: Other	1.0	19	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Lung: Non-small cell: LUAD	1.0256445571794104	9	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Lung: Non-small cell: LUSC	0.9916875990904317	25	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Lung: Small cell	1.1041346303524624	6	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Lymphoid tissue	1.0038496051592243	14	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Mesothelium	1.1695553950128388	3	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Myeloid: Acute myeloid leukemia	1.0	20	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Myeloid: Myeloproliferative neoplasm	1.0	21	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	NET: Colorectum/Small intestine	1.1402262946816772	5	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	NET: Lung	1.341627925787222	1	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	NET: Pancreas	1.0190567394960384	11	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Prostate	1.0	22	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Skin: Melanoma	1.0	23	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Skin: Other	1.17157050379014	2	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Thyroid gland	1.0	24	17
+HG008-T	feat_contrib	dna	event	driver.PIK3CA.mut	-1e-08	Urothelial tract	0.9107259889923381	33	17
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Anogenital	0.9376899846387713	29	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Bone/Soft tissue: Cartilaginous neoplasm	1.0536389684135719	7	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Bone/Soft tissue: GIST	0.8630206806917718	34	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Bone/Soft tissue: Leiomyosarcoma	0.9074628901313353	33	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Bone/Soft tissue: Liposarcoma	1.252177467355729	3	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Bone/Soft tissue: Osteosarcoma	0.8582529136008837	37	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Bone/Soft tissue: Undiff. sarcoma	1.0	15	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Bone/Soft tissue: Other	1.0411869904949118	9	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Breast: Triple negative	0.8593746025275651	36	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Breast: Other	0.8601780353134315	35	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	CNS: Glioma	0.8080930655246698	38	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	CNS: Medulloblastoma	1.0	16	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	CNS: Pilocytic astrocytoma	1.0	17	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Colorectum/Small intestine/Appendix	0.9992958681405892	25	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Esophagus/Stomach	1.0	18	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Gynecologic: Endometrium	0.7756446806167865	40	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Gynecologic: Ovary/Fallopian tube	1.0	19	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	HPB: Bile duct/Gallbladder	1.0256966950579962	12	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	HPB: Liver	1.010947350092877	14	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	HPB: Pancreas	1.0529074824154558	8	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Head and neck: Adenoid cystic	1.0	20	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Head and neck: Salivary gland	0.9240085429274092	31	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Head and neck: Other	1.0397641496648746	10	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Kidney: Chromophobe	0.9725276592310084	26	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Kidney: Other	1.0	21	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Lung: Non-small cell: LUAD	1.0323430684644472	11	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Lung: Non-small cell: LUSC	0.9277729754444796	30	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Lung: Small cell	1.0682230079091715	6	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Lymphoid tissue	1.1468915473025867	5	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Mesothelium	1.1714049508548303	4	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Myeloid: Acute myeloid leukemia	1.0	22	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Myeloid: Myeloproliferative neoplasm	1.0	23	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	NET: Colorectum/Small intestine	1.2536657689480937	2	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	NET: Lung	0.9230664027783062	32	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	NET: Pancreas	1.0128819102796183	13	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Prostate	0.8043077017990434	39	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Skin: Melanoma	0.953218336799798	28	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Skin: Other	0.9671532544142735	27	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Thyroid gland	1.2807327557068744	1	18
+HG008-T	feat_contrib	dna	event	driver.PTEN.mut	-1e-08	Urothelial tract	1.0	24	18
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Anogenital	3.5315449084761434	5	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Bone/Soft tissue: Cartilaginous neoplasm	1.0	13	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Bone/Soft tissue: GIST	1.0	14	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Bone/Soft tissue: Leiomyosarcoma	1.0	15	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Bone/Soft tissue: Liposarcoma	1.0	16	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Bone/Soft tissue: Osteosarcoma	1.0	17	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Bone/Soft tissue: Undiff. sarcoma	1.0	18	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Bone/Soft tissue: Other	0.7207584720449071	39	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Breast: Triple negative	1.0	19	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Breast: Other	1.13111177355539	9	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	CNS: Glioma	1.0	20	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	CNS: Medulloblastoma	1.0	21	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	CNS: Pilocytic astrocytoma	1.0	22	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Colorectum/Small intestine/Appendix	3.9301945968283483	4	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Esophagus/Stomach	4.195099616842997	3	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Gynecologic: Endometrium	0.6877110566871604	40	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Gynecologic: Ovary/Fallopian tube	1.0	23	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	HPB: Bile duct/Gallbladder	12.014767632500456	1	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	HPB: Liver	1.0	24	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	HPB: Pancreas	8.904682167904836	2	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Head and neck: Adenoid cystic	1.0	25	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Head and neck: Salivary gland	0.8047174703470942	38	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Head and neck: Other	1.0006064368285226	11	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Kidney: Chromophobe	1.0	26	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Kidney: Other	1.0	27	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Lung: Non-small cell: LUAD	2.7415883912520917	8	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Lung: Non-small cell: LUSC	1.0002893954065726	12	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Lung: Small cell	1.0	28	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Lymphoid tissue	1.0	29	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Mesothelium	1.0	30	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Myeloid: Acute myeloid leukemia	1.0	31	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Myeloid: Myeloproliferative neoplasm	1.0	32	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	NET: Colorectum/Small intestine	1.1170767544616023	10	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	NET: Lung	1.0	33	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	NET: Pancreas	2.9829317235560593	7	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Prostate	0.941307455615327	37	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Skin: Melanoma	1.0	34	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Skin: Other	1.0	35	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Thyroid gland	1.0	36	19
+HG008-T	feat_contrib	dna	event	driver.SMAD4.mut	1.0	Urothelial tract	3.0868713647974744	6	19
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Anogenital	0.8158835624446643	35	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Bone/Soft tissue: Cartilaginous neoplasm	1.0	13	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Bone/Soft tissue: GIST	1.0	14	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Bone/Soft tissue: Leiomyosarcoma	1.0325549422413247	10	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Bone/Soft tissue: Liposarcoma	1.0	15	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Bone/Soft tissue: Osteosarcoma	1.0	16	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Bone/Soft tissue: Undiff. sarcoma	1.058244879120585	9	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Bone/Soft tissue: Other	1.0	17	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Breast: Triple negative	1.146866842106936	4	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Breast: Other	1.0	18	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	CNS: Glioma	0.62983976704477	40	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	CNS: Medulloblastoma	0.8572308277138746	33	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	CNS: Pilocytic astrocytoma	1.0	19	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Colorectum/Small intestine/Appendix	1.0	20	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Esophagus/Stomach	1.1354542644434675	5	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Gynecologic: Endometrium	0.9559324579876659	29	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Gynecologic: Ovary/Fallopian tube	1.0	21	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	HPB: Bile duct/Gallbladder	0.9856927415353399	28	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	HPB: Liver	0.8470501192870661	34	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	HPB: Pancreas	1.1310805312394696	6	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Head and neck: Adenoid cystic	1.0	22	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Head and neck: Salivary gland	1.0046441562861654	12	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Head and neck: Other	0.8750466749029545	31	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Kidney: Chromophobe	0.9062796391602953	30	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Kidney: Other	0.8626839578798433	32	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Lung: Non-small cell: LUAD	1.0704774460780933	8	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Lung: Non-small cell: LUSC	1.395337909892472	1	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Lung: Small cell	1.3910544358600951	2	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Lymphoid tissue	1.0	23	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Mesothelium	0.9913307708306539	27	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Myeloid: Acute myeloid leukemia	1.0	24	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Myeloid: Myeloproliferative neoplasm	1.0	25	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	NET: Colorectum/Small intestine	1.1774444035498588	3	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	NET: Lung	1.101877541592622	7	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	NET: Pancreas	1.0157618682895677	11	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Prostate	1.0	26	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Skin: Melanoma	0.7350048107682124	37	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Skin: Other	0.73647842492595	36	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Thyroid gland	0.6957775085910493	38	20
+HG008-T	feat_contrib	dna	event	driver.TERT.mut	-1e-08	Urothelial tract	0.654492802658454	39	20
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Anogenital	1.0	19	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Bone/Soft tissue: Cartilaginous neoplasm	0.8193968764313296	28	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Bone/Soft tissue: GIST	0.4812027367686332	36	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Bone/Soft tissue: Leiomyosarcoma	1.3797516132529655	11	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Bone/Soft tissue: Liposarcoma	1.0	20	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Bone/Soft tissue: Osteosarcoma	1.5849191727828496	6	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Bone/Soft tissue: Undiff. sarcoma	0.7723464703552114	29	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Bone/Soft tissue: Other	0.7165297116295973	31	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Breast: Triple negative	2.8210890524906427	2	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Breast: Other	1.0001097524654377	18	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	CNS: Glioma	1.5157556186946526	8	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	CNS: Medulloblastoma	0.5161692565291025	34	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	CNS: Pilocytic astrocytoma	1.0	21	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Colorectum/Small intestine/Appendix	1.3305041181055166	12	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Esophagus/Stomach	1.058582790422516	16	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Gynecologic: Endometrium	1.4103602629426064	9	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Gynecologic: Ovary/Fallopian tube	1.9080935707861104	4	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	HPB: Bile duct/Gallbladder	0.8618203838748593	27	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	HPB: Liver	0.9265076441098272	26	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	HPB: Pancreas	1.861041117139329	5	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Head and neck: Adenoid cystic	0.2522084363989618	39	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Head and neck: Salivary gland	2.028418920090455	3	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Head and neck: Other	0.9970159455249042	23	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Kidney: Chromophobe	1.135484897047718	14	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Kidney: Other	0.510008576347309	35	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Lung: Non-small cell: LUAD	1.0017404311047247	17	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Lung: Non-small cell: LUSC	1.3820402176744577	10	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Lung: Small cell	2.910612491669034	1	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Lymphoid tissue	1.0	22	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Mesothelium	0.3574268037580408	37	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Myeloid: Acute myeloid leukemia	0.9319340217548615	25	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Myeloid: Myeloproliferative neoplasm	0.9696240003768873	24	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	NET: Colorectum/Small intestine	0.6328980627890053	33	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	NET: Lung	0.16964211600060444	40	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	NET: Pancreas	0.6906149292231238	32	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Prostate	0.7311755964980895	30	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Skin: Melanoma	0.3427666707464619	38	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Skin: Other	1.5185134226333143	7	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Thyroid gland	1.1568960366158771	13	21
+HG008-T	feat_contrib	dna	event	driver.TP53.mut	1.0	Urothelial tract	1.1260479386167446	15	21
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Anogenital	1.5214659751181145	6	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Bone/Soft tissue: Cartilaginous neoplasm	0.8478393203299276	32	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Bone/Soft tissue: GIST	0.5997366982172037	39	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Bone/Soft tissue: Leiomyosarcoma	0.7766604135617948	35	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Bone/Soft tissue: Liposarcoma	0.9999757252030789	25	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Bone/Soft tissue: Osteosarcoma	0.9192930099982917	29	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Bone/Soft tissue: Undiff. sarcoma	0.9049540740813217	30	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Bone/Soft tissue: Other	0.9740131417204004	26	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Breast: Triple negative	0.8714064830895318	31	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Breast: Other	1.000011126195422	17	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	CNS: Glioma	0.7118950086227246	38	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	CNS: Medulloblastoma	0.9558871072758034	28	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	CNS: Pilocytic astrocytoma	1.0	18	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Colorectum/Small intestine/Appendix	1.6456801686505893	3	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Esophagus/Stomach	1.858421220491805	1	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Gynecologic: Endometrium	1.143103606331678	11	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Gynecologic: Ovary/Fallopian tube	1.2138614941332682	10	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	HPB: Bile duct/Gallbladder	1.018157044499495	14	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	HPB: Liver	0.9619317227696638	27	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	HPB: Pancreas	1.120512570217546	12	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Head and neck: Adenoid cystic	1.0	19	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Head and neck: Salivary gland	1.001558385650133	16	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Head and neck: Other	1.645894064563436	2	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Kidney: Chromophobe	1.2505891355559287	9	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Kidney: Other	1.0	20	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Lung: Non-small cell: LUAD	1.0029404972745184	15	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Lung: Non-small cell: LUSC	1.6324757863188804	4	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Lung: Small cell	1.0	21	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Lymphoid tissue	0.7553971060461768	37	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Mesothelium	0.8099996203361959	33	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Myeloid: Acute myeloid leukemia	1.0	22	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Myeloid: Myeloproliferative neoplasm	0.4772201932315992	40	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	NET: Colorectum/Small intestine	0.772884638091133	36	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	NET: Lung	1.0	23	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	NET: Pancreas	1.070018425631918	13	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Prostate	1.4532126048898564	7	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Skin: Melanoma	0.7767209120526936	34	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Skin: Other	1.3242093156454138	8	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Thyroid gland	1.0	24	22
+HG008-T	feat_contrib	dna	event	sv.LINE	18.0	Urothelial tract	1.61722396934783	5	22
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Anogenital	0.9110234385688193	32	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Bone/Soft tissue: Cartilaginous neoplasm	2.4660250382435414	2	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Bone/Soft tissue: GIST	1.0	18	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Bone/Soft tissue: Leiomyosarcoma	0.8576941233110441	35	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Bone/Soft tissue: Liposarcoma	1.0000845086652588	17	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Bone/Soft tissue: Osteosarcoma	0.7048807592894143	38	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Bone/Soft tissue: Undiff. sarcoma	0.9987257367799248	27	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Bone/Soft tissue: Other	0.8792411795132694	33	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Breast: Triple negative	0.9110862976093669	31	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Breast: Other	0.9999981299985166	23	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	CNS: Glioma	1.0360713671081034	14	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	CNS: Medulloblastoma	1.7828684577960618	4	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	CNS: Pilocytic astrocytoma	1.0600098801517555	13	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Colorectum/Small intestine/Appendix	0.7651704115692842	37	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Esophagus/Stomach	0.9179915570503682	30	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Gynecologic: Endometrium	1.0	19	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Gynecologic: Ovary/Fallopian tube	0.8490729177762141	36	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	HPB: Bile duct/Gallbladder	0.9538995187803534	29	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	HPB: Liver	0.9998902098090052	25	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	HPB: Pancreas	1.0	20	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Head and neck: Adenoid cystic	1.0005372051364716	16	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Head and neck: Salivary gland	1.00345355245987	15	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Head and neck: Other	0.8781456688259613	34	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Kidney: Chromophobe	0.9999389634778442	24	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Kidney: Other	1.2971093634012199	10	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Lung: Non-small cell: LUAD	1.1710893604599755	11	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Lung: Non-small cell: LUSC	0.9992201662741148	26	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Lung: Small cell	1.6103199699604545	6	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Lymphoid tissue	0.6844415040077546	40	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Mesothelium	0.6892033599265005	39	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Myeloid: Acute myeloid leukemia	2.0132369690176226	3	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Myeloid: Myeloproliferative neoplasm	2.4668114048630305	1	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	NET: Colorectum/Small intestine	1.7718124412545206	5	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	NET: Lung	1.5009198804667252	8	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	NET: Pancreas	1.3666098630949814	9	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Prostate	1.0	21	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Skin: Melanoma	1.0	22	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Skin: Other	1.1623576072390163	12	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Thyroid gland	1.606516951816846	7	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DEL_20KB_1MB	5.0	Urothelial tract	0.9746744332740679	28	23
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Anogenital	1.1671060290806174	4	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Bone/Soft tissue: Cartilaginous neoplasm	1.037115611532181	8	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Bone/Soft tissue: GIST	1.0	15	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Bone/Soft tissue: Leiomyosarcoma	0.8317584185024355	38	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Bone/Soft tissue: Liposarcoma	0.8520167547580196	37	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Bone/Soft tissue: Osteosarcoma	1.089546419078155	7	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Bone/Soft tissue: Undiff. sarcoma	0.9994654269671754	27	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Bone/Soft tissue: Other	0.984160070456955	30	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Breast: Triple negative	0.9850564248888793	29	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Breast: Other	1.0	16	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	CNS: Glioma	0.9283882711850252	32	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	CNS: Medulloblastoma	1.0938638945826125	6	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	CNS: Pilocytic astrocytoma	1.0	17	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Colorectum/Small intestine/Appendix	0.9585171431581376	31	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Esophagus/Stomach	1.0	18	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Gynecologic: Endometrium	1.0285506827141822	9	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Gynecologic: Ovary/Fallopian tube	1.1087971734242612	5	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	HPB: Bile duct/Gallbladder	0.999972733369393	26	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	HPB: Liver	1.000033644984299	13	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	HPB: Pancreas	1.0	19	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Head and neck: Adenoid cystic	1.0	20	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Head and neck: Salivary gland	0.9149850427757339	34	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Head and neck: Other	1.0001042814849512	12	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Kidney: Chromophobe	0.6906140519863939	39	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Kidney: Other	0.6074629870715672	40	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Lung: Non-small cell: LUAD	1.00000431386924	14	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Lung: Non-small cell: LUSC	1.000501324180772	10	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Lung: Small cell	1.0	21	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Lymphoid tissue	1.1803944027433408	2	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Mesothelium	1.1684533804534838	3	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Myeloid: Acute myeloid leukemia	1.0	22	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Myeloid: Myeloproliferative neoplasm	1.2381636315814903	1	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	NET: Colorectum/Small intestine	0.9860083048044274	28	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	NET: Lung	1.0	23	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	NET: Pancreas	0.9157867935948087	33	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Prostate	1.0	24	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Skin: Melanoma	0.8694703068911436	36	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Skin: Other	1.0	25	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Thyroid gland	0.8753482460382254	35	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_32B_200B	1.0	Urothelial tract	1.0001794527033911	11	24
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Anogenital	0.912797690371706	29	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Bone/Soft tissue: Cartilaginous neoplasm	0.09668647931776633	40	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Bone/Soft tissue: GIST	1.0	18	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Bone/Soft tissue: Leiomyosarcoma	0.5865562687858407	36	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Bone/Soft tissue: Liposarcoma	2.759811157874894	5	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Bone/Soft tissue: Osteosarcoma	1.0598088885270733	16	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Bone/Soft tissue: Undiff. sarcoma	1.2008551197950064	14	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Bone/Soft tissue: Other	1.1409154794659864	15	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Breast: Triple negative	3.6391977704092153	3	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Breast: Other	2.147303653882779	7	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	CNS: Glioma	1.2960688162314191	11	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	CNS: Medulloblastoma	5.620007307634299	1	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	CNS: Pilocytic astrocytoma	1.0	19	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Colorectum/Small intestine/Appendix	0.7914743729342091	31	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Esophagus/Stomach	1.2479024113508037	12	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Gynecologic: Endometrium	5.062946442043304	2	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Gynecologic: Ovary/Fallopian tube	2.7754043513140765	4	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	HPB: Bile duct/Gallbladder	1.8769191418967737	9	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	HPB: Liver	0.9999373088722849	25	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	HPB: Pancreas	0.9267248500176622	27	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Head and neck: Adenoid cystic	0.5705573839553614	37	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Head and neck: Salivary gland	2.111325981547911	8	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Head and neck: Other	0.6558732848030703	34	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Kidney: Chromophobe	0.1767810096047037	39	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Kidney: Other	0.9873555352742437	26	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Lung: Non-small cell: LUAD	1.000004964295	17	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Lung: Non-small cell: LUSC	0.9177190859745094	28	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Lung: Small cell	1.0	20	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Lymphoid tissue	0.2580950687952015	38	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Mesothelium	1.0	21	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Myeloid: Acute myeloid leukemia	1.0	22	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Myeloid: Myeloproliferative neoplasm	0.8980527786438037	30	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	NET: Colorectum/Small intestine	1.0	23	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	NET: Lung	0.6136069577248621	35	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	NET: Pancreas	0.7131067302226822	32	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Prostate	2.171224723802211	6	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Skin: Melanoma	1.7238658230823785	10	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Skin: Other	0.71160178067396	33	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Thyroid gland	1.0	24	25
+HG008-T	feat_contrib	dna	event	sv.SIMPLE_DUP_100KB_5MB	46.0	Urothelial tract	1.2294769252492737	13	25
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Anogenital	0.8789836176102243	31	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Bone/Soft tissue: Cartilaginous neoplasm	0.18859375663193034	40	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Bone/Soft tissue: GIST	1.1861860175233325	10	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Bone/Soft tissue: Leiomyosarcoma	0.9996990770017851	22	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Bone/Soft tissue: Liposarcoma	0.6081706039351532	38	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Bone/Soft tissue: Osteosarcoma	0.637762216107747	37	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Bone/Soft tissue: Undiff. sarcoma	0.7195568506262388	34	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Bone/Soft tissue: Other	0.9414944894015634	27	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Breast: Triple negative	1.00002637260326	16	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Breast: Other	0.6690061264267704	35	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	CNS: Glioma	0.9992643009175024	25	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	CNS: Medulloblastoma	1.0	17	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	CNS: Pilocytic astrocytoma	2.0640824096914447	2	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Colorectum/Small intestine/Appendix	1.002834191604787	13	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Esophagus/Stomach	1.0	18	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Gynecologic: Endometrium	1.9025299291278075	5	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Gynecologic: Ovary/Fallopian tube	1.9098700066405712	4	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	HPB: Bile duct/Gallbladder	0.9212147995359764	28	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	HPB: Liver	1.0001077583683022	14	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	HPB: Pancreas	1.0	19	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Head and neck: Adenoid cystic	1.0	20	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Head and neck: Salivary gland	1.0000845382222898	15	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Head and neck: Other	1.0495076390566795	12	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Kidney: Chromophobe	1.7827257165024055	6	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Kidney: Other	1.0	21	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Lung: Non-small cell: LUAD	0.7843810088785427	32	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Lung: Non-small cell: LUSC	0.9995103225037438	24	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Lung: Small cell	0.9906821471819728	26	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Lymphoid tissue	1.5243913695552762	7	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Mesothelium	0.7828095573431832	33	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Myeloid: Acute myeloid leukemia	3.915545955333475	1	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Myeloid: Myeloproliferative neoplasm	1.9737105337664742	3	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	NET: Colorectum/Small intestine	1.2223109437872919	8	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	NET: Lung	0.41341752876446425	39	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	NET: Pancreas	1.1059518768995442	11	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Prostate	0.881603616075769	30	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Skin: Melanoma	0.6656706628842913	36	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Skin: Other	0.9995490984464802	23	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Thyroid gland	1.2028610939173432	9	26
+HG008-T	feat_contrib	dna	event	sv.MAX_COMPLEX_SIZE	5.0	Urothelial tract	0.910279091442511	29	26
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Anogenital	0.9389218135690759	33	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Bone/Soft tissue: Cartilaginous neoplasm	1.0	8	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Bone/Soft tissue: GIST	1.0	9	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Bone/Soft tissue: Leiomyosarcoma	0.7269344188014657	40	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Bone/Soft tissue: Liposarcoma	0.8605248416170694	35	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Bone/Soft tissue: Osteosarcoma	0.8364240372504239	38	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Bone/Soft tissue: Undiff. sarcoma	0.743067598314389	39	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Bone/Soft tissue: Other	0.8406532693579919	37	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Breast: Triple negative	1.1521521889013455	2	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Breast: Other	1.0	10	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	CNS: Glioma	1.0	11	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	CNS: Medulloblastoma	1.0	12	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	CNS: Pilocytic astrocytoma	1.0	13	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Colorectum/Small intestine/Appendix	1.0	14	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Esophagus/Stomach	1.0	15	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Gynecologic: Endometrium	1.0477134744043137	5	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Gynecologic: Ovary/Fallopian tube	1.0827065814344272	3	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	HPB: Bile duct/Gallbladder	1.0251655635779633	6	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	HPB: Liver	1.0	16	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	HPB: Pancreas	1.0	17	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Head and neck: Adenoid cystic	0.9997543229394878	30	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Head and neck: Salivary gland	1.0	18	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Head and neck: Other	1.0653784676332732	4	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Kidney: Chromophobe	0.9233866011496541	34	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Kidney: Other	1.0	19	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Lung: Non-small cell: LUAD	0.9631701483622317	32	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Lung: Non-small cell: LUSC	0.9999771455072387	29	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Lung: Small cell	1.169361663434626	1	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Lymphoid tissue	1.0	20	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Mesothelium	1.0	21	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Myeloid: Acute myeloid leukemia	1.0	22	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Myeloid: Myeloproliferative neoplasm	1.0	23	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	NET: Colorectum/Small intestine	1.0	24	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	NET: Lung	1.0	25	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	NET: Pancreas	0.9968230980464156	31	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Prostate	1.0000000866012102	7	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Skin: Melanoma	0.8498843627151439	36	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Skin: Other	1.0	26	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Thyroid gland	1.0	27	27
+HG008-T	feat_contrib	dna	event	sv.TELOMERIC_SGL	0.0	Urothelial tract	1.0	28	27
+	cv_performance	dna	dna_combined	n_total		Anogenital	128.0	18	28
+	cv_performance	dna	dna_combined	n_total		Bone/Soft tissue: Cartilaginous neoplasm	9.0	40	28
+	cv_performance	dna	dna_combined	n_total		Bone/Soft tissue: GIST	66.0	26	28
+	cv_performance	dna	dna_combined	n_total		Bone/Soft tissue: Leiomyosarcoma	80.0	22	28
+	cv_performance	dna	dna_combined	n_total		Bone/Soft tissue: Liposarcoma	59.0	27	28
+	cv_performance	dna	dna_combined	n_total		Bone/Soft tissue: Osteosarcoma	47.0	32	28
+	cv_performance	dna	dna_combined	n_total		Bone/Soft tissue: Other	157.0	15	28
+	cv_performance	dna	dna_combined	n_total		Bone/Soft tissue: Undiff. sarcoma	37.0	35	28
+	cv_performance	dna	dna_combined	n_total		Breast: Other	908.0	1	28
+	cv_performance	dna	dna_combined	n_total		Breast: Triple negative	183.0	13	28
+	cv_performance	dna	dna_combined	n_total		CNS: Glioma	159.0	14	28
+	cv_performance	dna	dna_combined	n_total		CNS: Medulloblastoma	138.0	16	28
+	cv_performance	dna	dna_combined	n_total		CNS: Pilocytic astrocytoma	58.0	28	28
+	cv_performance	dna	dna_combined	n_total		Colorectum/Small intestine/Appendix	837.0	2	28
+	cv_performance	dna	dna_combined	n_total		Esophagus/Stomach	349.0	6	28
+	cv_performance	dna	dna_combined	n_total		Gynecologic: Endometrium	85.0	21	28
+	cv_performance	dna	dna_combined	n_total		Gynecologic: Ovary/Fallopian tube	320.0	8	28
+	cv_performance	dna	dna_combined	n_total		HPB: Bile duct/Gallbladder	131.0	17	28
+	cv_performance	dna	dna_combined	n_total		HPB: Liver	341.0	7	28
+	cv_performance	dna	dna_combined	n_total		HPB: Pancreas	372.0	5	28
+	cv_performance	dna	dna_combined	n_total		Head and neck: Adenoid cystic	10.0	39	28
+	cv_performance	dna	dna_combined	n_total		Head and neck: Other	101.0	20	28
+	cv_performance	dna	dna_combined	n_total		Head and neck: Salivary gland	26.0	36	28
+	cv_performance	dna	dna_combined	n_total		Kidney: Chromophobe	44.0	34	28
+	cv_performance	dna	dna_combined	n_total		Kidney: Other	277.0	9	28
+	cv_performance	dna	dna_combined	n_total		Lung: Non-small cell: LUAD	254.0	10	28
+	cv_performance	dna	dna_combined	n_total		Lung: Non-small cell: LUSC	78.0	23	28
+	cv_performance	dna	dna_combined	n_total		Lung: Small cell	56.0	29	28
+	cv_performance	dna	dna_combined	n_total		Lymphoid tissue	216.0	12	28
+	cv_performance	dna	dna_combined	n_total		Mesothelium	77.0	24	28
+	cv_performance	dna	dna_combined	n_total		Myeloid: Acute myeloid leukemia	12.0	38	28
+	cv_performance	dna	dna_combined	n_total		Myeloid: Myeloproliferative neoplasm	18.0	37	28
+	cv_performance	dna	dna_combined	n_total		NET: Colorectum/Small intestine	56.0	30	28
+	cv_performance	dna	dna_combined	n_total		NET: Lung	46.0	33	28
+	cv_performance	dna	dna_combined	n_total		NET: Pancreas	118.0	19	28
+	cv_performance	dna	dna_combined	n_total		Prostate	607.0	3	28
+	cv_performance	dna	dna_combined	n_total		Skin: Melanoma	408.0	4	28
+	cv_performance	dna	dna_combined	n_total		Skin: Other	49.0	31	28
+	cv_performance	dna	dna_combined	n_total		Thyroid gland	71.0	25	28
+	cv_performance	dna	dna_combined	n_total		Urothelial tract	241.0	11	28
+	cv_performance	dna	dna_combined	recall		Anogenital	0.75	22	29
+	cv_performance	dna	dna_combined	recall		Bone/Soft tissue: Cartilaginous neoplasm	0.4444444444444444	38	29
+	cv_performance	dna	dna_combined	recall		Bone/Soft tissue: GIST	0.9545454545454546	6	29
+	cv_performance	dna	dna_combined	recall		Bone/Soft tissue: Leiomyosarcoma	0.7875	20	29
+	cv_performance	dna	dna_combined	recall		Bone/Soft tissue: Liposarcoma	0.864406779661017	16	29
+	cv_performance	dna	dna_combined	recall		Bone/Soft tissue: Osteosarcoma	0.574468085106383	35	29
+	cv_performance	dna	dna_combined	recall		Bone/Soft tissue: Other	0.6624203821656051	32	29
+	cv_performance	dna	dna_combined	recall		Bone/Soft tissue: Undiff. sarcoma	0.35135135135135137	39	29
+	cv_performance	dna	dna_combined	recall		Breast: Other	0.9416299559471366	10	29
+	cv_performance	dna	dna_combined	recall		Breast: Triple negative	0.7049180327868853	29	29
+	cv_performance	dna	dna_combined	recall		CNS: Glioma	0.949685534591195	7	29
+	cv_performance	dna	dna_combined	recall		CNS: Medulloblastoma	0.9420289855072463	9	29
+	cv_performance	dna	dna_combined	recall		CNS: Pilocytic astrocytoma	0.7413793103448276	25	29
+	cv_performance	dna	dna_combined	recall		Colorectum/Small intestine/Appendix	0.959378733572282	5	29
+	cv_performance	dna	dna_combined	recall		Esophagus/Stomach	0.8510028653295129	17	29
+	cv_performance	dna	dna_combined	recall		Gynecologic: Endometrium	0.6	34	29
+	cv_performance	dna	dna_combined	recall		Gynecologic: Ovary/Fallopian tube	0.90625	13	29
+	cv_performance	dna	dna_combined	recall		HPB: Bile duct/Gallbladder	0.5419847328244275	36	29
+	cv_performance	dna	dna_combined	recall		HPB: Liver	0.9618768328445748	4	29
+	cv_performance	dna	dna_combined	recall		HPB: Pancreas	0.8763440860215054	15	29
+	cv_performance	dna	dna_combined	recall		Head and neck: Adenoid cystic	0.5	37	29
+	cv_performance	dna	dna_combined	recall		Head and neck: Other	0.6633663366336634	31	29
+	cv_performance	dna	dna_combined	recall		Head and neck: Salivary gland	0.23076923076923078	40	29
+	cv_performance	dna	dna_combined	recall		Kidney: Chromophobe	0.75	23	29
+	cv_performance	dna	dna_combined	recall		Kidney: Other	0.9494584837545126	8	29
+	cv_performance	dna	dna_combined	recall		Lung: Non-small cell: LUAD	0.9173228346456693	12	29
+	cv_performance	dna	dna_combined	recall		Lung: Non-small cell: LUSC	0.6923076923076923	30	29
+	cv_performance	dna	dna_combined	recall		Lung: Small cell	0.8392857142857143	18	29
+	cv_performance	dna	dna_combined	recall		Lymphoid tissue	0.9861111111111112	2	29
+	cv_performance	dna	dna_combined	recall		Mesothelium	0.922077922077922	11	29
+	cv_performance	dna	dna_combined	recall		Myeloid: Acute myeloid leukemia	0.75	24	29
+	cv_performance	dna	dna_combined	recall		Myeloid: Myeloproliferative neoplasm	0.6111111111111112	33	29
+	cv_performance	dna	dna_combined	recall		NET: Colorectum/Small intestine	0.7857142857142857	21	29
+	cv_performance	dna	dna_combined	recall		NET: Lung	0.7391304347826086	26	29
+	cv_performance	dna	dna_combined	recall		NET: Pancreas	0.8135593220338984	19	29
+	cv_performance	dna	dna_combined	recall		Prostate	0.9868204283360791	1	29
+	cv_performance	dna	dna_combined	recall		Skin: Melanoma	0.9852941176470589	3	29
+	cv_performance	dna	dna_combined	recall		Skin: Other	0.7346938775510204	27	29
+	cv_performance	dna	dna_combined	recall		Thyroid gland	0.7183098591549296	28	29
+	cv_performance	dna	dna_combined	recall		Urothelial tract	0.8796680497925311	14	29
+	cv_performance	dna	dna_combined	precision		Anogenital	0.7804878048780488	27	30
+	cv_performance	dna	dna_combined	precision		Bone/Soft tissue: Cartilaginous neoplasm	0.8	22	30
+	cv_performance	dna	dna_combined	precision		Bone/Soft tissue: GIST	0.9130434782608695	10	30
+	cv_performance	dna	dna_combined	precision		Bone/Soft tissue: Leiomyosarcoma	0.7241379310344828	33	30
+	cv_performance	dna	dna_combined	precision		Bone/Soft tissue: Liposarcoma	0.796875	23	30
+	cv_performance	dna	dna_combined	precision		Bone/Soft tissue: Osteosarcoma	0.75	30	30
+	cv_performance	dna	dna_combined	precision		Bone/Soft tissue: Other	0.6582278481012658	34	30
+	cv_performance	dna	dna_combined	precision		Bone/Soft tissue: Undiff. sarcoma	0.37142857142857144	40	30
+	cv_performance	dna	dna_combined	precision		Breast: Other	0.9115138592750534	11	30
+	cv_performance	dna	dna_combined	precision		Breast: Triple negative	0.7678571428571429	28	30
+	cv_performance	dna	dna_combined	precision		CNS: Glioma	0.9320987654320988	7	30
+	cv_performance	dna	dna_combined	precision		CNS: Medulloblastoma	0.8496732026143791	20	30
+	cv_performance	dna	dna_combined	precision		CNS: Pilocytic astrocytoma	0.8958333333333334	13	30
+	cv_performance	dna	dna_combined	precision		Colorectum/Small intestine/Appendix	0.9616766467065868	1	30
+	cv_performance	dna	dna_combined	precision		Esophagus/Stomach	0.8709677419354839	15	30
+	cv_performance	dna	dna_combined	precision		Gynecologic: Endometrium	0.796875	24	30
+	cv_performance	dna	dna_combined	precision		Gynecologic: Ovary/Fallopian tube	0.8504398826979472	18	30
+	cv_performance	dna	dna_combined	precision		HPB: Bile duct/Gallbladder	0.7319587628865979	32	30
+	cv_performance	dna	dna_combined	precision		HPB: Liver	0.9344729344729344	6	30
+	cv_performance	dna	dna_combined	precision		HPB: Pancreas	0.8670212765957447	17	30
+	cv_performance	dna	dna_combined	precision		Head and neck: Adenoid cystic	0.5555555555555556	37	30
+	cv_performance	dna	dna_combined	precision		Head and neck: Other	0.5929203539823009	36	30
+	cv_performance	dna	dna_combined	precision		Head and neck: Salivary gland	0.4	39	30
+	cv_performance	dna	dna_combined	precision		Kidney: Chromophobe	0.8918918918918919	14	30
+	cv_performance	dna	dna_combined	precision		Kidney: Other	0.9528985507246377	5	30
+	cv_performance	dna	dna_combined	precision		Lung: Non-small cell: LUAD	0.8996138996138996	12	30
+	cv_performance	dna	dna_combined	precision		Lung: Non-small cell: LUSC	0.7941176470588235	25	30
+	cv_performance	dna	dna_combined	precision		Lung: Small cell	0.8703703703703703	16	30
+	cv_performance	dna	dna_combined	precision		Lymphoid tissue	0.9594594594594594	2	30
+	cv_performance	dna	dna_combined	precision		Mesothelium	0.922077922077922	8	30
+	cv_performance	dna	dna_combined	precision		Myeloid: Acute myeloid leukemia	0.6428571428571429	35	30
+	cv_performance	dna	dna_combined	precision		Myeloid: Myeloproliferative neoplasm	0.5	38	30
+	cv_performance	dna	dna_combined	precision		NET: Colorectum/Small intestine	0.7857142857142857	26	30
+	cv_performance	dna	dna_combined	precision		NET: Lung	0.7555555555555555	29	30
+	cv_performance	dna	dna_combined	precision		NET: Pancreas	0.732824427480916	31	30
+	cv_performance	dna	dna_combined	precision		Prostate	0.9584	3	30
+	cv_performance	dna	dna_combined	precision		Skin: Melanoma	0.9571428571428572	4	30
+	cv_performance	dna	dna_combined	precision		Skin: Other	0.8181818181818182	21	30
+	cv_performance	dna	dna_combined	precision		Thyroid gland	0.85	19	30
+	cv_performance	dna	dna_combined	precision		Urothelial tract	0.9177489177489178	9	30

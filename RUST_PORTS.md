@@ -195,6 +195,14 @@ Second batch, merged on 2026-11-27:
   sums starting at -1 (NE6: every DNA-only run's expected TPMs are 1 too low, some negative), a missing
   score distribution read as the best rank (NE13), and IG V-segment genes not excluded (NE14).
 
+- **CUPPA** (`cuppa-rs`): CuppaDataPrep (Java) and pycuppa's prediction (Python, scikit-learn) in one binary,
+  from the classifier exported once from its pickle: byte-identical to Java and pycuppa on 30 cases (macOS arm64
+  references); 10-50 times faster, a quarter of the memory or less. pycuppa's own numbers depend on the machine's
+  BLAS: the Linux pipeline's differ from the macOS references in the last 2-3 digits (at most 2.4e-13 relative on
+  HG008), and the port gives the macOS ones. Findings CU1-CU8: the alt-splice-junction model expects
+  log-transformed counts that it never gets (CU8, RNA runs), a missing sex feature means male (CU2), and a
+  sample's probabilities depend on the cohort it is predicted in (CU7). The plot (R) is not drawn.
+
 For the R and Python parts, the first version keeps calling the same scripts, so plots and
 predictions stay identical. Replacing them is a separate decision per program: a random forest or a
 fitted classifier can be reproduced exactly in Rust; plots and the PDF cannot be byte-identical and

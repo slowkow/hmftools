@@ -65,7 +65,6 @@
 !sigs-rs/Cargo.toml
 !sigs-rs/Cargo.lock
 !sigs-rs/src
-!sigs-rs/resources
 !virus-interpreter-rs/Cargo.toml
 !virus-interpreter-rs/Cargo.lock
 !virus-interpreter-rs/src
@@ -83,4 +82,9 @@
 !neo-rs/Cargo.lock
 !neo-rs/src
 !neo-rs/resources
+!cuppa-rs/Cargo.toml
+!cuppa-rs/Cargo.lock
+!cuppa-rs/src
+!cuppa-rs/resources
+!cuppa-rs/testdata
 !rust-docker/bin

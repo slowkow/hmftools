@@ -1,0 +1,5 @@
+sample_id	clf_group	clf_name	pred_class_1	pred_class_2	pred_class_3	pred_prob_1	pred_prob_2	pred_prob_3	extra_info	extra_info_format
+HG008-T	dna	dna_combined	Anogenital	HPB: Pancreas	Urothelial tract	0.39593293399613794	0.2892574788998769	0.1772532224045709		
+HG008-T	dna	gen_pos	Anogenital	HPB: Bile duct/Gallbladder	HPB: Pancreas	0.6329810278497957	0.12709469400139387	0.09388224713732853		
+HG008-T	dna	snv96	Head and neck: Other	Urothelial tract	HPB: Bile duct/Gallbladder	0.45035423008899544	0.1876522690613526	0.1520529169315641	AID/APOBEC (SBS2/13)=2521.7,27.3%; Smoking (SBS4)=635.4,6.9%; UV (SBS7)=241.2,2.6%	{sig_name}={count},{percent}
+HG008-T	dna	event	HPB: Pancreas	Gynecologic: Ovary/Fallopian tube	HPB: Bile duct/Gallbladder	0.7304330423613821	0.14853423318845888	0.09655589513839676	1: driver.KRAS.mut=1.0,4.2; driver.SMAD4.mut=1.0,2.2; driver.CDKN2A.mut=1.0,0.7 || 2: trait.is_male=0.0,2.8; driver.KRAS.mut=1.0,1.8; sv.SIMPLE_DUP_100KB_5MB=46.0,1.0 || 3: driver.SMAD4.mut=1.0,2.5; driver.KRAS.mut=1.0,1.8; driver.CDKN2A.mut=1.0,0.9	{pred_class_n}: {feat_name}={value},{log_odds}
