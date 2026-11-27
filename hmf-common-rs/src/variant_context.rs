@@ -711,13 +711,16 @@ impl VcfHeader {
     /// holding the first line of each ID
     pub fn from_lines(meta: Vec<String>, samples: Vec<String>) -> VcfHeader {
         let mut header = VcfHeader { samples, ..Default::default() };
+        // the lines kept so far, for the duplicate test (a linear search made this quadratic in the
+        // thousands of ##contig lines of a GRCh38 header)
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         for line in meta {
             if line.starts_with("##fileformat=") {
                 continue;
             }
             let line = repair_standard_line(&line);
             header.bind(&line);
-            if !header.meta_lines.contains(&line) {
+            if seen.insert(line.clone()) {
                 header.meta_lines.push(line);
             }
         }
