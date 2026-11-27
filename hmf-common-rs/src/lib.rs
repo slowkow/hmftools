@@ -9,6 +9,7 @@
 //! - `regions`: chromosomes, regions and the `-specific_regions` / `-specific_chr` options.
 //! - `java_hash`, `java_id_hash`, `java_sort`, `java_math`: Java's HashMap iteration order, its
 //!   identity-hash order under `-XX:hashCode=2`, TimSort and stream sums, where they reach the output.
+//! - `java_seq_hash`: a Java-ordered HashMap with constant-time removal, for large read caches (ISOFOX).
 //! - `java_fastmath`: commons-math3 FastMath.log, which COBALT applies before segmenting.
 //! - `segmentation`: per-arm piecewise constant segmentation and the segments file (AMBER, COBALT), and
 //!   the .pcf readers (PURPLE).
@@ -61,6 +62,7 @@ pub mod hla;
 pub mod java_fastmath;
 pub mod java_hash;
 pub mod java_id_hash;
+pub mod java_seq_hash;
 pub mod java_math;
 pub mod java_sort;
 pub mod java_strictmath;

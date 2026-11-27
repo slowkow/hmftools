@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# `isofox` as oncoanalyser calls the Java tool (ISOFOX_QUANTIFICATION, NEO_ANNOTATE_FUSIONS), run by isofox-rs:
+# JVM options are dropped. isofox-rs follows ISOFOX 2.1, which expects bwa-mem3 + TARS (REDUX) RNA BAMs; for STAR
+# BAMs Hartwig's README says to use ISOFOX 2.0 or earlier. -java_compat selects Java's behaviour.
+set -euo pipefail
+args=()
+for a in "$@"; do
+    case "$a" in
+        -Xmx*|-Xms*|-Xss*|-XX:*|-D*=*) ;;
+        com.hartwig.hmftools.isofox.Isofox) ;;
+        com.hartwig.*) echo "isofox (Rust port): main class $a is not ported" >&2; exit 2 ;;
+        *) args+=("$a") ;;
+    esac
+done
+exec isofox-rs ${args[@]+"${args[@]}"}

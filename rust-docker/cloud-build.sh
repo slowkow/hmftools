@@ -17,7 +17,7 @@ case "${image##*/}" in
     *:*) ;;
     *) image="$image:$(git -C "$root" rev-parse --short=10 HEAD)" ;;
 esac
-if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs hmf-plot-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs sigs-rs virus-interpreter-rs peach-rs chord-rs neo-rs cuppa-rs qsee-rs orange-rs rust-docker)" ]; then
+if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs hmf-plot-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs sigs-rs virus-interpreter-rs peach-rs chord-rs neo-rs cuppa-rs qsee-rs orange-rs isofox-rs rust-docker)" ]; then
     echo "note: uncommitted changes are not part of the build; it uses HEAD" >&2
 fi
 
@@ -40,7 +40,7 @@ git -C "$root" archive HEAD \
     cider-rs/Cargo.toml cider-rs/Cargo.lock cider-rs/src cider-rs/resources \
     pave-rs/Cargo.toml pave-rs/Cargo.lock pave-rs/build.rs pave-rs/src \
     purple-rs/Cargo.toml purple-rs/Cargo.lock purple-rs/.cargo purple-rs/build.rs purple-rs/src purple-rs/resources \
-    linx-rs/Cargo.toml linx-rs/Cargo.lock linx-rs/src linx-rs/resources \
+    linx-rs/Cargo.toml linx-rs/Cargo.lock linx-rs/.cargo linx-rs/src linx-rs/resources \
     sigs-rs/Cargo.toml sigs-rs/Cargo.lock sigs-rs/src \
     virus-interpreter-rs/Cargo.toml virus-interpreter-rs/Cargo.lock virus-interpreter-rs/src virus-interpreter-rs/testdata \
     peach-rs/Cargo.toml peach-rs/Cargo.lock peach-rs/src peach-rs/testdata \
@@ -49,6 +49,7 @@ git -C "$root" archive HEAD \
     cuppa-rs/Cargo.toml cuppa-rs/Cargo.lock cuppa-rs/src cuppa-rs/resources cuppa-rs/testdata \
     qsee-rs/Cargo.toml qsee-rs/Cargo.lock qsee-rs/src qsee-rs/resources qsee-rs/testdata \
     orange-rs/Cargo.toml orange-rs/Cargo.lock orange-rs/src orange-rs/resources \
+    isofox-rs/Cargo.toml isofox-rs/Cargo.lock isofox-rs/src \
     rust-docker/Dockerfile rust-docker/Dockerfile.dockerignore rust-docker/bin \
     | tar -x -C "$tmp"
 

@@ -106,4 +106,7 @@
 !orange-rs/Cargo.lock
 !orange-rs/src
 !orange-rs/resources
+!isofox-rs/Cargo.toml
+!isofox-rs/Cargo.lock
+!isofox-rs/src
 !rust-docker/bin

@@ -12,6 +12,12 @@ use std::collections::HashMap;
 /// A key compared by identity, with a stable address.
 pub trait IdKey: Clone {
     fn id_addr(&self) -> usize;
+    /// For a key class that implements `Comparable<itself>` (HashMap's comparableClassFor), its
+    /// `compareTo(other)`: a tree bucket orders such keys by it, and by tieBreakOrder (always -1 here)
+    /// where it gives 0. The default, 0, is a key class that is not Comparable.
+    fn compare_key(&self, _other: &Self) -> i32 {
+        0
+    }
 }
 
 const TREEIFY_THRESHOLD: usize = 8;
@@ -216,14 +222,21 @@ impl<K: IdKey, V> IdHashMap<K, V> {
                 self.nm(x).red = false;
                 root = x;
             } else {
-                // equal hashes and no ordering between keys: tieBreakOrder gives -1, so always to the left
+                // equal hashes: compareTo where the keys are Comparable, else (or where it gives 0)
+                // tieBreakOrder, which gives -1 with equal identity hashes
                 let mut p = root;
                 loop {
                     let xp = p;
-                    p = self.n(p).left;
+                    let c = self.n(x).key.compare_key(&self.n(p).key);
+                    let dir = if c == 0 { -1 } else { c };
+                    p = if dir <= 0 { self.n(p).left } else { self.n(p).right };
                     if p == NIL {
                         self.nm(x).parent = xp;
-                        self.nm(xp).left = x;
+                        if dir <= 0 {
+                            self.nm(xp).left = x;
+                        } else {
+                            self.nm(xp).right = x;
+                        }
                         root = self.balance_insertion(root, x);
                         break;
                     }
@@ -272,11 +285,17 @@ impl<K: IdKey, V> IdHashMap<K, V> {
         let mut p = root;
         loop {
             let xp = p;
-            p = self.n(p).left;
+            let c = self.n(x).key.compare_key(&self.n(p).key);
+            let dir = if c == 0 { -1 } else { c };
+            p = if dir <= 0 { self.n(p).left } else { self.n(p).right };
             if p == NIL {
                 let xpn = self.n(xp).next;
                 self.nm(x).next = xpn;
-                self.nm(xp).left = x;
+                if dir <= 0 {
+                    self.nm(xp).left = x;
+                } else {
+                    self.nm(xp).right = x;
+                }
                 self.nm(xp).next = x;
                 self.nm(x).parent = xp;
                 self.nm(x).prev = xp;
@@ -808,6 +827,55 @@ mod purple_probe_tests {
             }
             let got: Vec<usize> = m.keys().map(|k| k.0).collect();
             assert_eq!(got, expected, "n={n}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod comparable_tests {
+    use super::*;
+
+    #[derive(Clone)]
+    struct K {
+        id: usize,
+        start: i32,
+    }
+    impl IdKey for K {
+        fn id_addr(&self) -> usize {
+            self.id
+        }
+        fn compare_key(&self, other: &Self) -> i32 {
+            self.start - other.start
+        }
+    }
+
+    /// HashMap<K,Integer> of identity-hashed keys Comparable by an int, as a JVM with -XX:hashCode=2 iterates it
+    /// (java_id_hash_comparable_expected.txt, printed by the isofox port's probe CompProbe.java on JDK 23): buckets of
+    /// more than ten keys become trees ordered by compareTo
+    #[test]
+    fn comparable_keys_match_java() {
+        let expected = include_str!("java_id_hash_comparable_expected.txt");
+        for (test, line) in expected.lines().enumerate() {
+            let mut seed: u64 = 1000 + test as u64 * 7919;
+            let n = 5 + test;
+            let mut m: IdHashMap<K, i32> = IdHashMap::new();
+            let mut keys: Vec<K> = Vec::new();
+            for i in 0..n {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let start = ((seed >> 33) % 20) as i32;
+                let k = K { id: i, start };
+                keys.push(k.clone());
+                m.insert(k, i as i32);
+                if i % 3 == 2 {
+                    m.insert(keys[i - 1].clone(), -(i as i32));
+                }
+            }
+            let mut out = String::new();
+            for (k, _) in m.iter() {
+                out.push_str(&k.id.to_string());
+                out.push(',');
+            }
+            assert_eq!(out, line, "sequence {test}");
         }
     }
 }
