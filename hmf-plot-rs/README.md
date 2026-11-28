@@ -157,3 +157,8 @@ Apache-2.0; miniz_oxide: MIT OR Zlib OR Apache-2.0. DejaVu Sans: Bitstream Vera 
 (`fonts/LICENSE.CMU`). `src/rpdf_helvetica.rs` and `src/rdev_afm.rs`: metrics from Adobe's Helvetica (and Helvetica-Bold) AFM as R distributes them (Adobe's
 notice kept in the file). Circos's karyotype files
 (`resources/circos/`): GPL, from Circos 0.69. hmftools is GPL-3.0.
+
+## Upstream
+
+Draws what the R, Circos and matplotlib code of hmftools commit `ca04e6c39d` (2026-11-20) draws; BUI is pinned at `1af5d5084d`. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

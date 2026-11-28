@@ -113,3 +113,8 @@ CARGO_BUILD_JOBS=2 cargo test --release
 runs LINX's Java unit tests, ported with their synthetic fixtures (clustering, chaining, classification,
 copy number, LINE, double minutes, fusions, disruptions, drivers, germline, and the visualiser's), and tests
 of the corrected faults. The build needs cmake and a C compiler for hmf-plot-rs (BUI). The comparisons with Java are described in [REPORT.md](REPORT.md).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

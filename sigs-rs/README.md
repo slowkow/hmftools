@@ -60,3 +60,8 @@ which for 10^-5 is a unit in the last place below the literal `1e-5`, as Java's 
 `cargo test --release` runs the Java unit test of SIGS (SignaturesTest, `src/tests/signatures_test.rs`) and
 tests of the port (`src/tests/port.rs`: buckets and contexts, the fit, rounding, the file formats, the matrix
 reader, and the corrected findings in both modes). The comparisons with Java are in [REPORT.md](REPORT.md).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

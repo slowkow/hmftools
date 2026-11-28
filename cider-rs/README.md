@@ -97,3 +97,8 @@ blocks, somatic hypermutation) and own tests (BAM encoding, gene file, compat sw
 against the string path, the IMGT resources against their BWA image). The comparisons with Java are in
 [REPORT.md](REPORT.md); the comparison scripts are kept outside this repository, as they name private
 inputs.
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

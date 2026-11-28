@@ -95,3 +95,8 @@ there). Build with `--no-default-features` for the system allocator instead of m
 On the small tumor/normal pair at 2 threads it takes 12-15 s and 77 MB where Java takes 106-119 s and
 2.2 GB; a 100x whole genome takes about 8-9 minutes and 110 MB (../NOTES.md, section 5). Most of the
 time is BGZF decompression.
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

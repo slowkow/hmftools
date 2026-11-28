@@ -94,3 +94,8 @@ CARGO_BUILD_JOBS=2 cargo test --release
 runs NEO's Java unit tests of the ported classes (PmNeoEpitopeTest, SvNeoEpitopeTest, NeoEpitopeUtilsTest,
 TpmCalcsTest, with their synthetic transcripts and reference bases) and tests of the port's own: the findings in both
 modes, the binding classes, the readers and the writers' formats. The comparisons with Java are described in [REPORT.md](REPORT.md).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

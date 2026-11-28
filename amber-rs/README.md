@@ -80,3 +80,8 @@ by Java and run when the files are given:
 - `purity::driver::tumor_only_driver`, the Rust side of the step-by-step tumor-only comparison.
 
 The comparisons with Java are in [REPORT.md](REPORT.md).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

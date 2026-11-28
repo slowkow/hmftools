@@ -116,3 +116,8 @@ the port (`src/tests/port.rs`: number formats, the threshold display, key order,
 type, and the corrected findings in both modes; `src/plot/`: R's merge order of the cohort rows, the label boxes
 against R's). The report's layout model is tested in hmf-plot-rs (`ggp`, `patchwork`, `pdf_figure`, `raster`).
 The comparisons with Java and R are in [REPORT.md](REPORT.md).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

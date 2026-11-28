@@ -103,3 +103,8 @@ CARGO_BUILD_JOBS=2 cargo test --release
 Depends on `../hmf-common-rs` and `../hmf-plot-rs` (path dependencies; hmf-plot-rs builds BUI's C kit, which
 needs `cmake`). The unit tests are ports of the Java tests with
 synthetic data.
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

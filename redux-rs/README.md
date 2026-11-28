@@ -110,3 +110,8 @@ All of this section is about the port run with `-java_compat`.
 - Log lines have the Java layout without the thread name. Debug-only options (`-run_checks`,
   `-log_read_ids`, `-perf_log_time`, `-log_dup_group_size`, `-log_read_cache`, `-read_output`) are
   accepted; see PLAN.md for which have an effect.
+
+## Upstream
+
+Started from hmftools commit `a224a2cd8e` (2026-11-17); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

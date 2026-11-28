@@ -68,3 +68,8 @@ BreakEndSupportCounterTest, TelomericSplitReadAnalyserTest) and the port's own. 
 are in [REPORT.md](REPORT.md). `scripts/make_synthetic.sh <out dir> [seed] [unknown]` writes the synthetic
 BAMs and pipeline files used there (needs samtools); `scripts/bam_raw_equal.py` compares two BAMs record by
 record as uncompressed bytes.
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

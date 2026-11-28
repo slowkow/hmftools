@@ -48,3 +48,8 @@ sorted, so nothing depends on Java's HashMap order.
 PeachConfigTest, the loader tests, DrugInfoStoreTest, HaplotypeCombinationTest, HaplotypePanelTest and the
 five output tests; `src/tests/java_algo.rs` and `src/tests/java_io.rs`, with the Java tests' resource files in
 `testdata/`) and tests of the port (`src/tests/port.rs`: event ids, chromosome names, PE1 in both modes).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

@@ -69,3 +69,8 @@ builds it, so both files equal Java's.
 class; the tests Java ignores are ignored), and tests of the port (`src/tests/port.rs`: each corrected
 finding in both modes, the resource readers, the output record). The comparisons with Java are described in
 [REPORT.md](REPORT.md).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

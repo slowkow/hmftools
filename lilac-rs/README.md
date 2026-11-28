@@ -105,3 +105,8 @@ fragment sets, the substring search against a port of hmf-common's SuffixTree, f
 JVM's values where `/tmp/lilac_hash/log10_java.txt` exists). The comparisons with Java are in
 [REPORT.md](REPORT.md); the scripts in `../scripts` (`cases.sh java|rust|list`, `compare.sh`,
 `compare_all.sh`, `trace_findings.sh`, `timing_table.sh`) rerun them.
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

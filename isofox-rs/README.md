@@ -112,3 +112,8 @@ runs ports of ISOFOX's Java unit tests (ReadUtilsTest, ReadCountsTest, TransClas
 NovelJunctionsTest, GcBiasTest, MiscTest, ExpectedRatesTest's fit, FusionFragmentsTest and FusionDataTest cases) on synthetic
 genes, transcripts and reads, and tests of the port's own (the findings in both modes, the hash orders, the parsers, and
 each behaviour of the 2.0.1 mode in `tests201.rs`). The comparisons with Java are described in [REPORT.md](REPORT.md).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

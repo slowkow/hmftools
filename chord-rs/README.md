@@ -69,3 +69,8 @@ runs here), and tests of the port (`src/tests/port.rs`: each corrected finding i
 rules, the forest read from CHORD.rds against the embedded one, the HG008 prediction;
 `src/predict/rfmt.rs`: R's number formatting against 1,742 values written by R, R's sample id conversion,
 R's Mersenne-Twister). The comparisons with Java are in [REPORT.md](REPORT.md).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

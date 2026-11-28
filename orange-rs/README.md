@@ -88,3 +88,8 @@ ReportWriterTest's reports from the test run) and tests of the port (the virus l
 layout, findings in both modes, dates, plot lookup; the fonts' metrics against PDFBox's, the number formats against
 Java's, and a synthetic layout that a Java harness draws the same way).
 The comparisons with Java are in REPORT.md.
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20), with upstream's Viridian loading (`f5f660cc9f`) taken while porting: ORANGE as at `883ab11bba` (2026-11-27). `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

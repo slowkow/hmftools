@@ -53,3 +53,8 @@ its own `Cargo.lock` and build folder. `cargo test --release` here runs the shar
 regression suite is the check for a change here. Some segmentation tests read the Java tests' resource files
 from `../hmf-common/src/test/resources` (or `HMF_COMMON_TEST_RESOURCES`) and are skipped without them.
 Findings in this crate's own code (ids SG...) are in [REPORT.md](REPORT.md).
+
+## Upstream
+
+Ports the parts of hmf-common the Rust ports use, as of hmftools commit `ca04e6c39d` (2026-11-20). Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

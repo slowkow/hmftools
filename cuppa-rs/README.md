@@ -93,3 +93,8 @@ numpy through `scripts/numpy_fixture.py`; the embedded model; HG008's prediction
 each finding in both modes; `src/plot.rs`: stringi's word wrapping and R's number formats as the plot uses them).
 The plot's layout model is tested in hmf-plot-rs (`ggp`, `patchwork`, `pdf_figure`). The comparisons with Java,
 pycuppa and R are in [REPORT.md](REPORT.md).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

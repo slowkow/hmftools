@@ -51,3 +51,8 @@ summary first and keeps only the names it looks up, while checking every line as
 VirusBlacklistingDbFileTest, VirusReportingDbFileTest, CoveragesAnalyzerTest, TaxonomyDbTest,
 TaxonomyDbFileTest; `src/tests/java_tests.rs`, with their resource files in `testdata/`) and tests of the
 port (`src/tests/port.rs`).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

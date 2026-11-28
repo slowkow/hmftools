@@ -4,6 +4,9 @@ Goal: run the whole oncoanalyser chain with Rust programs, so that more samples 
 machine and per day. Each port takes the same options and writes the same files as the Java program,
 corrects the faults found in Java by default, and reproduces Java exactly under `-java_compat`.
 
+Each port started from a known upstream commit. How the ports follow upstream since then, one reviewed
+change at a time, is in [`UPSTREAM.md`](UPSTREAM.md).
+
 Done: SAGE 5.1 (`sage-rs/`), REDUX 2.1 (`redux-rs/`), ESVEE 2.1 (`esvee-rs/`). Each has a README,
 PLAN and REPORT.
 
@@ -261,9 +264,7 @@ SAGE append, used for RNA, is already part of `sage-rs`.
 Cohort and research tools that oncoanalyser does not run: compar, patient-db, panel-builder,
 pave-reverse, gene-utils, sv-tools, paddle, v-chord, v-cuppa, taur, hmf-id-generator.
 
-Programs outside hmftools that stay: bwa-mem3 with sambamba (alignment and sorting), samtools,
-VIRUSBreakend (GRIDSS with kraken2, until Viridian replaces it) and STAR for RNA. With waves A to C
-done, the pipeline needs no Java, R, Python or Perl, but it still runs these programs.
+Programs outside hmftools: see section 7.
 
 ## 5. Shared code
 
@@ -297,3 +298,49 @@ As for the first three:
 
 Machine time for Java baselines and whole-genome runs, not writing code, has been the slowest part of
 each port so far.
+
+## 7. Programs outside hmftools
+
+With waves A to C done, the pipeline runs no Java, R, Python or Perl from hmftools, but it still runs
+programs from elsewhere. The rule for them: a program that does a lot of the work stays (the aligners);
+where the pipeline uses one or two functions of a large package, a Rust implementation of just those is
+usually better. It is one small binary with no JVM or Python, it can be checked record by record against
+the original, and we can adapt it.
+
+| Program | What it does in our runs | Cost seen | Plan |
+|---|---|---|---|
+| bwa-mem3 | DNA alignment | most of a run's CPU time | stays |
+| sambamba view and sort | sorts bwa-mem3's output for REDUX | inside the alignment tasks, not measured on its own | stays for now; measure it, then consider a sort in Rust |
+| STAR 2.7.3a | RNA alignment | 14 min on 64 vCPUs for a 74 M read-pair tumor RNA | stays. Hartwig's newer RNA route (bwa-mem3, TARS, REDUX) would replace it once TARS's resources are published |
+| samtools sort | sorts STAR's output | 7.5 min using 2.6 cores | to be folded into the duplicate marking below |
+| GATK MarkDuplicates (Picard) | marks duplicate RNA reads before ISOFOX | 15.3 min using 1.8 cores of 64, 59 GB peak (its heap is set to 80% of the task's memory) | port to Rust (below) |
+| samtools index; `samtools --version`, `sambamba --version` | TEAL's prep indexes its output BAMs; version lines in `versions.yml` | seconds | teal-rs to write the index itself; then the Rust image needs neither program |
+| VIRUSBreakend (GRIDSS 2.13.2 with kraken2) | viral presence and integration | 1.9 CPU hours, 5.9 GB | Hartwig's Viridian replaces it and Virus Interpreter. Port Viridian when oncoanalyser adopts it. It calls BWA through JNI, and esvee-rs already vendors BWA |
+| MultiQC | summary report | minutes | stays (its own container; optional) |
+| gpgr's LINX report (R) | LINX HTML report | minutes | optional; not planned |
+| fastp | not run in our runs (no UMIs) | none | if UMIs are needed, moving the UMI into the read name is small enough to write in Rust |
+
+### Duplicate marking for RNA
+
+Decision (2026-11-27): port Picard's MarkDuplicates, as GATK 4.6.1.0 runs it in oncoanalyser, to Rust.
+Under `-java_compat` it gives the same duplicate flags and metrics, and it corrects Picard's faults by
+default. Then fold the sort in. STAR's unsorted output keeps each pair's records together, so duplicates
+can be found as the records stream in and the sorted BAM written once. That saves samtools sort and a
+pass over the BAM.
+
+Alternatives looked at:
+
+- **riker** (Fulcrum Genomics; Rust, MIT): successors of Picard's QC metric tools (alignment, insert size,
+  whole-genome coverage, GC bias, hybrid capture, RNA-seq). It does not mark duplicates, and its outputs
+  differ from Picard's on purpose. Nothing in our runs needs it. Its RNA metrics may be worth adding later,
+  since oncoanalyser runs no RNA QC beyond ISOFOX's summary.
+- **FastDup** (C++; Bioinformatics, 2025): Picard's algorithm, about 20 times faster than Picard by its
+  authors' measurements. It finds the same duplicate sets, but the read it keeps from a set can differ
+  from Picard's, and it keeps Picard's overflow of large optical-duplicate coordinates on purpose. It
+  brings its own htslib and a C++ build, and its flags could not be checked against Picard's record by
+  record. Its idea of working on chunks of the sorted BAM in parallel is worth borrowing.
+- **fgumi `dedup`** (Fulcrum Genomics; Rust): UMI-aware duplicate marking, with a mode for reads without
+  UMIs. It does not claim Picard's results, and it needs a different sort order.
+- **REDUX** (already ported): Hartwig's newer RNA route marks duplicates with REDUX, after bwa-mem3 and
+  TARS. ISOFOX 2.0.1's STAR route was built on Picard's flags, so REDUX there would change ISOFOX's counts.
+  It fits once the RNA route moves to TARS.

@@ -239,3 +239,8 @@ with `esvee_bwa.c`, which is the non-JNI part of gatk-bwamem-jni's `jnibwa.c`. B
 licensed under GPLv3; `ksw.c` and the klib headers are MIT, and so is `sse2neon.h`. A binary built from
 this crate therefore falls under GPLv3, which is also the licence of hmftools ([../LICENSE](../LICENSE)).
 See [vendor/bwa/README.md](vendor/bwa/README.md).
+
+## Upstream
+
+Started from hmftools commit `a224a2cd8e` (2026-11-17); the Java reference was rebuilt at `ca04e6c39d` (2026-11-20), which adds one ESVEE fix, and `-java_compat` reproduces that build. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).

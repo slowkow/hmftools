@@ -73,3 +73,8 @@ runs the ported Java unit tests (`src/java_tests.rs`), own tests, and the Java e
 (`src/e2e_tests.rs`) on the Java tests' synthetic BAMs, found in `../cobalt/src/test/resources` or where
 `COBALT_TEST_RESOURCES` points (skipped otherwise). `COBALT_E2E_KEEP=<dir>` keeps each scenario's inputs
 and arguments for a comparison with Java. The comparisons with Java are in [REPORT.md](REPORT.md).
+
+## Upstream
+
+Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+[`../UPSTREAM.md`](../UPSTREAM.md).
