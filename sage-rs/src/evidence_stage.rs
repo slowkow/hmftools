@@ -68,6 +68,8 @@ pub(crate) struct Collector<'a> {
     pub(crate) last_index: i64,
     pub(crate) selected: Vec<usize>,
     pub(crate) ref_seq: &'a RefSequence,
+    /// reference bases beyond `ref_seq`, for the event count of a split read without an NM tag (S54)
+    pub(crate) genome: Option<&'a dyn RefBases>,
     pub(crate) qc: &'a QualityCalculator<'a>,
     /// whether any counter collects reads for the visualiser
     pub(crate) vis: bool,
@@ -110,7 +112,7 @@ impl<'a> Collector<'a> {
         if self.selected.is_empty() {
             return;
         }
-        let number_of_events = calc_adjusted_num_mutations(read, self.ref_seq);
+        let number_of_events = calc_adjusted_num_mutations(read, self.ref_seq, self.genome);
         let mut positive: Vec<usize> = Vec::new();
         let mut negative: Vec<usize> = Vec::new();
         for i in 0..self.selected.len() {
@@ -128,12 +130,12 @@ impl<'a> Collector<'a> {
     }
 }
 
-/// The reference genome for the Ultima qual models (RefGenomeSource.getBases), answered from the region's
-/// reference sequence where it covers the request.
-struct GenomeBases<'a> {
-    genome: &'a RefGenome,
-    chr: &'a str,
-    ref_seq: &'a RefSequence,
+/// The reference genome (RefGenomeSource.getBases), answered from the region's reference sequence where it
+/// covers the request: for the Ultima qual models and for the event count of reads beyond the region (S54).
+pub(crate) struct GenomeBases<'a> {
+    pub(crate) genome: &'a RefGenome,
+    pub(crate) chr: &'a str,
+    pub(crate) ref_seq: &'a RefSequence,
 }
 
 impl RefBases for GenomeBases<'_> {
@@ -227,8 +229,8 @@ pub fn collect_evidence(
             }
         }
     }
+    let ref_bases = GenomeBases { genome, chr, ref_seq: &ref_seq };
     if is_ultima() {
-        let ref_bases = GenomeBases { genome, chr, ref_seq: &ref_seq };
         for rc in counters.iter_mut() {
             set_read_context_ultima_models(&ref_bases, chr, rc)?;
         }
@@ -259,7 +261,8 @@ pub fn collect_evidence(
         counters = valid;
     }
 
-    let mut collector = Collector { counters, last_index: 0, selected: Vec::new(), ref_seq: &ref_seq, qc: &qc, vis };
+    let mut collector =
+        Collector { counters, last_index: 0, selected: Vec::new(), ref_seq: &ref_seq, genome: Some(&ref_bases), qc: &qc, vis };
     let mut out: SyncOutput = Vec::new();
     let sync_fragments = cfg.sync_fragments;
     let pool = ReadPool::default();

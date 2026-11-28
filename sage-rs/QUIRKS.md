@@ -1,6 +1,6 @@
 # Java behaviours found while porting, by subject
 
-Each is a candidate for an upstream report. The ids (S1 to S48) are those of [REPORT.md](REPORT.md),
+Each is a candidate for an upstream report. The ids (S1 to S56) are those of [REPORT.md](REPORT.md),
 section 5, which has the Java file and line of each and, in 5.5, what the corrections change. File
 references here are to `sage/src/main/java/com/hartwig/hmftools/sage/`.
 
@@ -112,6 +112,19 @@ Three states:
 - S32, port differs. Java SAGE without `-sequencing_type` fails with a null pointer in the candidate
   stage on the full public SBX chr21 slice (after "ignoring read with position before prior position");
   the port runs through. Default-path comparisons on that data use chr21:20-40 Mb.
+- **S54, port differs. Java 5.1 stops on an RNA BAM without `NM` tags.** For a read without `NM`,
+  `common/NumberEvents.getOrCalcNm` counts mismatches with htsjdk's `calculateSamNmTag` against the
+  region's reference bases (the region plus 1,000 bases), without a bounds check; a split read whose
+  intron takes it beyond them throws and the run exits. STAR leaves `NM` out by default. The port takes
+  the bases of such a block from the genome, in both modes, as upstream does from `de50386378` on; it
+  used to count only the bases inside the region. Upstream's fix covers the evidence stage only (the
+  candidate stage passes a null genome); the port gives both stages the genome.
+- **S55, kept, intent uncertain. Soft-clipped reads in the depth.** A read that reaches the variant only
+  through a soft clip is counted in `DP` when its clipped bases support neither allele. In RNA these
+  include the overhangs STAR clips at splice junctions; on the tumor RNA of REPORT.md section 8 they
+  lower the RNA `AF` by up to 0.07. DNA is treated the same way.
+- **S56, kept. STAR's map quality 255** (unique) is taken as 255, so the map quality side of a read's
+  quality and its penalties never bind for RNA reads, and `AFMQ` / `ARMQ` are near 250. Small effect.
 
 ## CRAM
 

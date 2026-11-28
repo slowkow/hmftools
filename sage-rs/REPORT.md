@@ -7,7 +7,7 @@ measurements) and [QUIRKS.md](QUIRKS.md) (the Java findings by subject).
 
 Baseline: Java SAGE 5.1 at upstream commit `a224a2c`.
 
-Two modes. By default the port corrects 32 of the 53 Java findings of section 5. With `-java_compat`
+Two modes. By default the port corrects 32 of the 56 Java findings of section 5. With `-java_compat`
 (or `SAGE_JAVA_COMPAT=1`) it behaves as Java does. **Sections 1, 2, 3 and 6 describe the port run with
 `-java_compat`**: every "identical", every record count and every timing there was measured in that
 mode, or before the corrections existed, when it was the only mode. Section 5.5 has what the corrected
@@ -137,7 +137,7 @@ few percent without faster storage.
 
 ## 5. Java findings
 
-Numbered S1 to S53 and grouped by kind. File references are to
+Numbered S1 to S56 and grouped by kind. File references are to
 `sage/src/main/java/com/hartwig/hmftools/sage/` unless they name `hmf-common`. "Reproduced" means the
 port behaves the same way under `-java_compat`, so that its output equals Java's.
 
@@ -329,6 +329,21 @@ against the code before they were taken in.
   variant, with a warning. With `-vis_purple_vcf` that includes every reportable variant whose
   `IMPACT` transcript has no amino acid entry (intergenic and non-coding ones) or whose protein
   change the parser rejects. Reproduced. **Corrected by default.**
+- **S54. `common/NumberEvents.java:36-44`** For a read without an `NM` tag, `getOrCalcNm` calls htsjdk's
+  `SequenceUtil.calculateSamNmTag` on the region's reference bases (the region plus 1,000 bases), and
+  htsjdk 2.23 indexes them without a bounds check. A split (RNA) read whose blocks reach beyond them,
+  that is one with an intron longer than the margin, throws ("Exception counting mismatches for read
+  ...") and the run stops: Java 5.1 cannot append (or call) a STAR BAM made without `NM`, which is
+  STAR's default (`--outSAMattributes Standard`). Found on the tumor RNA of section 8 with its `NM`
+  tags removed: Java exits on the first such read. The port used to count only the bases inside the
+  region, in both modes; it now takes the bases of such a block from the genome, in both modes, which
+  is what upstream SAGE does from `de50386378` on (5.1-beta.5). A read that Java can count is counted
+  as before. On that input one record changes (`AFMQ` of the appended sample), and the port's
+  differences between the BAM with and without `NM` are then exactly those of the beta.5 jar (4
+  records, the merged fragments of S52). Upstream's fix covers the evidence stage only: the candidate
+  stage (`candidate/RefContextConsumer.java:245`) passes a null genome, so the caller would stop with a
+  `NullPointerException` on the same read; the port gives the candidate stage the genome as well. Unit
+  tests: `tests::split_read::s54`.
 
 ### 5.4 Oddity
 
@@ -362,6 +377,22 @@ against the code before they were taken in.
 - **S48. `vis/ReadTableColumn.java:43`** The reference names of a read and its mate are compared with
   `!=`. It works because htsjdk hands out one string per sequence; the port compares the indices.
   No effect.
+- **S55. `evidence/ReadContextCounter.java:359` (`processRead`)** A read that reaches the variant only through
+  a soft clip is matched against the read context; when its clipped bases support neither allele it is
+  still counted in the depth (`DP`, `RC_CNT`), as a read that covers the variant. In RNA, STAR soft-clips
+  read ends it cannot place, among them the overhangs of splice junctions, whose bases come from the next
+  exon. On the 25 records of section 8 with RNA coverage, 178 such reads are counted in 18 records: 24
+  support the alt, 1 the ref, 153 neither; leaving the 153 out would raise the RNA `AF` by more than 0.02
+  on 5 records (at most 0.071). Only 60 of the 636 reads whose soft clip covers a variant end within 5
+  bases of a splice junction seen in other reads, so junctions are not the main source. The code treats
+  DNA the same way, and counting every read that covers the position may be the intent. Kept, in both
+  modes; to be raised with the SAGE authors.
+- **S56. `quality/QualityCalculator.java:136-150`** STAR gives a uniquely mapped read the map quality 255
+  (the SAM value for "not available"). SAGE takes it as 255; the cap at 60 (`MAX_MAP_QUALITY`) applies
+  only with the germline map quality ratio factor. The map quality side of a read's quality (255 less the
+  event, improper pair and fixed penalties) then never binds for RNA reads, and `AFMQ` and `ARMQ` are near
+  250. Taking 255 as 60 changes `RC_QUAL` on 4 of the 25 records of section 8 (by 0.2% to 0.7%) and
+  rescales `AFMQ` on 18. Kept, in both modes: the effect is small, and appended samples are not filtered.
 
 Also found while porting, in REDUX 2.1 (see `redux-rs`): `BaseQualityResults.addPerfCounter` merges a
 counter into itself and fails during BQR; `-form_consensus` fails on the public Ultima slices on a
@@ -401,8 +432,8 @@ particular should be confirmed with the SAGE authors.
 | S5 | **intent uncertain.** The pair is closed where the merge fails and the first mate is processed there, alone: Java's rule for every other pair that cannot be combined ("only the first record"), and the same reads as Java in effect counts. Alternatives: process both mates separately, as for pairs that do not overlap; or drop both | none: no merge fails on the six inputs |
 | S6 | every block of a chromosome is kept, in position order | none possible with the resource files (no BED file comes back to a chromosome); unit test |
 | S7 | htslib regenerates `NM` when it decodes a CRAM record | Illumina CRAM: 5,908 to 6,023 records (6 gone, 121 new, 2,905 changed in `RC_QUAL`, `AFMQ`, `MQF`; `minMQF` on 56, `maxGermlineRelQual` on 12, `minTumorQual` on 2; one more passing), now byte-identical to the BAM run; SBX CRAM none (already equal). CRAM 3.1 gives the same as 3.0 |
-| S8 | with a split read, the index asked about is used, relative to the segment | not measured: no RNA input is on the local disk; the path is only reached by a split read that needs realignment |
-| S9 | the jitter check of a split read is made on the segment | not measured, as S8; unit test |
+| S8 | with a split read, the index asked about is used, relative to the segment | RNA append (section 8): none on the slice of 25 regions; for the three whole tumor RNAs see section 8. The path is only reached by a split read that needs realignment |
+| S9 | the jitter check of a split read is made on the segment | as S8; unit test |
 | S24 | a contig is cut into the slices of one thread at any thread count | chrM at 3 threads: 2 of 128 records change in their read counts, and the output is byte for byte Java's at 1 thread; at 1 thread none |
 | S49 | a change of more than 5 repeat units, longer or shorter, is outside the jitter model | Illumina chr21: 18 indel records changed (quality and support values), `FILTER` on 3, 245 passing as before. `-germline`: 1 gone, 335 changed (330 indels), `FILTER` on 22, passing 72,902 to 72,897. Whole genome, a 35x Illumina pair on Google Batch (2026-11-26; the image before and after S49 to S51, on the same BAMs): somatic 416,119 to 416,053 records (92 gone, 26 new, 7,274 changed), passing 4,378 to 4,365: 17 homopolymer deletions of 6 to 23 bases become `minTumorQual` with the same support, 2 of 6 bases become passing; after PAVE and PURPLE one of the 17 had been passing (3,824 to 3,823) |
 | S50 | an MNV filtered on the way is skipped on both sides of a pair | Illumina chr21 `-germline`: `FILTER` on 4 records (2 MNVs, 2 SNVs), passing the same; with soft filters none |
@@ -545,8 +576,9 @@ runs above).
 | S28 | the commons-math formulas are part of the result's definition; the port evaluates them with correctly rounded functions and agrees with Java on every value checked |
 | S30 | the font table is what makes the files comparable with Java's at all |
 | S42, S43 | dead code |
+| S55, S56 | RNA in append: the intent may be what the code does (S55), the effect is small (S56); see 5.4 |
 | S48 | no effect |
-| S22, S23, S26, S27, S29, S31 to S37 | the port already does one fixed thing in both modes, because Java's own result is not reproducible or Java fails |
+| S22, S23, S26, S27, S29, S31 to S37, S54 | the port already does one fixed thing in both modes, because Java's own result is not reproducible or Java fails |
 
 ## 6. Later additions
 
@@ -617,7 +649,93 @@ Untested, with what each test needs. None of these is known to fail; they have n
 | A Linux run | All builds and runs were on macOS arm64 | Build with `cargo build --release` on x86-64 Linux, run `cargo test --release` and the regression suite, and byte-compare one region against Java. Covers libdeflate and floating point on another target |
 | Visualiser with several samples | The visualiser was compared with Java on one tumor and on tumor plus normal, not on a run with several tumor or reference samples | A run with two or more `-tumor` or `-reference` samples and `-vis_variants`; compare the HTML files with the read rows sorted, as in section 6 |
 | A second deep exome pair | Prepared, not run | Run both tools on it at 16 threads and compare with `bench/compare_vcf.py` |
-| Corrected mode on RNA (split reads, S8 and S9) and on the second private project | The inputs are on a network volume that was not mounted when the corrections were made | Run `sage-rs append` on the tumor RNA with `-java_compat` and with `-java_compat_except S8,S9` and count the records that change |
+| Corrected mode on the whole runs of the second private project | S8 and S9 were measured on its three tumor RNAs (section 8); the DNA runs were not repeated in the corrected mode | Run the corrected mode on its DNA pairs and count the records that change |
 | The corrections against the authors' intent | The corrected output cannot be compared with Java | Confirmation of S5, S10 and S45 (intent uncertain) and of S3 (the largest effect) by the SAGE authors |
 
 Not done for speed: the visualiser builds its files on the writer thread, which only matters with `-vis_variants` on many variants. See the end of section 3 for the rest.
+
+## 8. Append on RNA, and the 5.1 pre-releases (2026-11-27)
+
+The oncoanalyser dev-3.1.0 line runs Hartwig's image `sage:5.1-beta.3`. The first combined DNA and RNA
+run of the pipeline appended a STAR-aligned tumor RNA (duplicates marked by Picard MarkDuplicates) to
+the PURPLE somatic VCF, once with that image and once with the port in Java mode: 25 of 4,384 records
+differed, all in the RNA sample (`RC_QUAL` on 20, `AFMQ` on 5, `AFBQ` on 4), and the image wrote the
+header line `##sageAppendVersion=5.1-beta.3`, which the port does not.
+
+**Versions.** Upstream's tags: `sage-v5.1-beta.3` is `0e9f6ab950` (2026-11-13, on the branch of AUS-459),
+`sage-v5.1-beta.4` is `a224a2cd8e` (master, 2026-11-17: the port's reference and the jar it was checked
+against), `sage-v5.1-beta.5` is `de50386378` (master, 2026-11-19: the AUS-459 branch squashed in). beta.3
+is not an ancestor of beta.4; it is an earlier build of the changes beta.5 brought to master. Built from
+source, each logs "Sage version 5.1" (the pom's version); the image logs "5.1-beta.3".
+
+**Reproduced** on a slice of the RNA (the reads within 2 kb of the 25 records) with the pipeline step's
+command at 2 threads (records elsewhere lose their RNA reads in a slice, so only the 25 are compared with
+the pipeline):
+
+| Run | The 25 records | Whole VCF | Time, peak memory |
+|---|---|---|---|
+| 5.1 jar (beta.4) | the port's pipeline values | | 30 s, 2.5 GB |
+| port, `-java_compat` | the port's pipeline values | byte-identical to the 5.1 jar, at 1 and 2 threads | 1.1 s, 75 MB |
+| image 5.1-beta.3 (docker, amd64 emulated) | the image's pipeline values | 25 records and the header line differ from the 5.1 jar | 54 s |
+| jar built from `de50386378` (beta.5) | 20 as the image, 5 as the port | header `##sageAppendVersion=5.1` | 28 s, 2.5 GB |
+
+**Cause.** Two changes of the AUS-459 branch. Each was added on its own to an experimental build of the
+port (not kept), and the pair reproduces the image:
+
+1. The base quality penalty of SNVs and MNVs is scaled from 6 to 12 over recalibrated qualities 24 to 36,
+   where it was a fixed 12 (`QualityCalculator.getBaseQualPenalty`; beta.3 and beta.5): 20 records
+   (`RC_QUAL` on 19, `AFBQ` on 4). This RNA's qualities are binned at 2, 11, 25 and 37: a Q25 base keeps
+   18.5 in place of 13, a Q11 base 5 in place of 0, and Q37 is unchanged.
+2. beta.3 only: `NumberEvents.calcAdjustedNumMutations` returns the `NM` tag as it is, so an indel counts
+   for its full length in the event penalty. beta.4 and beta.5 subtract length - 1 per indel (beta.5:
+   "BWA counts indels for their full length, whereas Sage wants a mutation of 1 per indel"): 5 records
+   (`AFMQ` on 5, `RC_QUAL` on 1). This is a fault of the pre-release that upstream has fixed.
+
+With both changes the experimental build equals the image on all 4,384 records; with the first alone it
+equals the beta.5 jar on all 4,384. So the port is right for the version it reproduces: the image is an
+earlier pre-release, and 5 of the 25 differences are its own fault.
+
+**Whether the port should follow.**
+
+- The scaled penalty is upstream's model for 5.1, not a correction of a fault, and it changes the
+  quality of every SNV and MNV read below Q36 in the caller as well as in append. It belongs with moving
+  the port's Java reference from beta.4 to beta.5: the scaled penalty, the realignment test for indels
+  near a soft-clipped end, the new `NM` routine, append's check of the input version and its header line.
+  That needs a beta.5 jar (one was built for this comparison from `git archive de50386378`) and new
+  stored Java outputs for the regression suite. Not done here.
+- beta.3's `NM`: no, it is a fault that upstream fixed.
+- `##sageAppendVersion`: not written, as before. beta.5's append writes it, and WISP in master reads it:
+  an append version of 5.1 or more makes WISP require a quality per allele read of 21 in place of 18
+  (`wisp/.../variant/SomaticVariants.java:152`, `WispConstants.java:25-36`), the threshold for qualities
+  made with the scaled penalty. The port makes its qualities with the fixed penalty, so writing the line
+  now would make WISP filter the port's appended samples against the wrong threshold. It should come with
+  the scaled penalty.
+- The pipeline's Java SAGE caller is the same beta.3 image. Its somatic calls should differ from the
+  port's by the same two changes, and beta.3's `NM` should lower the quality of reads with long indels
+  there (DNA map quality is at most 60, so the event penalty of about 7 per extra event binds). Not
+  measured here.
+
+**RNA checks.** Spliced reads, STAR's map qualities, Picard's duplicates and soft clips, on the slice and
+on the three whole tumor RNAs of the second private project (section 2):
+
+- Spliced reads. A read whose splice gap covers the variant is not counted (Java and port). The
+  corrections S8 and S9 change nothing on the slice; on the three whole RNAs they change no somatic
+  record, and 0, 1 and 5 of the 1,910 to 1,957 germline records (`RC_JIT` on one; `AD`, `DP` and the
+  quality fields on two; the append phase set `LPSA` on the others; one fragment length line).
+- `NM`. These four RNA BAMs carry `NM` (they have the tags of STAR's `--outSAMattributes All`), and on
+  the slice every primary, non-duplicate read's `NM` equals SAGE's own count on this reference. STAR's default leaves `NM` out,
+  and Java 5.1 then stops: S54, now handled as beta.5 does. Without `NM` the port's output differs from
+  the run with `NM` in 4 records, as the beta.5 jar's does, through the merged fragments of S52; with
+  fragment sync off the two are identical.
+- Map quality. 255 (unique) is used as it is: S56. Reads at 0 (more than 4 loci) are not evidence outside
+  hotspots (`EVIDENCE_MIN_MAP_QUAL` 1); reads at 1 and 3 (2 to 4 loci) count in `AD` and `DP` with a
+  quality of 3 at most.
+- Duplicates. Reads flagged by MarkDuplicates are dropped, as REDUX's are (76% of the slice's reads).
+  Picard forms no consensus, so `UMI_CNT` counts every read as having none.
+- Soft clips: S55.
+
+The existing append regression cases (9 on the public SBX and Ultima slices, 6 on the three tumor RNAs)
+are byte-identical to the stored Java output, VCFs and fragment lengths, in Java mode at 2 threads after
+the change for S54, and so are the caller on chr21 of the Illumina pair from BAM and from CRAM (where
+Java mode counts `NM` itself). In the default mode the 15 append cases are identical to the build before
+the change.

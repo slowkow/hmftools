@@ -113,3 +113,90 @@ fn test_split_reads() {
     read_context_counter.process_read(&read, 1, None, &qc);
     assert_eq!(2, read_context_counter.counts.partial_core);
 }
+
+// Not from Java: S54, the event count of a split read without an NM tag whose blocks reach beyond the region's
+// reference bases. Java 5.1 stops there (htsjdk indexes past the region's bases); the port takes the bases of
+// such a block from the genome, in both modes, as upstream SAGE does from de50386378 on.
+mod s54 {
+    use super::super::util::*;
+    use crate::candidate::calc_adjusted_num_mutations;
+    use crate::refseq::RefSequence;
+    use crate::ultima::RefBases;
+
+    /// A synthetic chromosome, 1-based.
+    struct Genome(Vec<u8>);
+
+    impl RefBases for Genome {
+        fn get_bases(&self, pos_start: i32, pos_end: i32) -> Option<Vec<u8>> {
+            if pos_start < 1 || pos_end < pos_start || pos_end as usize > self.0.len() {
+                return None;
+            }
+            Some(self.0[pos_start as usize - 1..pos_end as usize].to_vec())
+        }
+    }
+
+    fn genome() -> Genome {
+        Genome(REF_BASES_200.as_bytes().iter().cycle().take(4000).copied().collect())
+    }
+
+    /// The region's reference bases: positions 1001 to 2000.
+    fn window(g: &Genome) -> RefSequence {
+        RefSequence::from_bases(1001, g.get_bases(1001, 2000).unwrap())
+    }
+
+    /// Read bases equal to the reference at `start..=end`, with the bases at the given offsets changed.
+    fn bases(g: &Genome, start: i32, end: i32, changed: &[usize]) -> String {
+        let mut b = g.get_bases(start, end).unwrap();
+        for &i in changed {
+            b[i] = if b[i] == b'A' { b'C' } else { b'A' };
+        }
+        String::from_utf8(b).unwrap()
+    }
+
+    #[test]
+    fn test_split_read_beyond_ref_sequence() {
+        let g = genome();
+        let ref_seq = window(&g);
+        // 1951-2000 = 50M inside the window, 2001-3450 = 1450N, 3451-3500 = 50M beyond it
+        let read_bases = format!("{}{}", bases(&g, 1951, 2000, &[10]), bases(&g, 3451, 3500, &[3, 40]));
+        let mut read = build_sam_record(1951, "50M1450N50M", &read_bases);
+        read.nm = None;
+
+        assert_eq!(3, calc_adjusted_num_mutations(&read, &ref_seq, Some(&g)));
+        // without a genome only the bases inside the window are counted (the port before S54)
+        assert_eq!(1, calc_adjusted_num_mutations(&read, &ref_seq, None));
+
+        // a block that starts before the window
+        let read_bases = format!("{}{}", bases(&g, 101, 150, &[0, 1]), bases(&g, 1001, 1050, &[20]));
+        let mut read = build_sam_record(101, "50M850N50M", &read_bases);
+        read.nm = None;
+        assert_eq!(3, calc_adjusted_num_mutations(&read, &ref_seq, Some(&g)));
+        assert_eq!(1, calc_adjusted_num_mutations(&read, &ref_seq, None));
+
+        // a block that straddles the window end
+        let read_bases = bases(&g, 1981, 2010, &[5, 25]);
+        let mut read = build_sam_record(1981, "30M", &read_bases);
+        read.nm = None;
+        assert_eq!(2, calc_adjusted_num_mutations(&read, &ref_seq, Some(&g)));
+        assert_eq!(1, calc_adjusted_num_mutations(&read, &ref_seq, None));
+    }
+
+    #[test]
+    fn test_reads_java_can_count_are_unchanged() {
+        let g = genome();
+        let ref_seq = window(&g);
+        // inside the window the genome is not asked, and indels count once each (NM less length - 1)
+        let read_bases = format!("{}{}{}", bases(&g, 1201, 1220, &[7]), "TT", bases(&g, 1224, 1253, &[]));
+        let mut read = build_sam_record(1201, "20M3D2I30M", &read_bases);
+        read.nm = None;
+        assert_eq!(1 + 1 + 1, calc_adjusted_num_mutations(&read, &ref_seq, Some(&g)));
+        assert_eq!(1 + 1 + 1, calc_adjusted_num_mutations(&read, &ref_seq, None));
+
+        // an NM tag is used as it is, beyond the window too
+        let read_bases = format!("{}{}", bases(&g, 1951, 2000, &[]), bases(&g, 3451, 3500, &[3, 40]));
+        let mut read = build_sam_record(1951, "50M1450N50M", &read_bases);
+        read.nm = Some(4);
+        assert_eq!(4, calc_adjusted_num_mutations(&read, &ref_seq, Some(&g)));
+        assert_eq!(4, calc_adjusted_num_mutations(&read, &ref_seq, None));
+    }
+}

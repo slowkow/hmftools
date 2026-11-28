@@ -3,11 +3,15 @@
 A Rust reimplementation of [SAGE](../sage/README.md) 5.1, the somatic SNV / MNV / indel caller.
 It takes the same command-line options, and is faster and uses less memory.
 
-The Java reference is SAGE 5.1 as of hmftools commit `a224a2cd8e`. The Java source beside this crate is
-newer: upstream commit `de50386378` (2026-11) changed SAGE without changing its version number (the
-realigned-support test for indels near a soft-clipped end, a base-quality penalty scaled between 6
-and 12, SAGE's own `NM` count, and append's version check). Those changes are not in the port yet, so
-`-java_compat` reproduces the earlier commit, not the current Java source.
+The Java reference is SAGE 5.1 as of hmftools commit `a224a2cd8e` (upstream tag `sage-v5.1-beta.4`). The
+Java source beside this crate is newer: upstream commit `de50386378` (`sage-v5.1-beta.5`, 2026-11) changed
+SAGE without changing its version number (the realigned-support test for indels near a soft-clipped end,
+a base-quality penalty scaled between 6 and 12, SAGE's own `NM` count, and append's version check and
+`##sageAppendVersion` header line). Those changes are not in the port yet, so `-java_compat` reproduces
+the earlier commit, not the current Java source. Hartwig's image `sage:5.1-beta.3`, which the
+oncoanalyser dev-3.1.0 line uses, is older again and was built from a side branch: it has the scaled
+penalty and a faulty early version of the `NM` count. Built from source, each of the three reports
+"Sage version 5.1" (the image reports 5.1-beta.3). REPORT.md section 8 compares them on an RNA append.
 
 By default the port corrects the faults found in the Java code. With `-java_compat` it behaves as Java
 does and writes the same VCF, byte for byte; that is how the port was verified. See "Corrections and
@@ -77,7 +81,7 @@ when storage is fast enough to keep every thread busy.
 
 ## Corrections and `-java_compat`
 
-The faults found in Java SAGE are numbered S1 to S53 in [REPORT.md](REPORT.md), section 5. For 32 of
+The faults found in Java SAGE are numbered S1 to S56 in [REPORT.md](REPORT.md), section 5. For 32 of
 them the port takes a corrected path by default; section 5.5 says what each correction does and what
 it changes on the test data.
 
@@ -91,9 +95,9 @@ it changes on the test data.
   (S19). For S5 (a pair of mates whose merge fails), S10 (the early exit of the TINC fit) and S45 (the
   `AED` row of the visualiser) the intent of the Java code is not certain; the readings taken are
   described in REPORT.md and are open to correction by the SAGE authors.
-- Twelve findings concern Java output that is not reproducible or a Java failure (thread-order `LPS`
-  ids, the `NEAR_HOTSPOT` flag, the random choice of reads in the visualiser, CRAM 3.1, ...). There
-  the port does one fixed thing in both modes, as before.
+- Thirteen findings concern Java output that is not reproducible or a Java failure (thread-order `LPS`
+  ids, the `NEAR_HOTSPOT` flag, the random choice of reads in the visualiser, CRAM 3.1, an RNA BAM
+  without `NM` tags (S54), ...). There the port does one fixed thing in both modes, as before.
 - The corrected output cannot be checked against Java. It is checked by unit tests of the corrected
   paths (`src/tests/corrections.rs` and the tests named in REPORT.md 5.5), by being the same at any
   thread count, and by measuring what each correction changes.

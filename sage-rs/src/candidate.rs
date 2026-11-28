@@ -8,11 +8,13 @@ use crate::refdata::RefData;
 use crate::refseq::RefSequence;
 use crate::select::*;
 use crate::types::*;
+use crate::ultima::RefBases;
 use std::sync::Arc as Rc;
 
-/// NumberEvents.calcAdjustedNumMutations
-pub fn calc_adjusted_num_mutations(read: &Read, ref_seq: &RefSequence) -> i32 {
-    let nm = read.nm.unwrap_or_else(|| calculate_nm(read, ref_seq));
+/// NumberEvents.calcAdjustedNumMutations. `genome` gives the reference bases of the aligned blocks of a read
+/// without an NM tag that lie outside `ref_seq` (finding S54); without it those bases are not counted.
+pub fn calc_adjusted_num_mutations(read: &Read, ref_seq: &RefSequence, genome: Option<&dyn RefBases>) -> i32 {
+    let nm = read.nm.unwrap_or_else(|| calculate_nm(read, ref_seq, genome));
     let mut additional = 0;
     for el in &read.cigar {
         if el.op.is_indel() {
@@ -23,20 +25,41 @@ pub fn calc_adjusted_num_mutations(read: &Read, ref_seq: &RefSequence) -> i32 {
 }
 
 /// Fallback for a missing NM tag: mismatches in aligned blocks plus inserted and deleted bases.
-fn calculate_nm(read: &Read, ref_seq: &RefSequence) -> i32 {
+///
+/// S54: Java 5.1 counts with htsjdk's `SequenceUtil.calculateSamNmTag` on the region's reference bases (the
+/// region plus 1,000 bases), without a bounds check, so a split (RNA) read whose blocks reach beyond them throws
+/// and the run stops. The port counts such a block on bases taken from the genome, as upstream SAGE does from
+/// commit de50386378 on, in both modes: a read Java can count is counted the same way.
+fn calculate_nm(read: &Read, ref_seq: &RefSequence, genome: Option<&dyn RefBases>) -> i32 {
     let mut nm = 0;
     let mut read_index = 0usize;
     let mut ref_pos = read.start;
     for el in &read.cigar {
         match el.op {
             Op::M | Op::Eq | Op::X => {
-                for i in 0..el.len {
-                    let ri = ref_seq.index(ref_pos + i);
-                    if ri >= 0 && (ri as usize) < ref_seq.bases.len() {
-                        let r = ref_seq.bases[ri as usize].to_ascii_uppercase();
-                        let b = read.bases[read_index + i as usize].to_ascii_uppercase();
-                        if r != b {
-                            nm += 1;
+                let block_end = ref_pos + el.len - 1;
+                let outside = ref_seq.index(ref_pos) < 0 || ref_seq.index(block_end) >= ref_seq.bases.len() as i32;
+                let fetched = if outside {
+                    genome.and_then(|g| g.get_bases(ref_pos, block_end)).filter(|b| b.len() == el.len as usize)
+                } else {
+                    None
+                };
+                if let Some(ref_bases) = fetched {
+                    let read_bases = read.bases.get(read_index..).unwrap_or(&[]);
+                    nm += read_bases
+                        .iter()
+                        .zip(ref_bases.iter())
+                        .filter(|(b, r)| b.to_ascii_uppercase() != r.to_ascii_uppercase())
+                        .count() as i32;
+                } else {
+                    for i in 0..el.len {
+                        let ri = ref_seq.index(ref_pos + i);
+                        if ri >= 0 && (ri as usize) < ref_seq.bases.len() {
+                            let r = ref_seq.bases[ri as usize].to_ascii_uppercase();
+                            let b = read.bases[read_index + i as usize].to_ascii_uppercase();
+                            if r != b {
+                                nm += 1;
+                            }
                         }
                     }
                 }
@@ -496,6 +519,8 @@ pub struct CandidateFinder<'a> {
     cfg: &'a Config,
     bounds: BaseRegion,
     ref_seq: &'a RefSequence,
+    /// reference bases beyond `ref_seq`, for the event count of a split read without an NM tag (S54)
+    genome: Option<&'a dyn RefBases>,
     array: EvictingArray,
     blocks: Vec<RegionBlock>,
     current: usize,
@@ -641,6 +666,7 @@ impl<'a> CandidateFinder<'a> {
             cfg,
             bounds,
             ref_seq,
+            genome: None,
             array: EvictingArray::new(cfg.read_length.max(DEFAULT_READ_LENGTH)),
             blocks,
             current: 0,
@@ -650,6 +676,12 @@ impl<'a> CandidateFinder<'a> {
             saved: Vec::new(),
             evicted: Vec::new(),
         }
+    }
+
+    /// The genome behind `ref_seq`, for reads that reach beyond it (S54).
+    pub fn with_genome(mut self, genome: &'a dyn RefBases) -> Self {
+        self.genome = Some(genome);
+        self
     }
 
     fn update_blocks(&mut self, read_start: i32) {
@@ -735,7 +767,7 @@ impl<'a> CandidateFinder<'a> {
             }
         }
         if !read.supplementary() {
-            info.num_events = calc_adjusted_num_mutations(read, self.ref_seq);
+            info.num_events = calc_adjusted_num_mutations(read, self.ref_seq, self.genome);
         }
 
         let sc_events = calc_soft_clip_adjustment(info.soft_clip_length) as i32;

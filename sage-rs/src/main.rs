@@ -229,7 +229,8 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion) ->
         .unwrap_or_default();
 
     let ref_seq = RefSequence::new(&w.genome, chr, region.start, region.end)?;
-    let mut finder = CandidateFinder::new(cfg, chr, region, &ref_seq, &hotspots, &panel, ref_data);
+    let genome_bases = evidence_stage::GenomeBases { genome: &w.genome, chr, ref_seq: &ref_seq };
+    let mut finder = CandidateFinder::new(cfg, chr, region, &ref_seq, &hotspots, &panel, ref_data).with_genome(&genome_bases);
     // CandidateStage: in panel-only mode only the panel parts of the region are read
     let slice_regions: Vec<BaseRegion> = if cfg.panel_only {
         panel.iter().map(|p| BaseRegion::new(p.start.max(region.start), p.end.min(region.end))).collect()
@@ -245,7 +246,8 @@ fn process_region(sh: &Shared, w: &mut Worker, chr: &str, region: BaseRegion) ->
     } else {
         let mut sample_candidates = vec![finder.finish()];
         for bam in w.tumor_bams[1..].iter_mut() {
-            let mut finder = CandidateFinder::new(cfg, chr, region, &ref_seq, &hotspots, &panel, ref_data);
+            let mut finder =
+                CandidateFinder::new(cfg, chr, region, &ref_seq, &hotspots, &panel, ref_data).with_genome(&genome_bases);
             bam.slice_ref_caching(chr, &slice_regions, margin, |read| finder.process_read(read))?;
             sample_candidates.push(finder.finish());
         }
