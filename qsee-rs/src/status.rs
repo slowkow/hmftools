@@ -321,7 +321,12 @@ impl ThresholdRegistry {
     }
 
     fn set(&mut self, sample_type: SampleType, name: &str, qc: QcStatusType, op: Option<ComparisonOperator>, value: f64, elsewhere: bool) {
-        self.put(QcThreshold { key: ThresholdKey::new(sample_type, FeatureType::SummaryTable, name, qc), operator: op, threshold: value, determined_elsewhere: elsewhere });
+        self.set_typed(sample_type, FeatureType::SummaryTable, name, qc, op, value, elsewhere);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn set_typed(&mut self, sample_type: SampleType, feature_type: FeatureType, name: &str, qc: QcStatusType, op: Option<ComparisonOperator>, value: f64, elsewhere: bool) {
+        self.put(QcThreshold { key: ThresholdKey::new(sample_type, feature_type, name, qc), operator: op, threshold: value, determined_elsewhere: elsewhere });
     }
 
     fn set_common(&mut self, name: &str, qc: QcStatusType, op: ComparisonOperator, value: f64) {
@@ -371,6 +376,11 @@ impl ThresholdRegistry {
         self.set(Normal, F::CoverageAbove60.name(), Warn, Some(LessThan), nan, false);
         self.set(Normal, F::CoverageAbove100.name(), Warn, Some(LessThan), nan, false);
         self.set(Normal, F::CoverageAbove250.name(), Warn, Some(LessThan), nan, false);
+
+        // upstream bdceb2302a: the exon coverage QC
+        self.set_common(F::LowCoverageExons.name(), Warn, GreaterThan, 0.1);
+        self.set_typed(Tumor, FeatureType::ExonVariantLod, crate::coverage::LOD_VAF, Warn, Some(GreaterThan), choose(0.1, 0.05), false);
+        self.set_typed(Normal, FeatureType::ExonVariantLod, crate::coverage::LOD_VAF, Warn, Some(GreaterThan), 0.3, false);
     }
 
     pub fn contains_key(&self, key: &ThresholdKey) -> bool {

@@ -199,6 +199,9 @@ pub struct Placed {
     pub name: String,
     pub grob: Grob,
     pub vp: Option<Vp>,
+    /// What the grob is, for comparing grobs as patchwork's `hash(unname_grob(x))` does (collect_axes,
+    /// collect_axis_titles): grobs with equal keys are the same; a grob without a key equals no other.
+    pub key: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -227,14 +230,14 @@ impl Gtable {
     #[allow(clippy::too_many_arguments)]
     pub fn add(&mut self, grob: Grob, t: usize, l: usize, b: usize, r: usize, z: Option<f64>, clip: bool, name: &str) {
         let z = self.resolve_z(z);
-        self.items.push(Placed { t, l, b, r, z, clip, name: name.to_string(), grob, vp: None });
+        self.items.push(Placed { t, l, b, r, z, clip, name: name.to_string(), grob, vp: None, key: None });
     }
 
     /// gtable_add_grob with a viewport for the grob.
     #[allow(clippy::too_many_arguments)]
     pub fn add_vp(&mut self, grob: Grob, vp: Vp, t: usize, l: usize, b: usize, r: usize, z: Option<f64>, clip: bool, name: &str) {
         let z = self.resolve_z(z);
-        self.items.push(Placed { t, l, b, r, z, clip, name: name.to_string(), grob, vp: Some(vp) });
+        self.items.push(Placed { t, l, b, r, z, clip, name: name.to_string(), grob, vp: Some(vp), key: None });
     }
 
     /// gtable's z rule: Inf is one more than the largest finite z so far, -Inf one less than the smallest.
@@ -342,6 +345,13 @@ impl Gtable {
     /// Removes the grobs for which `remove` holds.
     pub fn retain(&mut self, keep: impl Fn(&Placed) -> bool) {
         self.items.retain(|p| keep(p));
+    }
+
+    /// Sets the identity key (see `Placed::key`) of every grob whose name starts with `prefix`.
+    pub fn set_keys(&mut self, prefix: &str, key: &str) {
+        for p in self.items.iter_mut().filter(|p| p.name.starts_with(prefix)) {
+            p.key = Some(key.to_string());
+        }
     }
 
     pub fn find(&self, name: &str) -> Option<&Placed> {

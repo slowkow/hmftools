@@ -2,19 +2,19 @@
 //!
 //! Usage: `qsee-rs <the Java options>`: QseeApplication, which collects QC features from PURPLE,
 //! BamTools, COBALT, ESVEE and REDUX outputs, writes `<tumor>.qsee.vis.data.tsv.gz`,
-//! `<tumor>.qsee.status.tsv.gz` and `<tumor>.qsee.gene_lod.tsv.gz` as Java does, and runs the R script
-//! for the visual report unless `-skip_plot` is given. The jar's other entry points are taken by their
-//! class name (full or simple) as the first argument: `CohortPercentilesTrainer`,
-//! `DefaultThresholdsWriter`, `GeneLodCalculator` and `QseePlot`. `-java_compat` reproduces the Java
-//! faults the port corrects (REPORT.md, QS1-QS12).
+//! `<tumor>.qsee.status.tsv.gz` and `<tumor>.qsee.exon_coverage_qc.tsv.gz` as Java does, and draws the visual
+//! report (as the R script would) unless `-skip_plot` is given. The jar's other entry points are taken by their
+//! class name (full or simple) as the first argument: `CohortPercentilesTrainer`, `DefaultThresholdsWriter`,
+//! `ExonCoverageQcFileBuilder`, `ExonExclusionsFileBuilder` and `QseePlot`. `-java_compat` reproduces the Java
+//! faults the port corrects (REPORT.md).
 
 mod app;
 mod cohort;
 mod common;
 mod compat;
 mod config;
+mod coverage;
 mod feature;
-mod lod;
 mod plot;
 mod prep;
 mod status;
@@ -43,7 +43,10 @@ enum Entry {
     App,
     Trainer,
     Thresholds,
-    Lod,
+    /// ExonCoverageQcFileBuilder (GeneLodCalculator before upstream bdceb2302a)
+    ExonCoverageQc,
+    /// ExonExclusionsFileBuilder (upstream bdceb2302a)
+    ExonExclusions,
     Plot,
 }
 
@@ -55,7 +58,8 @@ fn entry_of(first: Option<&String>) -> Option<Entry> {
         "QseeApplication" => Some(Entry::App),
         "CohortPercentilesTrainer" => Some(Entry::Trainer),
         "DefaultThresholdsWriter" => Some(Entry::Thresholds),
-        "GeneLodCalculator" => Some(Entry::Lod),
+        "ExonCoverageQcFileBuilder" => Some(Entry::ExonCoverageQc),
+        "ExonExclusionsFileBuilder" => Some(Entry::ExonExclusions),
         "QseePlot" => Some(Entry::Plot),
         _ => None,
     }
@@ -91,7 +95,8 @@ pub fn qsee_main(argv: &[String]) -> i32 {
     match entry {
         Entry::App => config::register(&mut cb, true, false),
         Entry::Trainer => config::register(&mut cb, false, true),
-        Entry::Lod => config::register(&mut cb, false, false),
+        Entry::ExonCoverageQc => config::register(&mut cb, false, false),
+        Entry::ExonExclusions => config::register_with(&mut cb, false, false, true),
         Entry::Plot => config::register_plot(&mut cb),
         Entry::Thresholds => {
             cb.add_path("output_dir", false, "output_dir");
@@ -110,7 +115,10 @@ pub fn qsee_main(argv: &[String]) -> i32 {
     }
     finish(match entry {
         Entry::App => config::QseeConfig::from(&cb).and_then(|c| app::run(&c, &cb)),
-        Entry::Lod => config::QseeConfig::from(&cb).and_then(|c| lod::run(&c)),
+        Entry::ExonCoverageQc => config::QseeConfig::from(&cb).and_then(|c| coverage::run(&c).map(|_| ())),
+        Entry::ExonExclusions => config::QseeConfig::from(&cb).and_then(|c| {
+            coverage::run_exclusions_builder(&c, cb.decimal("min_low_coverage_lod_vaf"), cb.decimal("min_low_coverage_cohort_fraction"))
+        }),
         Entry::Plot => config::QseePlotConfig::from(&cb).and_then(|pc| vis::run_plot(&pc, &config::log_level_name(&cb))),
         Entry::Trainer => (|| {
             let c = config::QseeConfig::from(&cb)?;
@@ -123,8 +131,9 @@ pub fn qsee_main(argv: &[String]) -> i32 {
         })(),
         Entry::Thresholds => {
             let overridable_only = !cb.has_flag("no_overridable_only");
-            // QS2: Java writes the targeted thresholds without -targeted_mode and the WGS ones with it
-            let targeted = if compat::java("QS2") { !cb.has_flag("targeted_mode") } else { cb.has_flag("targeted_mode") };
+            // QS2 (Java wrote the targeted thresholds without -targeted_mode) is fixed upstream (bdceb2302a), so
+            // both modes follow the flag
+            let targeted = cb.has_flag("targeted_mode");
             status::write_default_thresholds(&cb.value_or("output_dir", ""), overridable_only, targeted)
         }
     })

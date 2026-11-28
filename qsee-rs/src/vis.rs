@@ -28,8 +28,15 @@ pub fn qc_status_filename_for(config: &QseeConfig) -> String {
     generate_filename(&config.output_dir, sample, "status", config.output_id.as_deref(), "tsv.gz")
 }
 
-/// VisDataFile.write: a line per feature with a value (NaN values are left out). A line that cannot be
-/// formed ends the writing; the file is closed with the lines before it, as Java's try-with-resources.
+/// VisDataFile.KEEP_NAN_FEATURE_TYPES (upstream 883ab11bba): the BQR features keep a NaN value (a group with too
+/// few counts), which the report hides
+fn keeps_nan(t: Option<crate::feature::FeatureType>) -> bool {
+    matches!(t, Some(crate::feature::FeatureType::BqrPerOrigQual) | Some(crate::feature::FeatureType::BqrPerSnv96Context))
+}
+
+/// VisDataFile.write: a line per feature with a value (NaN values are left out, except the BQR features'). A
+/// line that cannot be formed ends the writing; the file is closed with the lines before it, as Java's
+/// try-with-resources.
 pub fn write_vis_data(path: &str, samples: &[SampleFeatures]) -> Result<()> {
     let mut w = JavaWriter::create(path).map_err(|e| anyhow!("Failed to write to file: {path}: {e:#}"))?;
     hmf_common::info!("Writing sample vis data to: {path}");
@@ -39,7 +46,7 @@ pub fn write_vis_data(path: &str, samples: &[SampleFeatures]) -> Result<()> {
     let mut result = Ok(());
     'outer: for s in samples {
         for f in &s.features {
-            if f.value.is_nan() {
+            if f.value.is_nan() && !keeps_nan(f.key.feature_type) {
                 continue;
             }
             let metadata = match f.metadata.display_string() {
@@ -68,9 +75,10 @@ pub fn write_vis_data(path: &str, samples: &[SampleFeatures]) -> Result<()> {
 }
 
 /// QseePlotTask.run: the report plot_qc.R draws (`Rscript plot_qc.R <tumor> <reference|NA> <vis data> <cohort
-/// percentiles|NA> <pdf> <show warnings> <single patient> <log level>`), drawn natively (`crate::plot`): the PDF, and
-/// for a single patient the PNG beside it. Returns the PDF's page. (show warnings only sets R's warning output.)
-pub fn run_plot_task(tumor: &str, reference: Option<&str>, vis_data: &str, cohort: Option<&str>, plot_path: &str, show_warnings: bool, single_patient: bool, log_level: &str) -> Result<hmf_plot::display::Figure> {
+/// percentiles|NA> <pdf> <show warnings> <single patient> <log level>`), drawn natively (`crate::plot`): the PDF (two
+/// pages since upstream 883ab11bba), and for a single patient a PNG per page beside it. Returns the PDF's pages.
+/// (show warnings only sets R's warning output.)
+pub fn run_plot_task(tumor: &str, reference: Option<&str>, vis_data: &str, cohort: Option<&str>, plot_path: &str, show_warnings: bool, single_patient: bool, log_level: &str) -> Result<Vec<hmf_plot::display::Figure>> {
     let _ = (show_warnings, log_level);
     hmf_common::debug!("drawing the QC report natively: {tumor} {} {vis_data} {} {plot_path}", reference.unwrap_or("NA"), cohort.unwrap_or("NA"));
     crate::plot::report(tumor, reference, vis_data, cohort, plot_path, single_patient).map_err(|e| {
@@ -101,7 +109,7 @@ pub fn run_plot(pc: &QseePlotConfig, log_level: &str) -> Result<()> {
     } else {
         let mut pages = Vec::new();
         for (i, t) in pc.samples.tumor_ids.iter().enumerate() {
-            pages.push(run_plot_task(t, reference(i), &vis_path(t), pc.cohort_percentiles_file.as_deref(), &plot_path(t), pc.show_plot_warnings, false, log_level)?);
+            pages.extend(run_plot_task(t, reference(i), &vis_path(t), pc.cohort_percentiles_file.as_deref(), &plot_path(t), pc.show_plot_warnings, false, log_level)?);
         }
         if pc.merge_plots {
             let dest = plot_path(MULTISAMPLE_SAMPLE_ID);

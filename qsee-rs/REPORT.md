@@ -2,10 +2,12 @@
 
 This report covers how `qsee-rs` was checked against Java qsee 1.0, the faults found in the Java code, and the
 timings. `qsee-rs` is the QSEE_METRICS step of oncoanalyser: QC features from the PURPLE, BamTools, COBALT, ESVEE
-and REDUX outputs, QC statuses against thresholds, the gene limit-of-detection file, and the report. The Java
-reference is this repository's `qsee/target/qsee-1.0-jar-with-dependencies.jar` (sources following upstream
-ca04e6c39d of 2026-11-20), on Java 23. `resources/plot_qc.R` is the jar's R script, unchanged; since 2026-11-27
-the port draws its report natively (no R). Options and
+and REDUX outputs, QC statuses against thresholds, the exon coverage QC file (the gene limit-of-detection file before
+upstream bdceb2302a), and the report. The Java reference was this repository's
+`qsee/target/qsee-1.0-jar-with-dependencies.jar` (sources following upstream ca04e6c39d of 2026-11-20), on Java 23;
+since 2026-11-28 the port follows upstream master 883ab11bba ("Following upstream" below), whose jar and R script are
+the reference of `-java_compat`. `resources/plot_qc.R` is that R script, unchanged; since 2026-11-27 the port draws
+its report natively (no R). Options and
 outputs are in [README.md](README.md).
 
 ## What is ported
@@ -19,7 +21,7 @@ All of qsee 1.0's main code, every entry point:
 | feature: FeatureType, SourceTool, NumberFormat, FeatureKey (its compareTo), Feature, FeatureMetadata, SampleFeatures; category enums (SummaryTableFeature/Group, DiscordantFragGroup, BaseQualBin, RepeatType) | `feature.rs` |
 | feature.FeaturePrep, CategoryPrepTask and the ten CategoryPreps (summary table BamMetrics / PURPLE, coverage and fragment length distributions, missed variant likelihood, duplicate frequency, GC bias, discordant fragments, BQR with BaseQualBinner, MS indel errors) | `prep.rs`, `app.rs` |
 | status: ComparisonOperator, QcStatusType, QcStatus (with the BigDecimal display), ThresholdKey, QcThreshold, ThresholdRegistry, ThresholdOverridesFile, PurpleQCStatusConverter, QcStatusFile, DefaultThresholdsWriter | `status.rs` |
-| lod: LimitOfDetectionCalcs, GeneLodCalculator, GeneLodFile, VariantDetectabilityStatus | `lod.rs` |
+| coverage (lod before upstream bdceb2302a): LimitOfDetectionCalcs, ExonCoverageQc, ExonCoverageQcFile(Builder), ExonExclusions(Config, FileBuilder), VariantDetectabilityStatus | `coverage.rs` |
 | cohort: FeatureMatrix, PercentileTransformer, FeaturePercentiles, CohortPercentiles(File), CohortPercentilesTrainer, CohortFeaturesWriter | `cohort.rs` |
 | plot: VisDataFile, QseePlot (with PDFBox's merging), QseePlotTask; `plot_qc.R` | `vis.rs`; `plot/` (native, hmf-plot-rs) |
 | hmf-common: DelimFileReader/Writer, createBufferedWriter (gzip), BqrFile, DuplicateFrequency, JitterCountsTableFile, CobaltGcMedianFile, EsveeDiscordantStats, PurplePurity (full), PurityContextFile.readWithQC | hmf-common-rs additions (below) and `prep.rs` |
@@ -303,6 +305,8 @@ have no switch (see each).
   - **Evidence:** the five `thresholds_*` cases.
   - **Corrected:** the flag selects the targeted thresholds. `-no_overridable_only` (inverted in name and
     meaning, as its description says) is left as it is.
+  - **Fixed upstream** in bdceb2302a (`targetedMode = configBuilder.hasFlag(TARGETED_MODE)`): since the port follows
+    883ab11bba both modes take the flag as the correction did, and the switch is gone.
 - **QS3 (CohortPercentiles.getFeaturePercentiles): a cohort file without rows of a sample type crashes the
   run.**
   - **What Java does:** `mCohortData.get(sampleType).get(featureKey)`; with no row of that type the first
@@ -431,6 +435,21 @@ Kept as R draws it, recorded:
   cell, so the slip brings it closer to the centre than consistent units would. Cosmetic; the port draws the keys
   where R does (hmf-plot-rs `ggp::geom::key_label`, tested against R's box).
 
+- **QS17 (plot_qc.R at 883ab11bba with ORANGE at the same commit): the report's PNG is renamed, and ORANGE loses
+  its qsee page.**
+  - **What R does:** the report has two pages; for a single patient each is written as
+    `<tumor>.qsee.vis.report.page_<n>.png` (`sub("pdf$", sprintf("page_%s.png", i), PLOT_PATH)`), and
+    `<tumor>.qsee.vis.report.png` is no longer written.
+  - **Effect:** ORANGE (and orange-rs) embeds `<qsee_dir>/<tumor>.qsee.vis.report.png`
+    (hmf-common MiscToolFiles.QSEE_PLOT_FILE_ID, unchanged at 883ab11bba); OrangeAlgo leaves qSeePlot null when the
+    file is missing, so the JSON's `plots.qSeePlot` is null and the PDF's Quality control chapter says "Plot not
+    available". The commit does not update ORANGE, and oncoanalyser's QSEE module publishes the whole `qsee/`
+    folder, so nothing else picks the new names up.
+  - **Evidence:** the R references of this review (`work/up_pave_qsee/refs/qsee/<case>/`: page_1.png and page_2.png
+    only); OrangeAlgo.java lines 440-448 and QualityControlChapter.java at 883ab11bba.
+  - **Corrected:** page 1 (the summary page, what the single page was) is also written as
+    `<tumor>.qsee.vis.report.png` in the default mode; `-java_compat` writes the two page files only.
+
 Remarks, not findings:
 - The report's legend is built while R's `pdf(NULL)` device is open, so in the PNG too its keys and texts
   are sized with Helvetica's metrics and drawn in DejaVu Sans (slightly wider); the port does the same.
@@ -442,6 +461,90 @@ Remarks, not findings:
 - `-output_id` is registered with the description "Output directory" (QseeConfig), as `-help` shows.
 - `-num_percentiles 1` gives one percentile NaN (100 / 0 steps); the file has a column `Pct_NaN`.
 - `compare_cohorts.R` is in the jar but no Java class runs it.
+
+## Following upstream (883ab11bba, reviewed 2026-11-28)
+
+The port started from ca04e6c39d. Upstream master 883ab11bba changes qsee twice: bdceb2302a (exon coverage QC) and
+883ab11bba (read strands in the BQR features and report). hmf-common's changes in that range (PipelineToolDirectories,
+VirusInterpreterDataLoader, from f5f660cc9f) are code qsee does not use. The decisions, with reasons and evidence,
+are in the review's NOTES (work/up_pave_qsee/port/NOTES.md) and UPSTREAM.md; in short:
+
+- **bdceb2302a, accepted:** the gene LoD file becomes `<tumor>.qsee.exon_coverage_qc.tsv.gz` (LodVaf, the sample VAF
+  detected 95% of the time, floored at 0.01; PASS / WARN against the new EXON_VARIANT_LOD threshold, tumor 0.1,
+  targeted 0.05, normal 0.3; EXCLUDED); "Low coverage exons" (the share of WARN exons, WARN above 10%) joins the
+  summary table; the missed-variant likelihood comes from the exon coverage file with excluded exons left out
+  (unchanged values without exclusions: BamTools' gene counts are its exon counts summed); `-lod_min_alt_reads`,
+  `-exon_exclusions_file` and the ExonExclusionsFileBuilder entry point; DefaultThresholdsWriter's `-targeted_mode`
+  no longer inverted, which is QS2's correction (the switch is gone).
+- **883ab11bba, accepted with a correction (QS17):** BQR features by read strand (the C/T-centred context, REVERSE
+  when the read carried the purine; REDUX's BQR keys are read-oriented), C>T split into CpG and other per original
+  quality, groups of fewer than 5 counts NaN (kept in the vis data, hidden in the report); the report on two pages
+  with the strands as triangles. R writes the pages' PNGs as `.page_<n>.png`, which leaves ORANGE without its qsee
+  page (QS17): the default mode also writes page 1 as `.png`.
+
+**Inputs added** for the new code (`baseline/qsee/inputs/up/`, made by `work/up_pave_qsee/scripts/qsee/make_up_inputs.py`
+from the public HG008 inputs and public gene names): exon exclusion files (TP53's exons, two of KRAS, a gene outside
+the panel; header only; a rank that is not a number), threshold overrides of the new thresholds, an HG008 directory
+whose tumor has 60 exons at 1500x and 20 at 0x, and one whose BQR file has counts set to 0 and 1 (NaN groups). The
+synthetic cohort (S1-S6) already has exon coverage files.
+
+**Cases and results.** The 107 cases of `work/qsee/port/scripts/regress.sh` and 20 new ones (`up_*`: exclusions on
+HG008, the private pair and the cohort, `-lod_min_alt_reads` 5, 1 and not a number, overrides of the new thresholds
+in WGS and targeted mode, the high-depth exons, the low BQR counts, ExonExclusionsFileBuilder on the cohort, with
+options, with one tumor and without `-allow_missing_input`, ExonCoverageQcFileBuilder with exclusions, the trainer on
+low BQR counts) were run with the 883ab11bba jar (`baseline/qsee/java_883ab11bba/<case>`; the two pipeline cases with
+the new R script on the Mac's R) and with the port in Java mode (`baseline/qsee/rust_up/<case>`); script
+`work/up_pave_qsee/scripts/qsee/regress.sh`. **126 of 127 identical** (exit statuses, every data file byte for byte,
+gzip bytes included). The other, `cohort_pairs_t2` (6 pairs at `-threads 2`), is QS8: Java's 2-thread file has the
+same lines in another order (now including NaN BQR lines of contexts some samples lack); the port's files are
+byte-identical to Java's at `-threads 1`, the defined reference (`java_883ab11bba/cohort_pairs_t2_t1`,
+`scripts/qsee/qs8_check.sh`). The default mode differs from Java exactly where the findings say (QS1, QS3-QS7, QS9,
+QS11, QS12; QS2 no longer: `thresholds_*` are as Java), as before (`scripts/qsee/default_diff_summary.py`).
+
+**Effect in the default mode** (the merged port, `rust_before_default`, against this one, `rust_up_default`;
+`scripts/qsee/effect.py`, log `work/up_pave_qsee/logs/qsee_effect.txt`), on every case that runs:
+- `gene_lod` is replaced by `exon_coverage_qc` (same exons, the same LoD where not floored; none of our WGS exons is
+  floored); the statuses: HG008 tumor 3,478 PASS, 2,650 PASS -> WARN, 8 FAIL -> WARN, 3 WARN_HET_UNRELIABLE -> WARN;
+  HG008 normal 5 PASS -> WARN, 1 WARN_HET_UNRELIABLE -> WARN; private pair tumor 1,647 PASS, 3,601 PASS -> WARN, 171
+  FAIL -> WARN, 720 WARN_HET_UNRELIABLE -> WARN.
+- the vis data and status files gain LOW_COVERAGE_EXONS per sample: HG008 tumor 43.3% (WARN), normal 0.6%; private
+  pair tumor 73.2% (WARN), normal 0.1%; HG008 targeted tumor 86.8% (WARN, threshold 0.05). The report's title then
+  lists "Low coverage exons (>10%)" for both tumors.
+- BQR_PER_ORIG_QUAL 48 -> 112 lines and BQR_PER_SNV96_CONTEXT 384 -> 768 per pair (the new names); the pipeline's
+  cohort percentiles file has none of them, so 880 more "Missing cohort percentiles" warnings per pair (915 against
+  33) and no BQR cohort boxes in the report until a cohort file is trained on the new names.
+- MISSED_VARIANT_LIKELIHOOD unchanged everywhere (values and order).
+- `missing_no_exon_coverage` (no `-allow_missing_input`): the summary table now needs the exon file, so the run ends
+  before writing the vis data and status files (as Java); the trainer's files gain the new features; the default
+  thresholds file gains the 4 new thresholds.
+- the report: two pages (and page 1 also as `.png`, QS17).
+
+**The report.** R draws each case in the qsee image (`work/up_pave_qsee/scripts/plots/r_ref.sh`, the PNG per page and
+the PDF; `r_layout.sh`, each page on a PDF and a 300 dpi PNG device with every viewport's box dumped), the port in
+Java mode with its boxes (`compare.sh`, `plot_cases.sh`); side by side (R left) in `work/up_pave_qsee/compare/qsee_<case>/`
+(private cases under `baseline/up_pave_qsee/compare/`).
+
+| case | R in the image: exit, s, MB | port: exit, s, MB | PNG px >10/25/50% page 1; page 2 | layout elements, >0.01 px, largest: page 1; page 2 | PDF pages R/port, text, words (largest pt), px >25% at 100 dpi p1/p2 |
+|---|---|---|---|---|---|
+| hg008 | 0, 73.61, 354 | 0, 0.52, 205 | 52098 / 20532 / 2723; 44998 / 10064 / 1203 | 688, 0, 0.0000; 107, 0, 0.0000 | 2/2, identical, 553 (0.000), 11/58 |
+| t0 | 0, 79.70, 357 | 0, 0.51, 205 | 59268 / 25489 / 2216; 50011 / 13286 / 1094 | 697, 0, 0.0000; 107, 0, 0.0000 | 2/2, identical, 616 (0.000), 18/60 |
+| hg008_tumor_only | 0, 48.36, 350 | 0, 0.46, 201 | 50080 / 21148 / 2795; 42852 / 9702 / 1203 | 688, 0, 0.0000; 90, 0, 0.0000 | 2/2, identical, 525 (0.000), 8/33 |
+| t0_tumor_only | 0, 22.61, 338 | 0, 0.43, 193 | 59201 / 24179 / 2131; 45520 / 11621 / 1101 | 697, 0, 0.0000; 90, 0, 0.0000 | 2/2, identical, 606 (0.000), 16/37 |
+| hg008_no_cohort | 0, 22.49, 328 | 0, 0.46, 195 | 51979 / 20496 / 2730; 44998 / 10064 / 1203 | 688, 0, 0.0000; 107, 0, 0.0000 | 2/2, identical, 555 (0.000), 11/58 |
+| hg008_newcohort | 0, 40.38, 364 | 0, 0.54, 205 | 55184 / 24997 / 2795; 45019 / 10089 / 1203 | 688, 0, 0.0000; 107, 0, 0.0000 | 2/2, identical, 559 (0.000), 15/41 |
+| bqr_low_counts | 0, 42.57, 365 | 0, 0.53, 207 | 55317 / 25009 / 2795; 44925 / 10068 / 1203 | 688, 0, 0.0000; 107, 0, 0.0000 | 2/2, identical, 555 (0.000), 12/40 |
+| edge_header_only_bqr | 0, 20.64, 334 | 0, 0.43, 194 | 51741 / 20415 / 2730; 42744 / 9667 / 1203 | 688, 0, 0.0000; 90, 0, 0.0000 | 2/2, identical, 547 (0.000), 11/31 |
+| edge_bqr_dual_single | 0, 22.62, 300 | 0, 0.45, 196 | 52424 / 21053 / 2733; 39151 / 8399 / 1203 | 713, 0, 0.0000; 132, 0, 0.0000 | 2/2, identical, 577 (0.000), 11/68 |
+| hg008_targeted | 0, 69.28, 354 | 0, 0.51, 205 | 55572 / 22636 / 2807; 49411 / 12997 / 1305 | 688, 0, 0.0000; 107, 0, 0.0000 | 2/2, identical, 583 (0.000), 20/58 |
+| edge_fail_contamination | 0, 21.22, 328 | 0, 0.45, 194 | 52217 / 20530 / 2634; 45549 / 10399 / 1084 | 688, 0, 0.0000; 107, 0, 0.0000 | 2/2, identical, 565 (0.000), 14/58 |
+| missing_no_esvee_cobalt_allow | 0, 20.95, 330 | 0, 0.45, 194 | 53051 / 19192 / 1905; 44998 / 10064 / 1203 | 688, 0, 0.0000; 107, 0, 0.0000 | 2/2, identical, 540 (0.000), 9/58 |
+
+The layout of every page of every case equals R's to 0.01 px (every element both name; the boxes left unpaired are
+of the kinds listed in "The report, drawn natively": the legend patch's empty title, subtitle and caption cells,
+legend.box.background, zero-size anchors); the PDFs have R's pages and size, `pdftotext -layout` identical and every
+word at R's position. Pixel differences are those of the first round (glyph rasterisation, whole-pixel clips,
+anti-aliasing); the triangles are drawn as R's (pch 24 and 25: the circle's area, apex at 1.5551 times its radius).
+Checked by eye on HG008 and the low-count case: the same points, triangles, hidden NaN values and boxes.
 
 ## Speed and memory
 

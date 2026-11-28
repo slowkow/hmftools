@@ -55,6 +55,14 @@ code draws.
 Details of the ggplot2 model that matter for matching R (each checked against R's own viewports or PDF):
 - `patchwork::merge` is what `free()` ends with for a patchwork (merge.patchwork): the patchwork nested once more,
   in a 1 x 1 patchwork of its own. It draws the same, but without it the table tree has one level less than R's.
+- `patchwork::build_collect` is `build` with `plot_layout(axes = , axis_titles = )` (patchwork 1.3.2's
+  collect_axes and collect_axis_titles with merge, after the table is built): of identical axes in a run of patches
+  only the outermost is kept and the others' rows or columns emptied (delete_grobs, retrofit_rows / _cols); of
+  identical axis titles one is kept, a y title stretched over its run's rows. Grobs are compared by `Placed::key`
+  (what R's `hash(unname_grob(x))` compares): the plotting code gives its axes and titles keys that say what they
+  draw (`Gtable::set_keys`), and simplify's row and column tables take the keys of what they hold. `build` itself is
+  unchanged (`build_collect` without collecting gives the same table). Added for qsee's report (upstream 883ab11bba).
+- `patchwork::wrap_full` is `wrap_elements(full = grob)`: the grob over the whole patch, margins included.
 - `ggp::geom::key_label` and geom_label boxes are centred on their point (ggplot2 4.0.3's labelGrob raises only the
   text, by `(1 - vjust) * descent`); the key's border width is the layer's linewidth (`KeyGlyph::Label`).
 - `ggp::guides::LegendTheme::key_background` (legend.key) is drawn in each key's cell before its glyph, as R does:

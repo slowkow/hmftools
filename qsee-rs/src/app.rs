@@ -1,5 +1,5 @@
 //! QseeApplication.run and FeaturePrep: the features of each sample, the vis data and QC status files,
-//! the gene limit of detection, and the plot.
+//! the exon coverage QC file, and the plot.
 
 use anyhow::{anyhow, Result};
 
@@ -11,7 +11,7 @@ use crate::config::{log_level_name, PrepCategory, QseeConfig, QseePlotConfig};
 use crate::feature::SampleFeatures;
 use crate::prep::{run_category_task, PrepError};
 use crate::status::write_qc_status_file;
-use crate::{lod, vis};
+use crate::{coverage, vis};
 
 /// An error already logged that ends the run with exit status 1 (Java's System.exit(1))
 #[derive(Debug)]
@@ -96,7 +96,7 @@ pub fn run(config: &QseeConfig, cb: &ConfigBuilder) -> Result<()> {
     }
     vis::write_vis_data(&vis::vis_data_filename_for(config), &samples)?;
     write_qc_status_file(&vis::qc_status_filename_for(config), &samples)?;
-    lod::run(config)?;
+    coverage::run(config)?;
     if config.skip_plot {
         hmf_common::info!("Skipping plotting");
         return Ok(());

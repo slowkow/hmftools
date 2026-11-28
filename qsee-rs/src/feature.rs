@@ -20,6 +20,8 @@ pub enum FeatureType {
     DiscordantFragFreq,
     DuplicateFreq,
     MissedVariantLikelihood,
+    /// upstream bdceb2302a: the key of the per-exon LoD VAF threshold (no feature has this type)
+    ExonVariantLod,
     BqrPerSnv96Context,
     BqrPerOrigQual,
     MsIndelErrorRates,
@@ -27,7 +29,7 @@ pub enum FeatureType {
 }
 
 impl FeatureType {
-    pub const ALL: [FeatureType; 11] = [
+    pub const ALL: [FeatureType; 12] = [
         FeatureType::SummaryTable,
         FeatureType::CoverageDistribution,
         FeatureType::FragLengthDistribution,
@@ -35,6 +37,7 @@ impl FeatureType {
         FeatureType::DiscordantFragFreq,
         FeatureType::DuplicateFreq,
         FeatureType::MissedVariantLikelihood,
+        FeatureType::ExonVariantLod,
         FeatureType::BqrPerSnv96Context,
         FeatureType::BqrPerOrigQual,
         FeatureType::MsIndelErrorRates,
@@ -50,6 +53,7 @@ impl FeatureType {
             FeatureType::DiscordantFragFreq => "DISCORDANT_FRAG_FREQ",
             FeatureType::DuplicateFreq => "DUPLICATE_FREQ",
             FeatureType::MissedVariantLikelihood => "MISSED_VARIANT_LIKELIHOOD",
+            FeatureType::ExonVariantLod => "EXON_VARIANT_LOD",
             FeatureType::BqrPerSnv96Context => "BQR_PER_SNV96_CONTEXT",
             FeatureType::BqrPerOrigQual => "BQR_PER_ORIG_QUAL",
             FeatureType::MsIndelErrorRates => "MS_INDEL_ERROR_RATES",
@@ -355,6 +359,8 @@ pub enum SummaryTableFeature {
     LowMapQual,
     DuplicateReads,
     DualStrandReads,
+    /// upstream bdceb2302a: the proportion of assessed exons of reportable genes with a LoD VAF WARN
+    LowCoverageExons,
     Purity,
     Ploidy,
     LohPercent,
@@ -368,7 +374,7 @@ pub enum SummaryTableFeature {
 }
 
 impl SummaryTableFeature {
-    pub const ALL: [SummaryTableFeature; 22] = [
+    pub const ALL: [SummaryTableFeature; 23] = [
         SummaryTableFeature::MeanCoverage,
         SummaryTableFeature::MappedProportion,
         SummaryTableFeature::CoverageAbove10,
@@ -381,6 +387,7 @@ impl SummaryTableFeature {
         SummaryTableFeature::LowMapQual,
         SummaryTableFeature::DuplicateReads,
         SummaryTableFeature::DualStrandReads,
+        SummaryTableFeature::LowCoverageExons,
         SummaryTableFeature::Purity,
         SummaryTableFeature::Ploidy,
         SummaryTableFeature::LohPercent,
@@ -408,6 +415,7 @@ impl SummaryTableFeature {
             LowMapQual => "LOW_MAP_QUAL",
             DuplicateReads => "DUPLICATE_READS",
             DualStrandReads => "DUAL_STRAND_READS",
+            LowCoverageExons => "LOW_COVERAGE_EXONS",
             Purity => "PURITY",
             Ploidy => "PLOIDY",
             LohPercent => "LOH_PERCENT",
@@ -426,7 +434,7 @@ impl SummaryTableFeature {
     }
 
     pub fn source_tool(self) -> SourceTool {
-        if self <= SummaryTableFeature::DualStrandReads { SourceTool::BamMetrics } else { SourceTool::Purple }
+        if self <= SummaryTableFeature::LowCoverageExons { SourceTool::BamMetrics } else { SourceTool::Purple }
     }
 
     pub fn group(self) -> SummaryTableGroup {
@@ -454,6 +462,7 @@ impl SummaryTableFeature {
             LowMapQual => "Low map qual. reads",
             DuplicateReads => "Duplicate reads",
             DualStrandReads => "Dual-strand reads",
+            LowCoverageExons => "Low coverage exons",
             Purity => "Purity",
             Ploidy => "Ploidy",
             LohPercent => "LOH",

@@ -38,6 +38,8 @@ The commit whose Java `-java_compat` reproduces. A port not listed still tracks 
 | `orange-rs` | `883ab11bba` | 2026-11-27 (while porting) | Viridian and Virus Interpreter loading |
 | `purple-rs` | `883ab11bba` | 2026-11-27 | the new biallelic model, with one correction (PU10) |
 | `linx-rs` | `883ab11bba` | 2026-11-28 | enhancer fusions up to 1 Mb, with one correction (LX6); exonic 5' breakends fuse more widely |
+| `pave-rs` | `883ab11bba` | 2026-11-28 | the MET exon 14 special splice region |
+| `qsee-rs` | `883ab11bba` | 2026-11-28 | exon coverage QC; stranded base-quality recalibration features and the two-page report, with one correction (QS17) |
 
 ## How we follow upstream
 
@@ -97,12 +99,12 @@ REDUX itself has not changed upstream since `a224a2cd8e`.
 | `110f42ee7d` | 2026-11-23 | COMPAR | compares Viridian reports | not applicable (not ported; not in oncoanalyser) |
 | `f5f660cc9f` | 2026-11-24 | ORANGE, hmf-common | loads Viridian and Virus Interpreter files | accepted in `orange-rs` (hmftools `e471239079`) |
 | `3807790a20` | 2026-11-24 | PURPLE | README: purity status and QC column descriptions | not applicable (documentation). The corrections are right, checked against the files PURPLE writes; purple-rs's README did not repeat the old descriptions |
-| `4adc014589` | 2026-11-24 | PAVE | special splice regions (MET exon 14, intronic bases -30 to -10), with a new resource file | under review |
+| `4adc014589` | 2026-11-24 | PAVE | special splice regions (MET exon 14, intronic bases -30 to -10), with a new resource file | **accepted**. The entry is right: MET's canonical transcript (ENST00000397752, + strand), exon 14 is the in-frame exon lost in METex14 skipping, and -30 to -10 before its acceptor is intron 13's polypyrimidine tract and branch point. The rule stays on that transcript and exon; only the splice-region flag changes, not effects or HGVS. The resource is built into the binary. Two edges are questions for upstream, kept as upstream (pave-rs PA10): base -9 is in neither the standard region (-1 to -8) nor the new one, and insertions and deletions count when only their flanking base touches the region |
 | `91286d6867` | 2026-11-24 | COBALT | panel normalisation builder: a region is also filtered when its 10th percentile ratio is below 0.1 | not applicable (the builder makes a panel resource; oncoanalyser does not run it and it is not ported) |
 | `bc9b187516` | 2026-11-24 | PURPLE | biallelic model for somatic variants: the probability of LOH grows with purity, the no-wildtype test allows for allele-fraction uncertainty and is damped at high depth, and the variant copy number itself counts as evidence | **accepted with a correction** (purple-rs PU10: the threshold read count wrapped when converted to an int, giving the wrong probability in segments with copy number 0 or below). Evidence: every biallelic flag it changes on HG008 (260 of 260 tumor/normal) agrees with the reads alone; on the private pair 7 agree, 25 are inconclusive, none disagrees; PASS variants whose flag contradicts the reads fall from 478 to 361 (HG008) and 10 to 5 (private pair). Noted and kept as upstream (PU11): the copy-number step ignores read depth, so a 5-read variant can score 1.0. Upstream's README still describes the old model. purple-rs tracks `883ab11bba` since 2026-11-27 |
 | `bc9b187516` | 2026-11-24 | ORANGE, PEACH, SAGE, TAUR | pom names | not applicable |
-| `bdceb2302a` | 2026-11-26 | qsee | exon coverage QC | under review |
-| `883ab11bba` | 2026-11-27 | qsee | read strand in the base-quality recalibration plots | under review |
+| `bdceb2302a` | 2026-11-26 | qsee | exon coverage QC: `gene_lod` becomes `exon_coverage_qc` (limit-of-detection VAF floored at 0.01), exon statuses PASS / WARN / EXCLUDED from coverage alone, a "Low coverage exons" summary row, missed-variant likelihood from exon coverage, `-lod_min_alt_reads`, `-exon_exclusions_file` and an exclusions builder | **accepted**. It also fixes upstream's `-targeted_mode` inversion (qsee-rs QS2), so the port's switch for it is gone. On our data the summary row is WARN for both tumors (43% and 73% of exons) at upstream's thresholds, which assume about 100x tumors; missed-variant values are unchanged |
+| `883ab11bba` | 2026-11-27 | qsee | read strand in the base-quality recalibration features and plots; the report on two pages | **accepted with a correction** (qsee-rs QS17): the R script now writes `.page_1.png` and `.page_2.png` and no longer the `.qsee.vis.report.png` that ORANGE at the same commit embeds, so ORANGE would show "Plot not available". The port also writes page 1 under the old name by default. The pipeline's qsee cohort file predates the new feature names, so the report shows no cohort boxes for them until the cohort file is remade |
 
 ### Released from side branches, not on master yet (2026-11-27)
 

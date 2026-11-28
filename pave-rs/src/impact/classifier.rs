@@ -6,6 +6,7 @@ use hmf_common::ensembl::TranscriptData;
 
 use super::effects::{is_splice, VariantEffect};
 use super::hgvs_protein::{self, report_protein_impact, HGVS_SPLICE_UNKNOWN};
+use super::special_splice::{is_within_special_splice_region, special_splice_regions};
 use super::splice::{self, check_straddles_splice_region, is_insert_into_exon_start, is_within_splice_region};
 use super::utils::within_trans_range;
 use super::{coding, coding_end, coding_start, hgvs_coding, protein, ProteinContext, RefGenome, SpliceImpactType, VariantTransImpact};
@@ -31,6 +32,7 @@ pub fn classify_variant(variant: &VariantData, trans: &'static TranscriptData, r
     check_pre_post_coding_impact(variant, &mut ti)?;
 
     let mut in_splice_region = false;
+    let special_regions = special_splice_regions();
 
     // each exon: whether the variant falls in a splice region and is intronic or exonic
     let exon_count = trans.exons.len();
@@ -44,6 +46,14 @@ pub fn classify_variant(variant: &VariantData, trans: &'static TranscriptData, r
         } else if !in_splice_region && next_exon.is_some_and(|ne| is_within_splice_region(variant, trans, ne)) {
             in_splice_region = true;
             splice::classify_variant(variant, &mut ti, next_exon.unwrap(), ref_genome)?;
+        }
+
+        // the special splice regions (upstream 4adc014589): marked as splice region, no splice effect
+        in_splice_region |= is_within_special_splice_region(variant, trans, exon, special_regions);
+        if let Some(ne) = next_exon {
+            if !in_splice_region {
+                in_splice_region = is_within_special_splice_region(variant, trans, ne, special_regions);
+            }
         }
 
         if variant.alt_positions_overlap(exon.start, exon.end) || is_insert_into_exon_start(variant, exon, trans.pos_strand()) {

@@ -4,8 +4,8 @@ A Rust port of hmftools PAVE 2.0 (`../pave`): the transcript and protein impacts
 variants, with their canonical and worst impact per variant, and the annotations and filters PAVE adds
 (ClinVar, the panel of normals, gnomAD frequencies, mappability, blacklists, reportability). It takes
 the same options and writes the same files as the Java `PaveApplication`. With `-java_compat` the VCF
-is byte-identical to Java's, the BGZF bytes and the tabix index too. Faults found in the Java code are
-corrected by default (findings PA1-PA9 in [REPORT.md](REPORT.md)).
+is byte-identical to Java's (hmftools master `883ab11bba`), the BGZF bytes and the tabix index too. Faults found in
+the Java code are corrected by default (findings PA1-PA9 in [REPORT.md](REPORT.md); PA10 is kept as Java does).
 
 ## Build and run
 
@@ -59,7 +59,10 @@ and mappability data (0.8-2.7 GB of text per file), the port a few thousand entr
 then processed in parallel, as Java's tasks are: genes near each variant, impacts per transcript (coding
 context, protein context, HGVS strings, splice effects), the right-aligned form of INDELs with
 microhomology, the phasing of variants of one local phase set, the summary impact, annotations and
-filters. The records are encoded as htsjdk's VCFEncoder does and written in chromosome order to a BGZF
+filters. A variant in one of the special splice regions of the built-in resource `resources/splice/
+special_splice_regions.tsv` (Java's `splice/special_splice_regions.tsv` in its jar; upstream `4adc014589`: MET exon
+14, ENST00000397752, intronic bases -30 to -10 before the exon) is marked as in a splice region, as one in the
+standard splice region (8 intronic and 3 exonic bases at an exon boundary) is. The records are encoded as htsjdk's VCFEncoder does and written in chromosome order to a BGZF
 stream deflated by zlib at level 5 with htsjdk's block size, with the tabix index built as htsjdk
 builds it, so both files equal Java's.
 
@@ -72,5 +75,6 @@ finding in both modes, the resource readers, the output record). The comparisons
 
 ## Upstream
 
-Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
-[`../UPSTREAM.md`](../UPSTREAM.md).
+Started from hmftools commit `ca04e6c39d` (2026-11-20); follows upstream master `883ab11bba` (2026-11-27) since the
+review of 2026-11-28: `-java_compat` reproduces the Java built at that commit. Upstream's changes, and what was decided
+about each, are in [`../UPSTREAM.md`](../UPSTREAM.md) and REPORT.md section 7.

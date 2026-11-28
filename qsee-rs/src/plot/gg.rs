@@ -82,12 +82,16 @@ pub type Layers = Rc<dyn Fn(&mut Canvas, &Ctx, &Map)>;
 #[derive(Clone, Debug)]
 pub enum Label {
     Text(String),
+    /// the MS indel bias plot's y title before upstream 883ab11bba
+    #[allow(dead_code)]
     Atop(String, String),
 }
 
 /// What a plot shows besides its layers.
 pub struct Spec {
     pub title: Option<String>,
+    /// plot.subtitle (upstream 883ab11bba's BQR and MS indel plots): the text and its size in pt
+    pub subtitle: Option<(String, f64)>,
     pub xlab: Option<Label>,
     pub ylab: Option<Label>,
     /// the secondary (duplicated) y axis's title, on the right
@@ -301,6 +305,11 @@ pub fn table(th: &Theme, spec: Spec) -> Gtable {
         None => (None, None),
     };
     let title = spec.title.as_ref().map(|t| TitleGrob::new(t, &th.title_el(), true, true));
+    let subtitle = spec.subtitle.as_ref().map(|(t, size)| {
+        let mut el = th.title_el();
+        el.size = *size;
+        TitleGrob::new(t, &el, true, true)
+    });
     let parts = PlotParts {
         panels: panel_table,
         xlab_t: None,
@@ -314,7 +323,7 @@ pub fn table(th: &Theme, spec: Spec) -> Gtable {
         legend_bottom: None,
         legend_box_spacing: th.pt(2.0 * HALF),
         title: if spec.title_blank { None } else { title },
-        subtitle: None,
+        subtitle,
         caption: None,
         title_on_plot: false,
         margin: spec.margin,
@@ -362,6 +371,7 @@ pub fn table_wrap(th: &Theme, spec: Spec) -> Gtable {
     for c in 0..n {
         let one = Spec {
             title: None,
+            subtitle: None,
             xlab: None,
             ylab: None,
             ylab_r: None,

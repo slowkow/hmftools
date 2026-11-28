@@ -203,6 +203,21 @@ pub fn expand(range: (f64, f64), mult: f64, add: f64) -> (f64, f64) {
 mod tests {
     use super::*;
 
+    /// R 4.5.3's pretty() in the qsee image (linux amd64; values printed with 17 digits). R built for arm64 can differ
+    /// in the last bit (its seq.int's from + i * by fused into a multiply-add).
+    #[test]
+    fn pretty_as_r() {
+        assert_eq!(pretty(1.43, 22.1, 5), vec![0.0, 5.0, 10.0, 15.0, 20.0, 25.0]);
+        assert_eq!(pretty(-0.5, 0.3, 5), vec![-0.60000000000000009, -0.40000000000000008, -0.20000000000000007, 0.0, 0.19999999999999996, 0.40000000000000002]);
+        assert_eq!(pretty(0.0, 0.0, 5), vec![-1.0, 0.0]);
+        assert_eq!(pretty(3.2, 3.2, 5), vec![2.0, 4.0]);
+        assert_eq!(pretty(-21.3, 11.9, 5), vec![-25.0, -20.0, -15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0]);
+        let small = pretty(0.000123, 0.000456, 5);
+        let want = [0.0001, 0.00015000000000000001, 0.00020000000000000001, 0.00025000000000000001, 0.00030000000000000003, 0.00035, 0.00040000000000000002, 0.00044999999999999999, 0.00050000000000000001];
+        assert_eq!(small, want.to_vec());
+        assert_eq!(pretty(-1e6, 3.5e6, 5), vec![-1e6, 0.0, 1e6, 2e6, 3e6, 4e6]);
+    }
+
     #[test]
     fn scales_labels() {
         assert_eq!(label_percent(&[0.0, 0.25, 0.5, 0.75, 1.0], None, 100.0, false), vec!["0%", "25%", "50%", "75%", "100%"]);
@@ -215,4 +230,119 @@ mod tests {
         let t = log_ticks((1.0, 1000.0));
         assert!(t.contains(&(100.0, 1)) && t.contains(&(50.0, 2)) && t.contains(&(300.0, 3)));
     }
+}
+
+/// R's pretty(x, n) (pretty.default with its defaults: min.n = n %/% 3, shrink.sml 0.75, high.u.bias 1.5,
+/// u5.bias 2.75, f.min 2^-20, bounds TRUE; R_pretty in src/appl/pretty.c, then seq.int(l, u, length.out = n + 1):
+/// l + i * (u - l) / n, the last u
+/// with values below 1e-14 times the step set to 0). As scales::breaks_pretty(n) for a non-zero range.
+pub fn pretty(lo: f64, hi: f64, n: i32) -> Vec<f64> {
+    const ROUNDING_EPS: f64 = 1e-10;
+    let (h, h5, f_min) = (1.5f64, 0.5 + 1.5 * 1.5, 2f64.powi(-20));
+    let min_n = n / 3;
+    let shrink_sml = 0.75;
+    let (mut lo, mut up) = (lo, hi);
+    let mut ndiv = n;
+    let dx = up - lo;
+    let mut cell;
+    let i_small;
+    if dx == 0.0 && up == 0.0 {
+        cell = 1.0;
+        i_small = true;
+    } else {
+        cell = lo.abs().max(up.abs());
+        let mut u = 1.0 + if h5 >= 1.5 * h + 0.5 { 1.0 / (1.0 + h) } else { 1.5 / (1.0 + h5) };
+        u *= ndiv.max(1) as f64 * f64::EPSILON;
+        i_small = dx < cell * u * 3.0;
+    }
+    if i_small {
+        if cell > 10.0 {
+            cell = 9.0 + cell / 10.0;
+        }
+        cell *= shrink_sml;
+        if min_n > 1 {
+            cell /= min_n as f64;
+        }
+    } else {
+        cell = dx;
+        if ndiv > 1 {
+            cell /= ndiv as f64;
+        }
+    }
+    let mut subsmall = f_min * f64::MIN_POSITIVE;
+    if subsmall == 0.0 {
+        subsmall = f64::MIN_POSITIVE;
+    }
+    if cell < subsmall {
+        cell = subsmall;
+    } else if cell > f64::MAX / 1.25 {
+        cell = f64::MAX / 1.25;
+    }
+    let base = 10f64.powf(cell.log10().floor());
+    let mut unit = base;
+    let mut ns = 2.0 * base;
+    if ns - cell < h * (cell - unit) {
+        unit = ns;
+        ns = 5.0 * base;
+        if ns - cell < h5 * (cell - unit) {
+            unit = ns;
+            ns = 10.0 * base;
+            if ns - cell < h * (cell - unit) {
+                unit = ns;
+            }
+        }
+    }
+    let mut ns = (lo / unit + ROUNDING_EPS).floor();
+    let mut nu = (up / unit - ROUNDING_EPS).ceil();
+    while ns * unit > lo + ROUNDING_EPS * unit {
+        ns -= 1.0;
+    }
+    while nu * unit < up - ROUNDING_EPS * unit {
+        nu += 1.0;
+    }
+    let mut k = (0.5 + nu - ns) as i32;
+    if k < min_n {
+        k = min_n - k;
+        if ns >= 0.0 {
+            nu += (k / 2) as f64;
+            ns -= (k / 2 + k % 2) as f64;
+        } else {
+            ns -= (k / 2) as f64;
+            nu += (k / 2 + k % 2) as f64;
+        }
+        ndiv = min_n;
+    } else {
+        ndiv = k;
+    }
+    // return_bounds
+    if ns * unit < lo {
+        lo = ns * unit;
+    }
+    if nu * unit > up {
+        up = nu * unit;
+    }
+    // seq.int(lo, up, length.out = ndiv + 1)
+    let lout = (ndiv + 1) as usize;
+    let mut s = vec![0.0; lout];
+    if lout > 0 {
+        s[0] = lo;
+    }
+    if lout > 1 {
+        s[lout - 1] = up;
+    }
+    if lout > 2 {
+        let by = (up - lo) / (lout - 1) as f64;
+        for (i, v) in s.iter_mut().enumerate().take(lout - 1).skip(1) {
+            *v = lo + i as f64 * by;
+        }
+    }
+    if ndiv > 0 {
+        let delta = (up - lo) / ndiv as f64;
+        for v in s.iter_mut() {
+            if v.abs() < 1e-14 * delta {
+                *v = 0.0;
+            }
+        }
+    }
+    s
 }

@@ -66,14 +66,20 @@ pub fn generate_filename(base_path: &str, sample_id: &str, file_id: &str, output
     format!("{}{}", check_add_dir_separator(base_path), parts.join("."))
 }
 
-/// QseeFileCommon.generateCohortFilename: <dir>/qsee.cohort.<fileId>[.<outputId>].<extension>
-pub fn generate_cohort_filename(base_path: &str, file_id: &str, output_id: Option<&str>, extension: &str) -> String {
-    let mut parts = vec![QSEE_FILE_ID, "cohort", file_id];
+/// QseeFileCommon.generateFilename with a null sample id (upstream bdceb2302a): <dir>/[<sample>.]qsee.<fileId>[.<outputId>].<extension>
+pub fn generate_filename_opt(base_path: &str, sample_id: Option<&str>, file_id: &str, output_id: Option<&str>, extension: &str) -> String {
+    let mut parts: Vec<&str> = sample_id.into_iter().collect();
+    parts.extend([QSEE_FILE_ID, file_id]);
     if let Some(o) = output_id {
         parts.push(o);
     }
     parts.push(extension);
     format!("{}{}", check_add_dir_separator(base_path), parts.join("."))
+}
+
+/// QseeFileCommon.generateCohortFilename: <dir>/qsee.cohort.<fileId>[.<outputId>].<extension>
+pub fn generate_cohort_filename(base_path: &str, file_id: &str, output_id: Option<&str>, extension: &str) -> String {
+    generate_filename_opt(base_path, None, &format!("cohort.{file_id}"), output_id, extension)
 }
 
 // ---- MultiFieldStringBuilder ----

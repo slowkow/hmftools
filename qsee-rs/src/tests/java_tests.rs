@@ -11,7 +11,10 @@ use crate::cohort::{FeatureMatrix, PercentileTransformer};
 use crate::common::{BinnedFrequencies, SampleIds, SampleType};
 use crate::config::SequencingType;
 use crate::feature::{BaseQualBin, DiscordantFragGroup, Feature, FeatureKey, FeatureType, NumberFormat, SourceTool, SummaryTableFeature};
-use crate::lod::{calc_gene_lods, min_sample_vaf_to_detect_variant, VariantDetectabilityStatus};
+use crate::coverage::{
+    calc_exon_exclusions, coverage_qc_per_exon, min_sample_vaf_to_detect_variant, ExonCoverageQc, ExonExclusions, VariantDetectabilityStatus, DEFAULT_LOD_MIN_ALT_READS,
+    LOD_VAF_LOWER_BOUND,
+};
 use crate::prep::{self, BamMetricsData, BaseQualBinner, PurityContext, DELETIONS_KEY, INSERTIONS_KEY};
 use crate::status::{purple_to_qsee_status, try_form_display_string, ComparisonOperator, QcThreshold, QcStatusType, ThresholdKey, ThresholdRegistry, PURPLE_QC_STATUSES};
 
@@ -23,43 +26,94 @@ fn dr(lower: i32, upper: i32) -> DepthRange {
     DepthRange { lower, upper }
 }
 
-// ---- lod.GeneLodCalculatorTest ----
+// ---- coverage.ExonCoverageQcTest (upstream bdceb2302a; GeneLodCalculatorTest before) ----
 
 fn exon(gene: &str, rank: i32, median: f64, mean: f64, counts: Vec<(DepthRange, i32)>) -> ExonDepth {
     ExonDepth { depth: GeneDepth { gene: gene.into(), chromosome: "1".into(), pos_start: 100, pos_end: 199, depth_counts: counts }, exon_rank: rank, median_depth: median, mean_depth: mean }
 }
 
+fn exclusions(entries: &[(&str, i32)]) -> ExonExclusions {
+    let mut e = ExonExclusions::empty();
+    for (g, r) in entries {
+        e.add(g, *r);
+    }
+    e
+}
+
 #[test]
-fn gene_lod_calculator_can_calc_gene_lods() {
+fn exon_coverage_qc_can_calc_coverage_qc_per_exon() {
     let mixed = vec![(dr(20, 20), 10), (dr(100, 100), 90)];
     let low = vec![(dr(2, 2), 10), (dr(100, 100), 90)];
-    let exons = vec![exon("REPORTABLE_GENE", 1, 100.0, 92.0, mixed.clone()), exon("REPORTABLE_GENE", 2, 100.0, 90.2, low), exon("NON_REPORTABLE_GENE", 1, 100.0, 92.0, mixed)];
-    let expected: [(f64, i32, f64, VariantDetectabilityStatus); 5] = [
-        (0.5, 1, 0.263, VariantDetectabilityStatus::Pass),
-        (0.5, 2, 2.0, VariantDetectabilityStatus::Fail),
-        (0.2, 1, 0.658, VariantDetectabilityStatus::WarnHetUnreliable),
-        (0.2, 2, 5.0, VariantDetectabilityStatus::Fail),
-        (0.1, 1, 1.316, VariantDetectabilityStatus::Fail),
+    let high = vec![(dr(500, 500), 100)];
+    let exons = vec![
+        exon("REPORTABLE_GENE", 1, 100.0, 92.0, mixed.clone()),
+        exon("REPORTABLE_GENE", 2, 100.0, 90.2, low),
+        exon("REPORTABLE_GENE", 3, 100.0, 500.0, high),
+        exon("REPORTABLE_GENE", 4, 100.0, 92.0, mixed.clone()),
+        exon("NON_REPORTABLE_GENE", 1, 100.0, 92.0, mixed),
     ];
-    for (purity, rank, lod, status) in expected {
-        let lods = calc_gene_lods("TUMOR_SAMPLE", SampleType::Tumor, &exons, &["REPORTABLE_GENE".to_string()], purity);
-        assert_eq!(lods.len(), 2);
-        let g = lods.iter().find(|g| g.exon_rank == rank).unwrap();
+    let expected: [(i32, f64, VariantDetectabilityStatus); 4] = [
+        (1, 0.132, VariantDetectabilityStatus::Warn),
+        (2, 1.0, VariantDetectabilityStatus::Warn), // depth too low
+        (3, 0.0125, VariantDetectabilityStatus::Pass),
+        (4, 0.132, VariantDetectabilityStatus::Excluded), // excluded despite a high LoD VAF
+    ];
+    let qc = coverage_qc_per_exon(
+        "TUMOR_SAMPLE", SampleType::Tumor, &exons, &exclusions(&[("REPORTABLE_GENE", 4)]), &["REPORTABLE_GENE".to_string()], &ThresholdRegistry::create_default(false),
+        DEFAULT_LOD_MIN_ALT_READS,
+    )
+    .unwrap();
+    assert_eq!(qc.len(), 4); // the non-reportable gene left out
+    for (rank, lod, status) in expected {
+        let g = qc.iter().find(|g| g.exon_rank == rank).unwrap();
         assert_eq!(g.gene_name, "REPORTABLE_GENE");
         assert_eq!(g.median_depth, 100.0);
-        assert!(close(g.tumor_vaf_lod, lod, 1e-3), "{} vs {lod}", g.tumor_vaf_lod);
+        assert!(close(g.lod_vaf, lod, 1e-3), "{} vs {lod}", g.lod_vaf);
         assert_eq!(g.status, status);
     }
 }
 
-// ---- lod.LimitOfDetectionCalcsTest ----
+// ---- coverage.ExonExclusionsFileBuilderTest (upstream bdceb2302a) ----
 
 #[test]
-fn limit_of_detection_can_calc_sample_vaf_lod() {
+fn exon_exclusions_from_cohort() {
+    let sample_count = 20;
+    // exon rank, tumor samples with a high LoD VAF, the high LoD VAF, normal samples with it, excluded
+    let rows: [(i32, usize, f64, usize, bool); 4] = [(1, 6, 0.07, 0, true), (2, 5, 0.07, 0, false), (3, 20, 0.069, 0, false), (4, 0, 0.07, 20, false)];
+    let mut qc = Vec::new();
+    for (rank, tumor_high, high_vaf, normal_high, _) in rows {
+        for (st, n_high) in [(SampleType::Tumor, tumor_high), (SampleType::Normal, normal_high)] {
+            for i in 0..sample_count {
+                qc.push(ExonCoverageQc {
+                    sample_id: format!("{}_{i}", st.name()),
+                    sample_type: st,
+                    gene_name: "GENE".into(),
+                    exon_rank: rank,
+                    median_depth: 100.0,
+                    lod_vaf: if i < n_high { high_vaf } else { 0.01 },
+                    status: VariantDetectabilityStatus::Pass,
+                    depth_counts: Vec::new(),
+                });
+            }
+        }
+    }
+    let ex = calc_exon_exclusions(&qc, 0.07, 0.3);
+    for (rank, _, _, _, excluded) in rows {
+        assert_eq!(ex.is_excluded("GENE", rank), excluded, "exon {rank}");
+    }
+}
+
+// ---- coverage.LimitOfDetectionCalcsTest ----
+
+#[test]
+fn limit_of_detection_can_calc_lod_vaf() {
     let counts = vec![(dr(20, 20), 10), (dr(100, 100), 90)];
-    assert!(close(min_sample_vaf_to_detect_variant(&counts), 0.132, 1e-3));
+    assert!(close(min_sample_vaf_to_detect_variant(&counts, DEFAULT_LOD_MIN_ALT_READS), 0.132, 1e-3));
     let low = vec![(dr(2, 2), 10), (dr(100, 100), 90)];
-    assert_eq!(min_sample_vaf_to_detect_variant(&low), 1.0);
+    assert_eq!(min_sample_vaf_to_detect_variant(&low, DEFAULT_LOD_MIN_ALT_READS), 1.0);
+    // a depth high enough for a LoD VAF below the floor
+    let high = vec![(dr(1000, 1000), 100)];
+    assert_eq!(min_sample_vaf_to_detect_variant(&high, DEFAULT_LOD_MIN_ALT_READS), LOD_VAF_LOWER_BOUND);
 }
 
 // ---- status.PurpleQCStatusConverterTest ----
@@ -304,8 +358,8 @@ fn feature_key_names_sorted() {
         k("ConsensusType:NONE;RepeatUnitType:2bp repeat;RefNumUnits:4", MsIndelErrorRates, Redux),
         k("ConsensusType:NONE;RepeatUnitType:C/G repeat;RefNumUnits:4", MsIndelErrorRates, Redux),
         k("ConsensusType:NONE;RepeatUnitType:A/T repeat;RefNumUnits:4", MsIndelErrorRates, Redux),
-        k("ReadType:NONE;StandardMutation:C>A;OriginalQualBin:HIGH (30+)", BqrPerOrigQual, Redux),
-        k("ReadType:NONE;StandardMutation:C>A;OriginalQualBin:LOW (0-29)", BqrPerOrigQual, Redux),
+        k("ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:ANY;OriginalQualBin:HIGH (30+)", BqrPerOrigQual, Redux),
+        k("ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:ANY;OriginalQualBin:LOW (0-29)", BqrPerOrigQual, Redux),
     ];
     keys.sort_by(|a, b| a.compare(b));
     let names: Vec<&str> = keys.iter().map(|k| k.name.as_str()).collect();
@@ -321,8 +375,8 @@ fn feature_key_names_sorted() {
             "ReadCount:1",
             "ReadCount:10",
             "ReadCount:>=100",
-            "ReadType:NONE;StandardMutation:C>A;OriginalQualBin:LOW (0-29)",
-            "ReadType:NONE;StandardMutation:C>A;OriginalQualBin:HIGH (30+)",
+            "ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:ANY;OriginalQualBin:LOW (0-29)",
+            "ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:ANY;OriginalQualBin:HIGH (30+)",
             "ConsensusType:NONE;RepeatUnitType:A/T repeat;RefNumUnits:4",
             "ConsensusType:NONE;RepeatUnitType:C/G repeat;RefNumUnits:4",
             "ConsensusType:NONE;RepeatUnitType:2bp repeat;RefNumUnits:4",
@@ -443,8 +497,8 @@ fn summary_table_bam_metrics_features() {
         with_itself_and_mate_mapped_proportion: 0.0,
         singleton_proportion: 0.0,
     };
-    let data = BamMetricsData { summary: Some(summary), coverage: Some(test_coverage()), flag_stats: Some(flag), missing: Vec::new() };
-    let f = prep::bam_metrics_features(&data, SampleType::Tumor, &ThresholdRegistry::create_without_thresholds()).unwrap();
+    let data = BamMetricsData { summary: Some(summary), coverage: Some(test_coverage()), flag_stats: Some(flag), exon_depths: Some(Vec::new()), missing: Vec::new() };
+    let f = prep::bam_metrics_features(&data, Some(&[]), SampleType::Tumor, &ThresholdRegistry::create_without_thresholds()).unwrap();
     let expected = SummaryTableFeature::ALL.iter().filter(|f| f.source_tool() == SourceTool::BamMetrics).count();
     assert_eq!(f.len(), expected);
 }
@@ -481,17 +535,32 @@ fn driver_gene(name: &str, somatic: bool, germline: bool) -> DriverGene {
     }
 }
 
-fn gene_depths() -> Vec<GeneDepth> {
+/// MissedGeneVariantPrepTest's EXON_DEPTHS (upstream bdceb2302a): GERMLINE_GENE's two exons sum to the mixed counts
+fn exon_depths() -> Vec<ExonDepth> {
     let mixed = vec![(dr(0, 0), 0), (dr(15, 15), 100), (dr(20, 20), 100), (dr(40, 49), 800)];
+    let part1 = vec![(dr(0, 0), 0), (dr(15, 15), 100), (dr(20, 20), 100)];
+    let part2 = vec![(dr(40, 49), 800)];
     let none = vec![(dr(0, 0), 1)];
-    let g = |n: &str, c: &str, counts: Vec<(DepthRange, i32)>| GeneDepth { gene: n.into(), chromosome: c.into(), pos_start: 100, pos_end: 200, depth_counts: counts };
+    let e = |n: &str, c: &str, rank: i32, counts: Vec<(DepthRange, i32)>| ExonDepth {
+        depth: GeneDepth { gene: n.into(), chromosome: c.into(), pos_start: 100, pos_end: 200, depth_counts: counts },
+        exon_rank: rank,
+        median_depth: 0.0,
+        mean_depth: 0.0,
+    };
     vec![
-        g("GERMLINE_GENE", "1", mixed.clone()),
-        g("GERMLINE_CHR_X_GENE", "X", mixed.clone()),
-        g("SOMATIC_GENE", "1", mixed.clone()),
-        g("SOMATIC_CHR_X_GENE", "X", mixed),
-        g("SOMATIC_NO_COVERAGE_GENE", "1", none),
+        e("GERMLINE_GENE", "1", 1, part1),
+        e("GERMLINE_GENE", "1", 2, part2),
+        e("GERMLINE_CHR_X_GENE", "X", 1, mixed.clone()),
+        e("SOMATIC_GENE", "1", 1, mixed.clone()),
+        e("SOMATIC_GENE", "1", 2, none.clone()), // excluded
+        e("SOMATIC_CHR_X_GENE", "X", 1, mixed),
+        e("SOMATIC_NO_COVERAGE_GENE", "1", 1, none.clone()),
+        e("SOMATIC_EXCLUDED_GENE", "1", 1, none), // every exon excluded
     ]
+}
+
+fn missed_gene_exclusions() -> ExonExclusions {
+    exclusions(&[("SOMATIC_GENE", 2), ("SOMATIC_EXCLUDED_GENE", 1)])
 }
 
 fn panel_config() -> crate::config::QseeConfig {
@@ -502,6 +571,7 @@ fn panel_config() -> crate::config::QseeConfig {
         driver_gene("SOMATIC_GENE", true, false),
         driver_gene("SOMATIC_CHR_X_GENE", true, false),
         driver_gene("SOMATIC_NO_COVERAGE_GENE", true, false),
+        driver_gene("SOMATIC_EXCLUDED_GENE", true, false),
     ];
     c
 }
@@ -510,7 +580,7 @@ fn panel_config() -> crate::config::QseeConfig {
 fn missed_gene_variant_germline_likelihoods() {
     let c = panel_config();
     let genes = prep::reportable_genes(&c, SampleType::Normal);
-    let f = prep::missed_variant_likelihoods(&gene_depths(), &genes, 1.0, "FEMALE").unwrap();
+    let f = prep::missed_variant_likelihoods(&exon_depths(), &genes, &missed_gene_exclusions(), 1.0, "FEMALE", DEFAULT_LOD_MIN_ALT_READS).unwrap();
     let expected = [("Gene:GERMLINE_GENE", 0.000389385), ("Gene:GERMLINE_CHR_X_GENE", 0.000389385)];
     assert_eq!(f.len(), expected.len());
     for (a, (n, v)) in f.iter().zip(expected) {
@@ -523,7 +593,7 @@ fn missed_gene_variant_germline_likelihoods() {
 fn missed_gene_variant_somatic_likelihoods() {
     let c = panel_config();
     let genes = prep::reportable_genes(&c, SampleType::Tumor);
-    let f = prep::missed_variant_likelihoods(&gene_depths(), &genes, 0.5, "MALE").unwrap();
+    let f = prep::missed_variant_likelihoods(&exon_depths(), &genes, &missed_gene_exclusions(), 0.5, "MALE", DEFAULT_LOD_MIN_ALT_READS).unwrap();
     let expected = [("Gene:SOMATIC_GENE", 0.032975381), ("Gene:SOMATIC_CHR_X_GENE", 0.000389385), ("Gene:SOMATIC_NO_COVERAGE_GENE", 1.0)];
     assert_eq!(f.len(), expected.len());
     for (a, (n, v)) in f.iter().zip(expected) {
@@ -606,11 +676,11 @@ fn ms_indel_phred_scores() {
 
 // ---- feature.category.BaseQualRecalibrationPrepTest ----
 
-fn bqr(rt: ConsensusType, r: char, a: char, ctx: &str, count: i32, q: i32, recal: f64) -> BqrRecord {
-    prep::standardise_bases(&BqrRecord { ref_base: r as u8, alt: a as u8, trinucleotide_context: ctx.as_bytes().to_vec(), quality: q as i8, read_type: rt, count, recalibrated_quality: recal })
+fn bqr(rt: ConsensusType, r: char, a: char, ctx: &str, count: i32, q: i32, recal: f64) -> prep::StandardBqrRecord {
+    prep::StandardBqrRecord::from(&BqrRecord { ref_base: r as u8, alt: a as u8, trinucleotide_context: ctx.as_bytes().to_vec(), quality: q as i8, read_type: rt, count, recalibrated_quality: recal })
 }
 
-fn bqr_records() -> Vec<BqrRecord> {
+fn bqr_records() -> Vec<prep::StandardBqrRecord> {
     use ConsensusType::{Dual as D, None as N};
     vec![
         bqr(D, 'C', 'G', "CCC", 90, 11, 13.0),
@@ -625,15 +695,40 @@ fn bqr_records() -> Vec<BqrRecord> {
         bqr(N, 'C', 'A', "ACA", 90, 42, 46.0),
         bqr(N, 'G', 'T', "TGT", 10, 37, 36.5),
         bqr(N, 'G', 'T', "TGT", 10, 42, 41.5),
+        // T>A_ATA: a count below the minimum
+        bqr(N, 'T', 'A', "ATA", 2, 37, 39.0),
     ]
 }
 
+// ---- feature.category.bqr.StandardTrinucleotideContextTest (upstream 883ab11bba) ----
+
 #[test]
-fn bqr_standardise_bases() {
-    let r1 = bqr(ConsensusType::None, 'C', 'A', "ACC", 0, 0, 0.0);
-    assert_eq!((r1.ref_base, r1.alt, r1.trinucleotide_context.as_slice()), (b'C', b'A', b"ACC".as_slice()));
-    let r2 = bqr(ConsensusType::None, 'G', 'T', "GGA", 0, 0, 0.0);
-    assert_eq!((r2.ref_base, r2.alt, r2.trinucleotide_context.as_slice()), (b'C', b'A', b"TCC".as_slice()));
+fn standard_context_t_to_g() {
+    use prep::StandardTrinucleotideContext as S;
+    assert_eq!(S::from_nucleotides('T', 'G', "GTA").mutation_context_string().unwrap(), "G[T>G]A +");
+    assert_eq!(S::from_nucleotides('A', 'C', "TAC").mutation_context_string().unwrap(), "G[T>G]A -");
+}
+
+#[test]
+fn standard_context_c_to_t() {
+    use prep::StandardTrinucleotideContext as S;
+    assert_eq!(S::from_nucleotides('C', 'T', "GCA").mutation_context_string().unwrap(), "G[C>T]A +");
+    assert_eq!(S::from_nucleotides('G', 'A', "TGC").mutation_context_string().unwrap(), "G[C>T]A -");
+}
+
+#[test]
+fn standard_context_mutation_strings() {
+    use prep::StandardTrinucleotideContext as S;
+    let forward_cpg = S::from_nucleotides('C', 'T', "ACG");
+    let reverse_cpg = S::from_nucleotides('G', 'A', "CGT"); // the reverse of ACG
+    let non_cpg = S::from_nucleotides('C', 'T', "ACA");
+    let non_c_to_t = S::from_nucleotides('C', 'A', "ACG");
+    assert_eq!(forward_cpg.mutation_string(), "C>T");
+    assert_eq!(non_c_to_t.mutation_string(), "C>A");
+    assert_eq!(forward_cpg.mutation_string_split_cpg().unwrap(), "C>T CpG");
+    assert_eq!(reverse_cpg.mutation_string_split_cpg().unwrap(), "C>T CpG");
+    assert_eq!(non_cpg.mutation_string_split_cpg().unwrap(), "C>T other");
+    assert_eq!(non_c_to_t.mutation_string_split_cpg().unwrap(), "C>A");
 }
 
 #[test]
@@ -647,21 +742,35 @@ fn bqr_bin_ranges_for_illumina() {
 #[test]
 fn bqr_change_in_qual_per_trinuc_context() {
     let f = prep::bqr_per_trinuc_context(&bqr_records(), &BaseQualBinner::new(SequencingType::Illumina)).unwrap();
-    assert_eq!(f.len(), 2);
-    assert_eq!(f[0].key.name, "ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:CCC;OriginalQualBin:HIGH (30+)");
-    assert!(close(f[0].value, 1.205, 0.001));
-    assert_eq!(f[1].key.name, "ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:ACA;OriginalQualBin:HIGH (30+)");
-    assert!(close(f[1].value, 3.386, 0.001));
+    let expected = [
+        ("ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:CCC;ReadOrientation:FORWARD;OriginalQualBin:HIGH (30+)", 2.0),
+        ("ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:CCC;ReadOrientation:REVERSE;OriginalQualBin:HIGH (30+)", -0.5),
+        ("ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:ACA;ReadOrientation:FORWARD;OriginalQualBin:HIGH (30+)", 4.0),
+        ("ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:ACA;ReadOrientation:REVERSE;OriginalQualBin:HIGH (30+)", -0.5),
+        ("ReadType:NONE;StandardMutation:T>A;StandardTrinucContext:ATA;ReadOrientation:FORWARD;OriginalQualBin:HIGH (30+)", f64::NAN),
+    ];
+    assert_eq!(f.len(), expected.len());
+    for (a, (n, v)) in f.iter().zip(expected) {
+        assert_eq!(a.key.name, n);
+        assert!(if v.is_nan() { a.value.is_nan() } else { close(a.value, v, 0.001) }, "{n}: {}", a.value);
+    }
 }
 
 #[test]
 fn bqr_change_in_qual_per_original_qual() {
     let f = prep::bqr_per_original_qual(&bqr_records(), &BaseQualBinner::new(SequencingType::Illumina)).unwrap();
-    assert_eq!(f.len(), 2);
-    assert_eq!(f[0].key.name, "ReadType:DUAL;StandardMutation:C>G;OriginalQualBin:LOW (0-29)");
-    assert!(close(f[0].value, 1.659, 0.001));
-    assert_eq!(f[1].key.name, "ReadType:NONE;StandardMutation:C>A;OriginalQualBin:HIGH (30+)");
-    assert!(close(f[1].value, 2.295, 0.001));
+    let expected = [
+        ("ReadType:DUAL;StandardMutation:C>G;StandardTrinucContext:ANY;ReadOrientation:FORWARD;OriginalQualBin:LOW (0-29)", 2.0),
+        ("ReadType:DUAL;StandardMutation:C>G;StandardTrinucContext:ANY;ReadOrientation:REVERSE;OriginalQualBin:LOW (0-29)", -0.5),
+        ("ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:ANY;ReadOrientation:FORWARD;OriginalQualBin:HIGH (30+)", 3.118),
+        ("ReadType:NONE;StandardMutation:C>A;StandardTrinucContext:ANY;ReadOrientation:REVERSE;OriginalQualBin:HIGH (30+)", -0.5),
+        ("ReadType:NONE;StandardMutation:T>A;StandardTrinucContext:ANY;ReadOrientation:FORWARD;OriginalQualBin:HIGH (30+)", f64::NAN),
+    ];
+    assert_eq!(f.len(), expected.len());
+    for (a, (n, v)) in f.iter().zip(expected) {
+        assert_eq!(a.key.name, n);
+        assert!(if v.is_nan() { a.value.is_nan() } else { close(a.value, v, 0.001) }, "{n}: {}", a.value);
+    }
 }
 
 // ---- feature.category.DiscordantFragFreqPrepTest ----

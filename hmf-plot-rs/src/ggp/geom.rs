@@ -45,6 +45,17 @@ pub fn point(c: &mut Canvas, ctx: &Ctx, x: f64, y: f64, shape: u8, colour: Rgba,
         19 => {
             c.fig.push(Item::Circle { cx: x, cy: y, r, fill: Some(colour), stroke: Some(Stroke { color: colour, width: lw, dash: Vec::new(), cap: LineCap::Round }) });
         }
+        24 | 25 => {
+            // R's triangles (GESymbol): the circle's radius times TRC0 = sqrt(4 pi / (3 sqrt 3)) from the centre to
+            // the apex, TRC0 / 2 to the base, TRC0 sqrt(3) / 2 half the base; 24 points up, 25 down; filled with
+            // `fill`, outlined in `colour`
+            const TRC0: f64 = 1.555_120_301_556_214_2;
+            let (apex, base, half) = (TRC0 * r, TRC0 / 2.0 * r, TRC0 * 3f64.sqrt() / 2.0 * r);
+            let s = if shape == 24 { 1.0 } else { -1.0 };
+            let pts = vec![(x, y - s * apex), (x + half, y + s * base), (x - half, y + s * base)];
+            let st = (!colour.is_transparent()).then_some(Stroke { color: colour, width: lw, dash: Vec::new(), cap: LineCap::Round });
+            c.fig.polygon(pts, (!fill.is_transparent()).then_some(fill), st);
+        }
         21 => {
             c.fig.push(Item::Circle {
                 cx: x,
@@ -143,6 +154,32 @@ mod tests {
     use super::*;
     use crate::ggp::{Version, record_drawn_boxes, take_drawn_boxes};
     use crate::rdev::Device;
+
+    /// pch 24 and 25: triangles of the circle's area (circumradius 1.5551 times the circle's radius), 24 with its apex
+    /// up (lower y on the canvas), 25 down; filled and outlined.
+    #[test]
+    fn triangles_24_and_25() {
+        let ctx = Ctx { dev: Device::Pdf, v: Version::V403 };
+        let mut fig = crate::Figure::new(100, 100, Rgba::WHITE);
+        let mut c = Canvas::new(&mut fig);
+        let fill = Rgba::rgb8(209, 57, 44);
+        point(&mut c, &ctx, 50.0, 50.0, 24, Rgba::BLACK, fill, 1.575, 0.5);
+        point(&mut c, &ctx, 50.0, 50.0, 25, Rgba::BLACK, fill, 1.575, 0.5);
+        let r = 0.375 * ctx.font_px(1.575 * PT + 0.5 * STROKE / 2.0);
+        let tris: Vec<Vec<(f64, f64)>> = fig
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Polygon { points, fill: Some(f), stroke: Some(_) } if *f == fill => Some(points.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tris.len(), 2);
+        let k = 1.555_120_301_556_214_2;
+        assert!((tris[0][0].1 - (50.0 - k * r)).abs() < 1e-9 && (tris[0][1].1 - (50.0 + k / 2.0 * r)).abs() < 1e-9);
+        assert!((tris[1][0].1 - (50.0 + k * r)).abs() < 1e-9 && (tris[1][1].1 - (50.0 - k / 2.0 * r)).abs() < 1e-9);
+        assert!((tris[0][1].0 - tris[0][2].0 - k * 3f64.sqrt() * r).abs() < 1e-9);
+    }
 
     /// draw_key_label's box as R draws it (ggplot2 4.0.3, png() at 300 dpi, the legend built on pdf(NULL)): qsee's
     /// "QC status" key of size 10.5 * 0.35 in a 72 px key cell. R's viewports (the public HG008 report): the cell

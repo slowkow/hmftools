@@ -10,6 +10,7 @@ pub mod hgvs_coding;
 pub mod hgvs_protein;
 pub mod phased;
 pub mod protein;
+pub mod special_splice;
 pub mod splice;
 pub mod utils;
 

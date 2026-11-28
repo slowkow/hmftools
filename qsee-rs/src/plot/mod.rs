@@ -1,9 +1,11 @@
-//! qsee's visual report, `<tumor>.qsee.vis.report.pdf` and (for a single patient) `.png`, drawn natively: a port of
-//! the R script `plot_qc.R` (ggplot2 4.0.3, patchwork 1.3.2 in the qsee image) on hmf-plot-rs's ggplot2 and
-//! patchwork layout. The same data steps (cohort merge, multi-field split, factor orders, the peak marks, the
-//! missed-variant selection, the summary tables' formats and QC statuses), the same plots (distributions with
-//! cohort ribbons, box plots and point ranges against the cohort, facet grids, log ticks), the custom legend, the
-//! report title, and the design of 4 x 8 cells, at 17 x 10 inches.
+//! qsee's visual report, `<tumor>.qsee.vis.report.pdf` (two pages) and (for a single patient) `.page_1.png` and
+//! `.page_2.png`, drawn natively: a port of upstream 883ab11bba's R script `plot_qc.R` (ggplot2 4.0.3, patchwork 1.3.2
+//! in the qsee image) on hmf-plot-rs's ggplot2 and patchwork layout. The same data steps (cohort merge, multi-field
+//! split, factor orders, the peak marks, the missed-variant selection, the summary tables' formats and QC statuses, the
+//! BQR values of too few counts hidden), the same plots (distributions with cohort ribbons, box plots and point ranges
+//! against the cohort, facet grids, log ticks, the BQR plots' read strands as dodged triangles, the stacked plots with
+//! their axes and axis titles collected), the custom legend, the report title, page 1's design of 4 x 9 cells and page
+//! 2's BQR by SNV96 context, at 17 x 10 inches.
 
 pub mod data;
 pub mod gg;
@@ -202,6 +204,7 @@ fn label(c: &mut Canvas, ctx: &Ctx, at: (f64, f64), s: &str, size_mm: f64, text_
 fn base_spec(th: &Theme, title: Option<&str>, xlab: Option<&str>, ylab: Option<&str>) -> Spec {
     Spec {
         title: title.map(String::from),
+        subtitle: None,
         xlab: xlab.map(|s| Label::Text(s.into())),
         ylab: ylab.map(|s| Label::Text(s.into())),
         ylab_r: None,
@@ -227,7 +230,12 @@ fn base_spec(th: &Theme, title: Option<&str>, xlab: Option<&str>, ylab: Option<&
 
 /// plot_missing_data: an empty plot with the labels and "Missing sample data" in the middle.
 fn missing(th: &Theme, title: &str, xlab: &str, ylab: &str) -> Gtable {
-    let mut spec = base_spec(th, Some(title), Some(xlab), Some(ylab));
+    gg::table(th, missing_spec(th, Some(title), xlab, ylab))
+}
+
+/// plot_missing_data's spec
+fn missing_spec(th: &Theme, title: Option<&str>, xlab: &str, ylab: &str) -> Spec {
+    let mut spec = base_spec(th, title, Some(xlab), Some(ylab));
     let pos = Pos { range: (-0.5, 0.5), log: false, breaks: Vec::new(), labels: Vec::new(), logticks: Vec::new() };
     spec.h = vec![pos.clone()];
     spec.v = vec![pos];
@@ -239,7 +247,7 @@ fn missing(th: &Theme, title: &str, xlab: &str, ylab: &str) -> Gtable {
         let (x, y) = m.at(0.0, 0.0);
         gg::text(c, ctx, x, y, "Missing sample data", BASE, Rgba::BLACK, 0.5, 0.5);
     }) as Layers]];
-    gg::table(th, spec)
+    spec
 }
 
 /// plot_distribution: cohort ribbons (5th to 95th percentile), the sample's lines, the peak marks, a line at 0.
@@ -693,95 +701,311 @@ fn missed_variants(th: &Theme, inp: &Inputs) -> Gtable {
 }
 
 /// BQR by original base quality (H) and by SNV96 context (I).
-fn bqr(th: &Theme, inp: &Inputs, ft: &str) -> Gtable {
-    let snv96 = ft == "BQR_PER_SNV96_CONTEXT";
-    let (title, xlab, ylab) = if snv96 { ("BQR by SNV96 context", "Mutation context", "Phred score adjustment") } else { ("BQR by original base quality", "Original base quality", "Phred score adjustment") };
-    let Some(d) = inp.plot_data(ft) else {
-        return missing(th, title, xlab, ylab);
-    };
-    let x_field = if snv96 { "StandardTrinucContext" } else { "OriginalQualBin" };
-    let cols = d.levels("StandardMutation");
-    let rows_f = d.levels("ReadType");
-    let st_levels = d.levels("SampleType");
-    let x_levels_all = d.levels(x_field);
-    let kind = if snv96 { Pairwise::PointRange } else { Pairwise::Box };
-    let mut spec = base_spec(th, Some(title), Some(xlab), Some(ylab));
-    spec.ylab_r = Some("Consensus read type".into());
-    spec.right_axis = true;
-    spec.strips_top = Some(cols.clone());
-    spec.strips_right = Some(rows_f.clone());
-    spec.spacing_x = th.pt(-0.5);
-    let mut all_y = Vec::new();
-    let mut layer_grid: Vec<Vec<Layers>> = Vec::new();
-    let mut hs: Vec<Pos> = Vec::new();
-    let mut col_x: Vec<Vec<f64>> = vec![Vec::new(); cols.len()];
-    let mut col_levels: Vec<Vec<String>> = Vec::new();
-    for c in &cols {
-        // scales = "free_x" (SNV96): the levels present in the column; fixed: all levels
-        let lv: Vec<String> = if snv96 { x_levels_all.iter().filter(|l| d.rows.iter().any(|r| r.field("StandardMutation") == c && r.field(x_field) == *l)).cloned().collect() } else { x_levels_all.clone() };
-        col_levels.push(lv);
-    }
-    for rf in &rows_f {
-        let mut row = Vec::new();
-        for (ci, c) in cols.iter().enumerate() {
-            let lv = &col_levels[ci];
-            let rows: Vec<PwRow> = d
-                .rows
-                .iter()
-                .filter(|r| r.field("ReadType") == rf && r.field("StandardMutation") == c)
-                .map(|r| PwRow { x: (lv.iter().position(|l| l == r.field(x_field)).unwrap() + 1) as f64, st: r.sample_type.clone(), group: group_of(&st_levels, &r.sample_type), y: r.value, pct: r.pct })
-                .collect();
-            let vlines = if snv96 { vec![4.5, 8.5, 12.5] } else { Vec::new() };
-            let (xc, yc, layers) = pairwise_layers(rows, kind, inp.has_cohort, 1.0, vec![0.0], vlines, lv.len(), Vec::new());
-            col_x[ci].extend(xc);
-            all_y.extend(yc);
-            row.push(layers);
-        }
-        layer_grid.push(row);
-    }
-    for (ci, lv) in col_levels.iter().enumerate() {
-        hs.push(discrete(lv.len(), lv.clone(), &col_x[ci]));
-    }
-    if !snv96 {
-        // fixed x scales: every column the same discrete scale trained on all columns
-        let all: Vec<f64> = col_x.iter().flatten().copied().collect();
-        let h = discrete(x_levels_all.len(), x_levels_all.clone(), &all);
-        hs = vec![h; cols.len()];
-    }
-    let v = continuous(&all_y, (None, None), (None, None), false, Breaks::Auto, &plus_labels, false);
-    spec.h = hs;
-    spec.v = vec![v; rows_f.len()];
-    spec.layers = layer_grid;
-    let mut h_text = th.axis_text_h();
-    if snv96 {
-        h_text.angle = 90.0;
-        h_text.hjust = 1.0;
-        h_text.vjust = 0.5;
-        h_text.size = BASE * 0.5;
-    } else {
-        h_text.angle = 30.0;
-        h_text.hjust = 1.0;
-        h_text.vjust = 1.0;
-        h_text.size = BASE * 0.7;
-    }
-    spec.h_text = Some(h_text);
-    gg::table(th, spec)
+/// What a report plot is in patchwork terms: a ggplot's table, or a built patchwork's (nested where it is used).
+enum Built {
+    Plot(Gtable),
+    Patchwork(Gtable),
 }
 
-/// Microsatellite indel error rates (J) and bias (K).
+/// The patch of a ggplot or of a patchwork placed in a design as is (not freed).
+fn patch_of(b: Built) -> Patch {
+    match b {
+        Built::Plot(gt) => patchwork::plot(gt),
+        Built::Patchwork(gt) => patchwork::nested(gt),
+    }
+}
+
+/// free(p, "label"): a ggplot's labels freed; a patchwork's (free.patchwork) through merge
+fn free_label_of(b: Built) -> Patch {
+    match b {
+        Built::Plot(gt) => {
+            let mut p = patchwork::plot(gt);
+            patchwork::free_label(&mut p.gt, [true; 4]);
+            p
+        }
+        Built::Patchwork(gt) => {
+            let mut p = patchwork::nested(gt);
+            patchwork::free_label(&mut p.gt, [true; 4]);
+            patchwork::merge(p)
+        }
+    }
+}
+
+/// The keys of a subplot's axes and axis titles, for patchwork's collect_axes and collect_axis_titles (grobs
+/// compared by what they draw).
+fn set_collect_keys(gt: &mut Gtable, h: &[Pos], h_text: &Option<TextEl>, h_ticks: bool, xlab: Option<&str>, ylab: Option<&str>, ylab_r: Option<&str>) {
+    let hk: Vec<String> = h.iter().map(|p| format!("{:?}|{:?}|{:?}", p.range, p.breaks, p.labels)).collect();
+    let tk = h_text.as_ref().map(|t| format!("{}:{}:{}:{}:{}", t.size, t.angle, t.hjust, t.vjust, t.margin[0])).unwrap_or_default();
+    gt.set_keys("axis-b", &format!("axis-b[{}][{tk}][{h_ticks}]", hk.join(";")));
+    if let Some(x) = xlab {
+        gt.set_keys("xlab-b", &format!("xlab-b[{x}]"));
+    }
+    if let Some(y) = ylab {
+        gt.set_keys("ylab-l", &format!("ylab-l[{y}]"));
+    }
+    if let Some(y) = ylab_r {
+        gt.set_keys("ylab-r", &format!("ylab-r[{y}]"));
+    }
+}
+
+/// READ_ORIENTATION_SHAPES: FORWARD 24 (triangle up), REVERSE 25 (down)
+fn orientation_shape(o: &str) -> u8 {
+    if o == "REVERSE" { 25 } else { 24 }
+}
+
+/// One element of a BQR panel: discrete position, dodge group order (the read strand's level), sample type,
+/// value (NaN as NA), percentiles (NA where the value is).
+#[derive(Clone)]
+struct BqrRow {
+    x: f64,
+    group: usize,
+    st: String,
+    orientation: String,
+    y: Option<f64>,
+    pct: [Option<f64>; 5],
+}
+
+/// position_dodge(width = 0.6) (preserve "total"): at each position the groups present, in group order
+fn dodge_total(rows: &[BqrRow]) -> (Vec<f64>, Vec<usize>) {
+    let mut shift = vec![0.0; rows.len()];
+    let mut ns = vec![1usize; rows.len()];
+    let mut xs: Vec<f64> = rows.iter().map(|r| r.x).collect();
+    xs.sort_by(f64::total_cmp);
+    xs.dedup();
+    for x in xs {
+        let idx: Vec<usize> = (0..rows.len()).filter(|&i| rows[i].x == x).collect();
+        let mut gs: Vec<usize> = idx.iter().map(|&i| rows[i].group).collect();
+        gs.sort();
+        gs.dedup();
+        let n = gs.len();
+        for &i in &idx {
+            ns[i] = n;
+            if n > 1 {
+                let k = gs.iter().position(|&g| g == rows[i].group).unwrap() as f64 + 1.0;
+                shift[i] = 0.6 * ((k - 0.5) / n as f64 - 0.5);
+            }
+        }
+    }
+    (shift, ns)
+}
+
+/// The layers of a BQR panel and its trained x positions: a line at 0 (inside the limits), the cohort's boxes
+/// (width 0.5 split by the groups at a position), the sample's triangles (fill by sample type), and (SNV96) the
+/// lines between the contexts on top.
+fn bqr_layers(rows: Vec<BqrRow>, cohort: bool, zero_line: bool, snv96: bool) -> (Vec<f64>, Layers) {
+    let (shift, ns) = dodge_total(&rows);
+    let mut xc = Vec::new();
+    for ((r, s), n) in rows.iter().zip(&shift).zip(&ns) {
+        let x = r.x + s;
+        // points: collide's x -+ 0.3, narrowed by pos_dodge to -+ 0.6 / n / 2; boxes -+ 0.5 / n / 2
+        let hp = if *n > 1 { 0.6 / *n as f64 / 2.0 } else { 0.3 };
+        let hb = if *n > 1 { 0.5 / *n as f64 / 2.0 } else { 0.25 };
+        xc.push(x - hp);
+        xc.push(x + hp);
+        if cohort && r.pct.iter().any(|p| p.is_some()) {
+            xc.push(x - hb);
+            xc.push(x + hb);
+        }
+    }
+    if snv96 {
+        // the vlines train the x scale
+        xc.extend((1..=15).map(|i| i as f64 + 0.5));
+    }
+    let layers: Layers = Rc::new(move |c: &mut Canvas, ctx: &Ctx, m: &Map| {
+        let grey90 = col("grey90");
+        if zero_line {
+            let y = m.b.npc_y(m.v.npc(0.0));
+            path(c, ctx, vec![(m.b.x0, y), (m.b.x1, y)], grey90, 0.21, "");
+        }
+        if cohort {
+            for ((r, s), n) in rows.iter().zip(&shift).zip(&ns) {
+                let [Some(mn), Some(lo), Some(md), Some(up), Some(mx)] = r.pct else { continue };
+                let x = r.x + s;
+                let hb = if *n > 1 { 0.5 / *n as f64 / 2.0 } else { 0.25 };
+                let outline = col("grey70");
+                let lw = BASE * 0.025;
+                path(c, ctx, vec![m.at(x, up), m.at(x, mx)], outline, lw, "");
+                path(c, ctx, vec![m.at(x, lo), m.at(x, mn)], outline, lw, "");
+                let (a, b) = (m.at(x - hb, lo), m.at(x + hb, up));
+                hmf_plot::ggp::rect(c, ctx, a.0, a.1, b.0, b.1, Some(type_colour(&r.st).with_alpha(0.3)), Some((outline, lw * PT)), Vec::new());
+                path(c, ctx, vec![m.at(x - hb, md), m.at(x + hb, md)], outline, 2.0 * lw, "");
+            }
+        }
+        for (r, s) in rows.iter().zip(&shift) {
+            let Some(y) = r.y else { continue };
+            let at = m.at(r.x + s, y);
+            hmf_plot::ggp::geom::point(c, ctx, at.0, at.1, orientation_shape(&r.orientation), Rgba::BLACK, type_colour(&r.st), BASE * 0.15, LINE);
+        }
+        if snv96 {
+            // & geom_vline: solid where the 5' base changes (every 4 contexts), dotted ("26", grey80) otherwise
+            for i in [4, 8, 12] {
+                let x = m.b.npc_x(m.h.npc(i as f64 + 0.5));
+                path(c, ctx, vec![(x, m.b.y0), (x, m.b.y1)], grey90, 0.21, "");
+            }
+            for i in (1..=15).filter(|i| ![4, 8, 12].contains(i)) {
+                let x = m.b.npc_x(m.h.npc(i as f64 + 0.5));
+                path(c, ctx, vec![(x, m.b.y0), (x, m.b.y1)], col("grey80"), 0.21, "26");
+            }
+        }
+    });
+    (xc, layers)
+}
+
+/// The lower bound of a quality bin label, e.g. 30 of "HIGH (30+)" (sub(".*\\((\\d+).*", "\\1", x))
+fn bin_lower_bound(s: &str) -> f64 {
+    match s.find('(') {
+        Some(i) => {
+            let digits: String = s[i + 1..].chars().take_while(|c| c.is_ascii_digit()).collect();
+            digits.parse().unwrap_or(f64::NAN)
+        }
+        None => f64::NAN,
+    }
+}
+
+/// The BQR plots (upstream 883ab11bba's plot_bqr): BQR by original base quality (H, page 1: x the sample type,
+/// rows the quality bins) and BQR by SNV96 context (page 2: x the context, rows the sample types); per read type a
+/// facet grid with the mutations as columns (free x scales), the read types stacked with heights by their rows, the
+/// y limits shared, the x axes and axis titles collected. Missing data: the missing-data plot.
+fn bqr(th: &Theme, inp: &Inputs, ft: &str) -> Built {
+    let snv96 = ft == "BQR_PER_SNV96_CONTEXT";
+    let (title, xlab, ylab) = if snv96 { ("BQR by SNV96 context", "Mutation context", "Phred score adjustment") } else { ("BQR by original base quality", "Sample type", "Phred score adjustment") };
+    let Some(d) = inp.plot_data(ft) else {
+        return Built::Plot(missing(th, title, xlab, ylab));
+    };
+    let title = if snv96 { format!("{title}, original base quality: {}", d.rows.first().map(|r| r.field("OriginalQualBin")).unwrap_or("NA")) } else { title.to_string() };
+    let x_field = if snv96 { "StandardTrinucContext" } else { "SampleType" };
+    let row_field = if snv96 { "SampleType" } else { "OriginalQualBin" };
+    let field = |r: &Row, f: &str| -> String { if f == "SampleType" { r.sample_type.clone() } else { r.field(f).to_string() } };
+    let st_levels = d.levels("SampleType");
+    let x_levels = if snv96 { d.levels(x_field) } else { st_levels.clone() };
+    let mut row_levels = if snv96 { st_levels.clone() } else { d.levels(row_field) };
+    if !snv96 {
+        // levels ordered by the bins' lower bounds (a stable order)
+        let mut keyed: Vec<(f64, String)> = row_levels.iter().map(|l| (bin_lower_bound(l), l.clone())).collect();
+        keyed.sort_by(|a, b| a.0.total_cmp(&b.0));
+        row_levels = keyed.into_iter().map(|(_, l)| l).collect();
+    }
+    let mut_levels = d.levels("StandardMutation");
+    let orient_levels = d.levels("ReadOrientation");
+    let rt_levels = d.levels("ReadType");
+    // NaN values (too few counts) are NA, and so are their cohort percentiles
+    let value = |r: &Row| r.value.filter(|v| !v.is_nan());
+    let pct_of = |r: &Row| if value(r).is_some() { r.pct } else { [None; 5] };
+    let mut all: Vec<f64> = Vec::new();
+    for r in &d.rows {
+        if let Some(v) = value(r) {
+            all.push(v);
+        }
+        let p = pct_of(r);
+        all.extend([p[0], p[4]].iter().filter_map(|x| *x));
+    }
+    let finite: Vec<f64> = all.iter().copied().filter(|v| v.is_finite()).collect();
+    let y_limits = if finite.is_empty() { (0.0, 1.0) } else { (finite.iter().copied().fold(f64::INFINITY, f64::min), finite.iter().copied().fold(f64::NEG_INFINITY, f64::max)) };
+    // scale_y_continuous(limits = y_limits, breaks = pretty breaks away from the edges, labels "+x"): the breaks
+    // function is given the expanded range (view_scale's continuous range), and its breaks are kept inside it
+    let range = scales::expand(y_limits, 0.05, 0.0);
+    let margin = 0.1 * (range.1 - range.0);
+    let breaks: Vec<f64> = if range.1 - range.0 == 0.0 {
+        vec![range.0]
+    } else {
+        hmf_plot::ggp::scales::pretty(range.0, range.1, 5).into_iter().filter(|&b| b > range.0 + margin && b < range.1 - margin).collect()
+    };
+    let breaks: Vec<f64> = breaks.into_iter().filter(|&b| b >= range.0 && b <= range.1).collect();
+    let v = Pos { range, log: false, breaks: breaks.clone(), labels: plus_labels(&breaks), logticks: Vec::new() };
+    let zero_line = y_limits.0 <= 0.0 && 0.0 <= y_limits.1;
+    let mut subplots: Vec<Patch> = Vec::new();
+    let mut heights: Vec<Option<f64>> = Vec::new();
+    for (ri, rt) in rt_levels.iter().enumerate() {
+        let rt_rows: Vec<&Row> = d.rows.iter().filter(|r| r.field("ReadType") == rt).collect();
+        if rt_rows.is_empty() {
+            continue;
+        }
+        let rows_present: Vec<String> = row_levels.iter().filter(|l| rt_rows.iter().any(|r| field(r, row_field) == **l)).cloned().collect();
+        let cols_present: Vec<String> = mut_levels.iter().filter(|l| rt_rows.iter().any(|r| r.field("StandardMutation") == *l)).cloned().collect();
+        heights.push(Some(rows_present.len() as f64));
+        // free x: each column's levels present
+        let col_levels: Vec<Vec<String>> = cols_present.iter().map(|c| x_levels.iter().filter(|l| rt_rows.iter().any(|r| r.field("StandardMutation") == c && field(r, x_field) == **l)).cloned().collect()).collect();
+        let mut col_x: Vec<Vec<f64>> = vec![Vec::new(); cols_present.len()];
+        let mut grid: Vec<Vec<Layers>> = Vec::new();
+        for rf in &rows_present {
+            let mut row = Vec::new();
+            for (ci, c) in cols_present.iter().enumerate() {
+                let lv = &col_levels[ci];
+                let rows: Vec<BqrRow> = rt_rows
+                    .iter()
+                    .filter(|r| field(r, row_field) == *rf && r.field("StandardMutation") == c)
+                    .map(|r| {
+                        let o = r.field("ReadOrientation").to_string();
+                        BqrRow {
+                            x: (lv.iter().position(|l| *l == field(r, x_field)).unwrap() + 1) as f64,
+                            group: orient_levels.iter().position(|l| *l == o).unwrap_or(0),
+                            st: r.sample_type.clone(),
+                            orientation: o,
+                            y: value(r),
+                            pct: pct_of(r),
+                        }
+                    })
+                    .collect();
+                let (xc, layers) = bqr_layers(rows, inp.has_cohort, zero_line, snv96);
+                col_x[ci].extend(xc);
+                row.push(layers);
+            }
+            grid.push(row);
+        }
+        let hs: Vec<Pos> = col_levels.iter().zip(&col_x).map(|(lv, xs)| discrete(lv.len(), lv.clone(), xs)).collect();
+        let mut spec = base_spec(th, if ri == 0 { Some(title.as_str()) } else { None }, if snv96 { Some(xlab) } else { None }, Some(ylab));
+        spec.subtitle = Some((format!("Consensus type: {rt}"), BASE * 0.85));
+        spec.strips_top = Some(cols_present.clone());
+        spec.strips_right = Some(rows_present.iter().map(|l| if snv96 { if l == "NORMAL" { "Normal".to_string() } else if l == "TUMOR" { "Tumor".to_string() } else { l.clone() } } else { l.clone() }).collect());
+        spec.spacing_x = th.pt(-0.5);
+        spec.spacing_y = th.pt(-0.5);
+        if snv96 {
+            let mut h_text = th.axis_text_h();
+            h_text.angle = 90.0;
+            h_text.hjust = 1.0;
+            h_text.vjust = 0.5;
+            h_text.size = BASE * 0.5;
+            spec.h_text = Some(h_text);
+        } else {
+            spec.h_text = None;
+            spec.h_ticks = false;
+        }
+        spec.h = hs.clone();
+        spec.v = vec![v.clone(); rows_present.len()];
+        spec.layers = grid;
+        let h_text = spec.h_text.clone();
+        let h_ticks = spec.h_ticks;
+        let mut gt = gg::table(th, spec);
+        set_collect_keys(&mut gt, &hs, &h_text, h_ticks, if snv96 { Some(xlab) } else { None }, Some(ylab), None);
+        subplots.push(patchwork::plot(gt));
+    }
+    let n = subplots.len();
+    let layout = Layout { design: (1..=n).map(|i| patchwork::Area::cell(i, 1)).collect(), widths: vec![None], heights };
+    Built::Patchwork(patchwork::build_collect(subplots, &layout, patchwork::Collect { axes_x: true, axes_y: false, titles_x: true, titles_y: true }))
+}
+
+/// Microsatellite indel error rates and bias (upstream 883ab11bba: the rates titled "Microsatellite indel errors"
+/// with the subtitle "Rates", the bias with the subtitle "Bias", its y axis "Phred score diff." with the direction
+/// of the bias written in the first column, and its y range expanded by 12%).
 fn ms_indel(th: &Theme, inp: &Inputs, ft: &str) -> Gtable {
     let bias = ft == "MS_INDEL_ERROR_BIAS";
-    let title = if bias { "Microsatellite indel error bias" } else { "Microsatellite indel error rates" };
-    let ylab = if bias { "Phred score diff. (del - ins)" } else { "Phred score" };
+    let title = if bias { None } else { Some("Microsatellite indel errors") };
+    let subtitle = if bias { "Bias" } else { "Rates" };
+    let ylab = if bias { "Phred score diff." } else { "Phred score" };
     let Some(d) = inp.plot_data(ft) else {
-        return missing(th, title, "Repeat units", ylab);
+        // plot_missing_data(plot_labels): the subtitle at the theme's size
+        let mut spec = missing_spec(th, title, "Repeat units", ylab);
+        spec.subtitle = Some((subtitle.to_string(), BASE));
+        let mut gt = gg::table(th, spec);
+        set_collect_keys(&mut gt, &[], &None, false, Some("Repeat units"), Some(ylab), None);
+        return gt;
     };
     let cols = d.levels("RepeatUnitType");
     let rows_f = d.levels("ConsensusType");
     let st_levels = d.levels("SampleType");
-    let mut spec = base_spec(th, Some(title), Some("Repeat units"), Some(ylab));
+    let mut spec = base_spec(th, title, Some("Repeat units"), Some(ylab));
+    spec.subtitle = Some((subtitle.to_string(), BASE * 0.85));
     if bias {
-        spec.ylab = Some(Label::Atop("Phred score diff. (del - ins)".into(), "more del errors <-> more ins errors".into()));
         spec.grid_h = true;
     } else {
         spec.grid_h = true;
@@ -797,7 +1021,7 @@ fn ms_indel(th: &Theme, inp: &Inputs, ft: &str) -> Gtable {
     let mut grid: Vec<Vec<Layers>> = Vec::new();
     for rf in &rows_f {
         let mut row = Vec::new();
-        for c in &cols {
+        for (ci, c) in cols.iter().enumerate() {
             let rows: Vec<PwRow> = d
                 .rows
                 .iter()
@@ -808,6 +1032,18 @@ fn ms_indel(th: &Theme, inp: &Inputs, ft: &str) -> Gtable {
             let (xc, yc, layers) = pairwise_layers(rows, Pairwise::PointRange, inp.has_cohort, 1.0, hl, Vec::new(), 0, Vec::new());
             all_x.extend(xc);
             all_y.extend(yc);
+            let layers: Layers = if bias && ci == 0 {
+                // geom_text(x = -Inf, y = Inf / -Inf, vjust 1.5 / -0.5, hjust -0.05, size BASE * 0.22, grey40)
+                Rc::new(move |cv: &mut Canvas, ctx: &Ctx, m: &Map| {
+                    layers(cv, ctx, m);
+                    let fs = BASE * 0.22 * PT;
+                    let grey40 = col("grey40");
+                    gg::text(cv, ctx, m.b.x0, m.b.y0, "More ins errors", fs, grey40, -0.05, 1.5);
+                    gg::text(cv, ctx, m.b.x0, m.b.y1, "More del errors", fs, grey40, -0.05, -0.5);
+                })
+            } else {
+                layers
+            };
             row.push(layers);
         }
         grid.push(row);
@@ -816,15 +1052,30 @@ fn ms_indel(th: &Theme, inp: &Inputs, ft: &str) -> Gtable {
     all_x.extend([4.0, 15.0]);
     let h = continuous(&all_x, (None, None), (None, None), false, Breaks::Width(3.0), &default_labels, false);
     let v = if bias {
-        continuous(&all_y, (None, None), (None, None), false, Breaks::Auto, &plus_labels, false)
+        // scale_y_continuous(expand = expansion(mult = 0.12))
+        let finite: Vec<f64> = all_y.iter().copied().filter(|v| v.is_finite()).collect();
+        let lim = if finite.is_empty() { (0.0, 1.0) } else { (finite.iter().copied().fold(f64::INFINITY, f64::min), finite.iter().copied().fold(f64::NEG_INFINITY, f64::max)) };
+        let range = scales::expand(lim, 0.12, 0.0);
+        let kept: Vec<f64> = rfmt::extended_breaks(range.0, range.1, 5).into_iter().filter(|&b| b >= range.0 && b <= range.1).collect();
+        Pos { range, log: false, labels: plus_labels(&kept), breaks: kept, logticks: Vec::new() }
     } else {
         // scale_y_continuous(limits = c(0, NA)): values below 0 are dropped by the scale
         continuous(&all_y.iter().copied().filter(|v| *v >= 0.0).collect::<Vec<_>>(), (Some(0.0), None), (None, None), false, Breaks::Auto, &default_labels, false)
     };
-    spec.h = vec![h; cols.len()];
+    let hs = vec![h; cols.len()];
+    spec.h = hs.clone();
     spec.v = vec![v; rows_f.len()];
     spec.layers = grid;
-    gg::table(th, spec)
+    let h_text = spec.h_text.clone();
+    let mut gt = gg::table(th, spec);
+    set_collect_keys(&mut gt, &hs, &h_text, true, Some("Repeat units"), Some(ylab), Some("Consensus read type"));
+    gt
+}
+
+/// I (upstream 883ab11bba): wrap_plots(rates, bias, ncol = 1) + plot_layout(axes = "collect_x", axis_titles = "collect")
+fn ms_indel_pair(th: &Theme, inp: &Inputs) -> Built {
+    let p = vec![patchwork::plot(ms_indel(th, inp, "MS_INDEL_ERROR_RATES")), patchwork::plot(ms_indel(th, inp, "MS_INDEL_ERROR_BIAS"))];
+    Built::Patchwork(patchwork::build_collect(p, &Layout::column(2, vec![None, None]), patchwork::Collect { axes_x: true, axes_y: false, titles_x: true, titles_y: true }))
 }
 
 // -------------------------------------------------------------------------------------------------------------
@@ -1015,7 +1266,10 @@ fn summary(th: &Theme, inp: &Inputs) -> Option<Gtable> {
 // -------------------------------------------------------------------------------------------------------------
 // the legend (Z) and the title
 
-fn legend_patch(th: &Theme) -> Patch {
+/// create_legend(show_qc_status) (upstream 883ab11bba): the sample types, the read strands (the BQR plots' triangles)
+/// and, on page 1, the QC statuses, in one guide box at the legend's default position (right: the legends stacked,
+/// left-aligned, the box centred), placed over the whole patch (wrap_elements(full = )).
+fn legend_patch(th: &Theme, show_qc_status: bool) -> Patch {
     let ctx = th.ctx;
     let key = ctx.dev.bigpt(1.2 * 12.0 * 1.2);
     let st_entries: Vec<(String, KeyGlyph)> = [("Tumor sample", TUMOR_COL, 1.0), ("Tumor cohort", TUMOR_COL, 0.2), ("Normal sample", NORMAL_COL, 1.0), ("Normal cohort", NORMAL_COL, 0.2)]
@@ -1025,6 +1279,9 @@ fn legend_patch(th: &Theme) -> Patch {
             (l.to_string(), KeyGlyph::Point { shape: 15, colour, fill: colour, size: BASE * 0.5, stroke: LINE })
         })
         .collect();
+    // guide_legend(override.aes = list(size = BASE * 0.3, fill = "grey50")): black outlines, the default stroke
+    let rs_entries: Vec<(String, KeyGlyph)> =
+        [("Forward", 24u8), ("Reverse", 25u8)].iter().map(|(l, sh)| (l.to_string(), KeyGlyph::Point { shape: *sh, colour: Rgba::BLACK, fill: col("grey50"), size: BASE * 0.3, stroke: 0.5 })).collect();
     let qc_entries: Vec<(String, KeyGlyph)> = ["FAIL", "WARN", "PASS"].iter().map(|q| (q.to_string(), KeyGlyph::Label { fill: qc_colour(q), border: Rgba::BLACK, size: BASE * 0.35, linewidth: LINE * 0.5 })).collect();
     let mut ttl = TextEl::new(BASE);
     ttl.hjust = 0.0;
@@ -1038,18 +1295,26 @@ fn legend_patch(th: &Theme) -> Patch {
         background: Some(RectEl { fill: Some(Rgba::WHITE), colour: None, linewidth: LINE }),
         key_background: Some(RectEl { fill: Some(Rgba::WHITE), colour: None, linewidth: LINE }),
     };
-    let point_key = (BASE * 0.5) / 10.0 * ctx.dev.cm(1.0);
-    // plot_qc.R builds the legend (ggplot_gtable) at the top level, where pdf(NULL) is the open device: its sizes
-    // are pdf()'s even in the PNG, where it is drawn
+    let point_key = |size: f64| size / 10.0 * ctx.dev.cm(1.0);
+    // plot_qc.R builds the legends (ggplot_gtable) at the top level, where pdf(NULL) is the open device: their sizes
+    // are pdf()'s even in the PNG, where they are drawn
     let mctx = match ctx.dev {
         Device::Png { dpi } => Ctx { dev: Device::PdfAt { dpi }, v: ctx.v },
         _ => ctx,
     };
-    let l1 = guides::legend_measured(ctx, mctx, &LegendSpec::Keys { title: "Sample type".into(), entries: st_entries, key_width: key.max(point_key), key_height: key.max(point_key) }, &lth);
-    let l2 = guides::legend_measured(ctx, mctx, &LegendSpec::Keys { title: "QC status".into(), entries: qc_entries, key_width: key, key_height: key }, &lth);
-    let gb = guides::guide_box(ctx, GuideBox { legends: vec![l1, l2], horizontal: true, just: (0.5, 0.5), box_just: (0.5, 1.0), spacing: th.pt(2.0 * HALF), box_margin: [0.0; 4] });
+    let kst = key.max(point_key(BASE * 0.5));
+    let krs = key.max(point_key(BASE * 0.3));
+    let mut legends = vec![
+        guides::legend_measured(ctx, mctx, &LegendSpec::Keys { title: "Sample type".into(), entries: st_entries, key_width: kst, key_height: kst }, &lth),
+        guides::legend_measured(ctx, mctx, &LegendSpec::Keys { title: "Read strand".into(), entries: rs_entries, key_width: krs, key_height: krs }, &lth),
+    ];
+    if show_qc_status {
+        legends.push(guides::legend_measured(ctx, mctx, &LegendSpec::Keys { title: "QC status".into(), entries: qc_entries, key_width: key, key_height: key }, &lth));
+    }
+    // legend.position "right": legend.box vertical, legend.box.just c("left", "top"), legend.justification centre
+    let gb = guides::guide_box(ctx, GuideBox { legends, horizontal: false, just: (0.5, 0.5), box_just: (0.0, 1.0), spacing: th.pt(2.0 * HALF), box_margin: [0.0; 4] });
     let m = th.margin();
-    patchwork::wrap_panel(Grob::table(gb), m, Some(rect_grob(ctx, RectEl { fill: Some(Rgba::WHITE), colour: Some(Rgba::WHITE), linewidth: LINE })))
+    patchwork::wrap_full(Grob::table(gb), m, Some(rect_grob(ctx, RectEl { fill: Some(Rgba::WHITE), colour: Some(Rgba::WHITE), linewidth: LINE })))
 }
 
 /// REPORT_TITLE: "<tumor>: <most severe status>" and the WARN and FAIL features per sample type.
@@ -1087,7 +1352,11 @@ fn title_texts(inp: &Inputs, tumor: &str) -> (String, Option<String>) {
 // -------------------------------------------------------------------------------------------------------------
 // the report
 
-fn report_table(ctx: Ctx, inp: &Inputs, tumor: &str) -> Gtable {
+/// One page of the report (upstream 883ab11bba: two pages). Page 1: the summary table, coverage, fragment length,
+/// GC bias, duplicate frequency, discordant fragments, missed variants, BQR by original base quality, the MS indel
+/// errors and the legend in a design of 4 x 9 cells (columns 5 and 6 narrower); page 2: BQR by SNV96 context and the
+/// legend without the QC statuses. Both with the report title.
+fn report_table(ctx: Ctx, inp: &Inputs, tumor: &str, page: usize) -> Gtable {
     let th = Theme { ctx };
     let free_label = |gt: Gtable, nested: bool| -> Patch {
         let mut p = if nested { patchwork::nested(gt) } else { patchwork::plot(gt) };
@@ -1099,32 +1368,40 @@ fn report_table(ctx: Ctx, inp: &Inputs, tumor: &str) -> Gtable {
         patchwork::free_panel(&mut p.gt, [false, false, false, true]);
         p
     };
-    // free(<patchwork>) ends with merge(), which nests the free summary table once more (merge.patchwork); free() of
-    // a ggplot (the missing-data plot) returns it as it is (merge.ggplot)
-    let a = match summary(&th, inp) {
-        Some(t) => patchwork::merge(free_label(t, true)),
-        None => free_label(missing(&th, "", "", ""), false),
+    let gt = if page == 1 {
+        // free(<patchwork>) ends with merge(), which nests the free summary table once more (merge.patchwork); free() of
+        // a ggplot (the missing-data plot) returns it as it is (merge.ggplot)
+        let a = match summary(&th, inp) {
+            Some(t) => patchwork::merge(free_label(t, true)),
+            None => free_label(missing(&th, "", "", ""), false),
+        };
+        // in the design's order (A to I, then Z): wrap_plots matches the plots' names to the design's letters
+        let patches = vec![
+            a,
+            free_label(distribution_plot(&th, inp, "COVERAGE_DISTRIBUTION", "Coverage", "Coverage", "Bases"), false),
+            free_label(distribution_plot(&th, inp, "FRAG_LENGTH_DISTRIBUTION", "Fragment length", "Fragment length", "Fragments"), false),
+            free_label(distribution_plot(&th, inp, "DUPLICATE_FREQ", "Duplicate frequency", "Duplicate read count", "Read groups"), false),
+            free_label(distribution_plot(&th, inp, "GC_BIAS", "GC bias", "GC proportion", "Normalised median read depth"), false),
+            free_panel_l(discordant(&th, inp)),
+            free_panel_l(missed_variants(&th, inp)),
+            // H and I are placed as they are (not freed)
+            patch_of(bqr(&th, inp, "BQR_PER_ORIG_QUAL")),
+            patch_of(ms_indel_pair(&th, inp)),
+            {
+                let mut p = legend_patch(&th, true);
+                patchwork::free_label(&mut p.gt, [true; 4]);
+                p
+            },
+        ];
+        let mut layout = Layout::design("AABBEEDDZ\nAACCFFGGZ\nAAHHHIIIZ\nAAHHHIIIZ");
+        layout.widths = [1.0, 1.0, 1.0, 1.0, 0.74, 0.74, 1.0, 1.0, 0.75].iter().map(|&w| Some(w)).collect();
+        patchwork::build(patches, &layout)
+    } else {
+        let patches = vec![free_label_of(bqr(&th, inp, "BQR_PER_SNV96_CONTEXT")), legend_patch(&th, false)];
+        let mut layout = Layout::row(2);
+        layout.widths = vec![Some(1.0), Some(0.1)];
+        patchwork::build(patches, &layout)
     };
-    let patches = vec![
-        a,
-        free_label(distribution_plot(&th, inp, "COVERAGE_DISTRIBUTION", "Coverage", "Coverage", "Bases"), false),
-        free_label(distribution_plot(&th, inp, "FRAG_LENGTH_DISTRIBUTION", "Fragment length", "Fragment length", "Fragments"), false),
-        free_label(distribution_plot(&th, inp, "DUPLICATE_FREQ", "Duplicate frequency", "Duplicate read count", "Read groups"), false),
-        free_label(distribution_plot(&th, inp, "GC_BIAS", "GC bias", "GC proportion", "Normalised median read depth"), false),
-        free_panel_l(discordant(&th, inp)),
-        free_panel_l(missed_variants(&th, inp)),
-        free_label(bqr(&th, inp, "BQR_PER_ORIG_QUAL"), false),
-        free_label(bqr(&th, inp, "BQR_PER_SNV96_CONTEXT"), false),
-        free_label(ms_indel(&th, inp, "MS_INDEL_ERROR_RATES"), false),
-        free_label(ms_indel(&th, inp, "MS_INDEL_ERROR_BIAS"), false),
-        {
-            let mut p = legend_patch(&th);
-            patchwork::free_label(&mut p.gt, [true; 4]);
-            p
-        },
-    ];
-    let layout = Layout::design("AABBCCDD\nAAEEFFGG\nAAHHIIII\nAAJJKKZZ");
-    let gt = patchwork::build(patches, &layout);
     let (title, subtitle) = title_texts(inp, tumor);
     let mut tel = TextEl::new(BASE * 1.4);
     tel.face = Face::Bold;
@@ -1146,9 +1423,15 @@ fn report_table(ctx: Ctx, inp: &Inputs, tumor: &str) -> Gtable {
     patchwork::annotate(gt, Annotation { margin: m, title: Some((t.grob(ctx), th_)), subtitle: sub.or(Some((Grob::Zero, 0.0))), background: Some(rect_grob(ctx, RectEl { fill: Some(Rgba::WHITE), colour: Some(Rgba::WHITE), linewidth: LINE })) })
 }
 
-/// Writes the report: the PDF, and for a single patient the PNG beside it (17 x 10 inches; 300 dpi). Returns the
-/// PDF's page (for -merge_plots).
-pub fn report(tumor: &str, reference: Option<&str>, vis_path: &str, cohort: Option<&str>, pdf_path: &str, single_patient: bool) -> Result<Figure> {
+/// The PNG of a page (upstream 883ab11bba): `<report>.page_<n>.png` beside the PDF (`sub("pdf$", "page_n.png", ...)`)
+pub fn page_png_path(pdf_path: &str, page: usize) -> String {
+    format!("{}page_{page}.png", pdf_path.strip_suffix("pdf").unwrap_or(pdf_path))
+}
+
+/// Writes the report: the PDF (two pages), and for a single patient a PNG per page (17 x 10 inches; 300 dpi); in the
+/// default mode also page 1 as `<report>.png`, the name ORANGE reads (QS17). Returns the PDF's pages (for
+/// -merge_plots).
+pub fn report(tumor: &str, reference: Option<&str>, vis_path: &str, cohort: Option<&str>, pdf_path: &str, single_patient: bool) -> Result<Vec<Figure>> {
     let inp = Inputs::read(vis_path, cohort, tumor, reference)?;
     let (w_in, h_in) = (17.0, 10.0);
     hmf_common::info!("Writing PDF: {pdf_path}");
@@ -1160,34 +1443,43 @@ pub fn report(tumor: &str, reference: Option<&str>, vis_path: &str, cohort: Opti
         hmf_plot::pdf_figure::write_r_pdf(pdf_path, &[fig], w, h).map_err(|e| anyhow::anyhow!("writing {pdf_path}: {e}"))?;
         anyhow::bail!("R: Error in names(object) <- nm : attempt to set an attribute on NULL (an empty LOG10 summary sub-table)");
     }
-    let page = {
+    let mut pages = Vec::new();
+    for page in [1, 2] {
         let ctx = Ctx { dev: Device::Pdf, v: Version::V403 };
-        let t = report_table(ctx, &inp, tumor);
+        let t = report_table(ctx, &inp, tumor, page);
         let (w, h) = (w_in * 72.0, h_in * 72.0);
         let mut fig = Figure::new(w as u32, h as u32, Rgba::WHITE);
         let mut c = Canvas::new(&mut fig);
         hmf_plot::ggp::record_drawn_boxes(boxes_wanted());
         t.draw(&mut c, Bx::new(0.0, 0.0, w, h));
-        dump_boxes(&t, w, h, "pdf");
-        hmf_plot::pdf_figure::write_r_pdf(pdf_path, std::slice::from_ref(&fig), w, h).map_err(|e| anyhow::anyhow!("writing {pdf_path}: {e}"))?;
-        fig
-    };
+        dump_boxes(&t, w, h, &format!("page_{page}.pdf"));
+        pages.push(fig);
+    }
+    hmf_plot::pdf_figure::write_r_pdf(pdf_path, &pages, w_in * 72.0, h_in * 72.0).map_err(|e| anyhow::anyhow!("writing {pdf_path}: {e}"))?;
     if single_patient {
-        let png = format!("{}png", pdf_path.strip_suffix("pdf").unwrap_or(pdf_path));
-        hmf_common::info!("Writing PNG: {png}");
-        let ctx = Ctx { dev: Device::Png { dpi: 300.0 }, v: Version::V403 };
-        let t = report_table(ctx, &inp, tumor);
-        let (w, h) = ((w_in * 300.0) as u32, (h_in * 300.0) as u32);
-        let mut fig = Figure::new(w, h, Rgba::WHITE);
-        fig.meta = PngMeta { dpi: Some(300.0), transparent_key: None };
-        let mut c = Canvas::new(&mut fig);
-        hmf_plot::ggp::record_drawn_boxes(boxes_wanted());
-        t.draw(&mut c, Bx::new(0.0, 0.0, w as f64, h as f64));
-        dump_boxes(&t, w as f64, h as f64, "png");
-        fig.write_png(&png).with_context(|| format!("writing {png}"))?;
+        for page in [1, 2] {
+            let png = page_png_path(pdf_path, page);
+            hmf_common::info!("Writing PNG: {png}");
+            let ctx = Ctx { dev: Device::Png { dpi: 300.0 }, v: Version::V403 };
+            let t = report_table(ctx, &inp, tumor, page);
+            let (w, h) = ((w_in * 300.0) as u32, (h_in * 300.0) as u32);
+            let mut fig = Figure::new(w, h, Rgba::WHITE);
+            fig.meta = PngMeta { dpi: Some(300.0), transparent_key: None };
+            let mut c = Canvas::new(&mut fig);
+            hmf_plot::ggp::record_drawn_boxes(boxes_wanted());
+            t.draw(&mut c, Bx::new(0.0, 0.0, w as f64, h as f64));
+            dump_boxes(&t, w as f64, h as f64, &format!("page_{page}.png"));
+            fig.write_png(&png).with_context(|| format!("writing {png}"))?;
+            // QS17: the report's PNG under the name ORANGE (MiscToolFiles.QSEE_PLOT_FILE_ID) looks for, page 1
+            if page == 1 && !crate::compat::java("QS17") {
+                let legacy = format!("{}png", pdf_path.strip_suffix("pdf").unwrap_or(pdf_path));
+                hmf_common::info!("Writing PNG: {legacy}");
+                std::fs::copy(&png, &legacy).with_context(|| format!("writing {legacy}"))?;
+            }
+        }
     }
     let _ = (Item::Clip(None), Stroke::solid(Rgba::BLACK, 1.0), STROKE);
-    Ok(page)
+    Ok(pages)
 }
 
 /// QseePlot.mergePlots: the reports' pages in one PDF (`multisample.qsee.vis.report.pdf`), in sample order.
@@ -1217,6 +1509,26 @@ fn dump_boxes(t: &Gtable, w: f64, h: f64, kind: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// upstream 883ab11bba: a PNG per page, `sub("pdf$", "page_<n>.png", <pdf>)`
+    #[test]
+    fn page_png_names() {
+        assert_eq!(page_png_path("/out/T.qsee.vis.report.pdf", 1), "/out/T.qsee.vis.report.page_1.png");
+        assert_eq!(page_png_path("T.qsee.vis.report.x.pdf", 2), "T.qsee.vis.report.x.page_2.png");
+    }
+
+    /// The BQR plot's quality bins in the order of their lower bounds, and position_dodge(0.6) of the read strands
+    #[test]
+    fn bqr_bins_and_dodge() {
+        assert_eq!(bin_lower_bound("HIGH (30+)"), 30.0);
+        assert_eq!(bin_lower_bound("LOW (0-29)"), 0.0);
+        assert_eq!(bin_lower_bound("MEDIUM (19-29)"), 19.0);
+        let row = |x: f64, group: usize| BqrRow { x, group, st: "TUMOR".into(), orientation: "FORWARD".into(), y: Some(1.0), pct: [None; 5] };
+        let (shift, ns) = dodge_total(&[row(1.0, 1), row(1.0, 0), row(2.0, 1)]);
+        assert_eq!(ns, vec![2, 2, 1]);
+        assert!((shift[0] - 0.15).abs() < 1e-12 && (shift[1] + 0.15).abs() < 1e-12 && shift[2] == 0.0);
+        assert_eq!((orientation_shape("FORWARD"), orientation_shape("REVERSE")), (24, 25));
+    }
 
     /// geom_label in the summary table (ggplot2 4.0.3, png() at 300 dpi): the box is centred on its point (R's "rrvp"
     /// viewport has the centre of the label's anchor viewport), 51.9066 px high whatever the one-line text (R's boxes

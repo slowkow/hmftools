@@ -38,7 +38,7 @@ git -C "$root" archive HEAD \
     teal-rs/Cargo.toml teal-rs/Cargo.lock teal-rs/src teal-rs/resources \
     lilac-rs/Cargo.toml lilac-rs/Cargo.lock lilac-rs/src lilac-rs/resources lilac-rs/testdata \
     cider-rs/Cargo.toml cider-rs/Cargo.lock cider-rs/src cider-rs/resources \
-    pave-rs/Cargo.toml pave-rs/Cargo.lock pave-rs/build.rs pave-rs/src \
+    pave-rs/Cargo.toml pave-rs/Cargo.lock pave-rs/build.rs pave-rs/src pave-rs/resources \
     purple-rs/Cargo.toml purple-rs/Cargo.lock purple-rs/.cargo purple-rs/build.rs purple-rs/src purple-rs/resources \
     linx-rs/Cargo.toml linx-rs/Cargo.lock linx-rs/.cargo linx-rs/src linx-rs/resources \
     sigs-rs/Cargo.toml sigs-rs/Cargo.lock sigs-rs/src \

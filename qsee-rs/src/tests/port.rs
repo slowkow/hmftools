@@ -25,11 +25,13 @@ pub fn test_config() -> QseeConfig {
         cohort_percentiles_file: None,
         thresholds_file: None,
         thresholds: ThresholdRegistry::create_default(false),
+        exon_exclusions: crate::coverage::ExonExclusions::empty(),
         sequencing_type: SequencingType::Illumina,
         categories: PrepCategory::ALL.to_vec(),
         targeted_mode: false,
         allow_missing_input: false,
         skip_plot: true,
+        lod_min_alt_reads: crate::coverage::DEFAULT_LOD_MIN_ALT_READS,
         write_lod_details: false,
         output_dir: String::new(),
         output_id: None,
@@ -75,8 +77,11 @@ fn threshold_display_as_big_decimal() {
 #[test]
 fn default_thresholds() {
     let t = ThresholdRegistry::create_default(false);
-    // 5 common (both types), 9 decided by PURPLE, 7 tumor and 7 normal coverage thresholds
-    assert_eq!(t.get_all().len(), 10 + 9 + 14);
+    // 5 common (both types), 9 decided by PURPLE, 7 tumor and 7 normal coverage thresholds; since upstream
+    // bdceb2302a the low coverage exons (both types) and the exon LoD VAF (tumor, normal)
+    assert_eq!(t.get_all().len(), 10 + 9 + 14 + 2 + 2);
+    let lod = ThresholdKey::new(SampleType::Tumor, FeatureType::ExonVariantLod, "LOD_VAF", QcStatusType::Warn);
+    assert_eq!((t.get(&lod).unwrap().threshold, ThresholdRegistry::create_default(true).get(&lod).unwrap().threshold), (0.1, 0.05));
     let tg = ThresholdRegistry::create_default(true);
     let key = ThresholdKey::new(SampleType::Tumor, FeatureType::SummaryTable, "DUPLICATE_READS", QcStatusType::Warn);
     assert_eq!((t.get(&key).unwrap().threshold, tg.get(&key).unwrap().threshold), (0.3, 0.99));
@@ -279,6 +284,10 @@ fn default_thresholds_writer_qs2() {
     let text = std::fs::read_to_string(dir.join("qsee.thresholds.default.tsv")).unwrap();
     assert!(text.contains("TUMOR\tSUMMARY_TABLE\tPURITY\tWARN\tNA\t0.2\tfalse\n"));
     assert!(text.contains("TUMOR\tSUMMARY_TABLE\tDUPLICATE_READS\tWARN\tGREATER_THAN\t0.99\ttrue\n"));
+    // upstream bdceb2302a's thresholds
+    assert!(text.contains("TUMOR\tSUMMARY_TABLE\tLOW_COVERAGE_EXONS\tWARN\tGREATER_THAN\t0.1\ttrue\n"));
+    assert!(text.contains("TUMOR\tEXON_VARIANT_LOD\tLOD_VAF\tWARN\tGREATER_THAN\t0.05\ttrue\n"));
+    assert!(text.contains("NORMAL\tEXON_VARIANT_LOD\tLOD_VAF\tWARN\tGREATER_THAN\t0.3\ttrue\n"));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

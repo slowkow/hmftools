@@ -2,7 +2,8 @@
 
 This report covers how `pave-rs` was checked against Java PAVE 2.0, the faults found in the Java code,
 and the timings. Java PAVE 2.0 is this repository's `pave/target/pave-2.0-jar-with-dependencies.jar`,
-built from sources that follow upstream commit ca04e6c39d of 2026-11-20. Options and outputs are in
+built from sources that follow upstream commit ca04e6c39d of 2026-11-20; since 2026-11-28 the port follows upstream
+master 883ab11bba (section 7), whose jar is the reference of `-java_compat`. Options and outputs are in
 [README.md](README.md).
 
 ## 1. What is ported
@@ -15,6 +16,7 @@ All of `PaveApplication` as oncoanalyser runs it (PAVE_SOMATIC and PAVE_GERMLINE
 | ChromosomeTask (task, applyFilters) | `task.rs`; reading the input in `input.rs` |
 | VariantData, GeneDataCache, GeneCacheIndexing | `variant.rs`, `gene_cache.rs` |
 | VcfWriter, TranscriptWriter | `output.rs` (the VCF writer itself is hmf-common-rs `vcf`) |
+| impact: SpecificSpliceRegion and its resource `splice/special_splice_regions.tsv` (upstream 4adc014589) | `impact/special_splice.rs`, `resources/splice/` (built into the binary) |
 | impact: ImpactClassifier, VariantTransImpact, CodingContext, CodingUtils, ProteinContext, ProteinUtils, HgvsCoding, HgvsProtein, SpliceClassifier, SpliceImpactType, PhasedVariants, PhasedVariantClassifier, VariantImpactBuilder, PaveUtils | `impact/` |
 | annotation: ReferenceData, PonAnnotation, GnomadAnnotation, Mappability, MappabilityChrCache, ClinvarAnnotation, ClinvarChrCache, Blacklistings, Reportability | `annotation/` |
 | hmf-common: PonCache, GnomadCache, VariantEffect, CodingEffect, VariantImpact(Serialiser), VariantTranscriptImpact, AltTranscriptReportableInfo, ReportablePredicate, Pathogenicity, PathogenicSummaryFactory, VariantTier, SpliceSites, TranscriptUtils.calcExonicCodingPhase, AminoAcids | in the modules above |
@@ -158,7 +160,9 @@ and PON_COUNT in their headers), so for the pipeline's inputs both tools take th
 
 ### Unit tests
 
-`cargo test --release` runs 71 tests and ignores 25. The Java unit tests are ported one module per class
+`cargo test --release` runs 75 tests and ignores 25 (71 before upstream 883ab11bba; then SpliceContextTest's
+testSpecialSpliceRegion, a test of the port that the special region stays with its transcript and exon, and two of
+the resource reader). The Java unit tests are ported one module per class
 (`src/tests/`): VariantTest, InsertCodingContextTest, DelCodingContextTest, MnvCodingContextTest,
 NonCodingContextTest, SpliceContextTest, HgvsCodingTest, HgvsCodingAddressesTest, ProteinImpactTest,
 PhasedVariantsTest, HomologyRealignTest and ResourcesTest.
@@ -267,6 +271,22 @@ Kept as Java does, as the intent is unclear:
   input filters: with `-filter_type ALL`, a record SAGE filtered is still written.
 - When a variant hits two driver genes with other reportable transcripts, VariantImpactBuilder keeps
   those of the last such gene in HashMap order.
+- **PA10 (upstream 4adc014589, SpliceClassifier.isWithinSpecialSpliceRegion): the special region's edges.** No
+  switch; Java's behaviour in both modes, a question for the authors.
+  - **Base -9 is in neither region.** PAVE's splice region covers intronic bases -1 to -8
+    (SPLICE_REGION_INTRON_RANGE 8), the special MET exon 14 region -10 to -30, so an SNV at c.2888-9 is not in a
+    splice region while those at -8 and -10 are. Upstream's test asserts it (-9 false), but as the region's edge,
+    not as a choice about -9; the commit message says only "-30 -> -10". If the region is meant to extend the
+    standard one, it would be -30 to -9.
+  - **INDELs reach one base past the region.** The region is tested against the variant's Position to
+    EndPosition, which for a DEL are the base before and the base after the deleted ones and for an INS the bases
+    on either side, where the standard region tests the altered bases (altPositionsOverlap). So a DEL of -34 to -31
+    (the base after it is -30) or of -9 alone (the base before it is -10) is in the region though no base of -30 to
+    -10 changes; an SNV at -31 or -9 is not. Whether a deletion next to the region counts (it shifts the region
+    towards the exon, for the -9 one) is a biological choice the code does not state.
+  - **Evidence:** the synthetic MET case (`met14`, section 7): of 116 INDELs flagged, 4 alter no base of -30 to -10
+    (c.2888-34_2888-31delCTTT, c.2888-32_2888-31delTT, c.2888-31delT, c.2888-9delT); the SNVs flagged are exactly
+    -30 to -10.
 
 ## 4. Speed and memory
 
@@ -340,3 +360,26 @@ PAVE added to `hmf-common-rs`:
   Ports that already used flate2's default backend (SAGE for its gzip side files, REDUX for the jitter
   table) now get zlib's deflate through Cargo's feature unification. Their files' contents are
   unchanged.
+
+## 7. Following upstream (883ab11bba, reviewed 2026-11-28)
+
+The port started from ca04e6c39d. Upstream master 883ab11bba changes PAVE once; hmf-common's changes in that range
+(PipelineToolDirectories, VirusInterpreterDataLoader, from f5f660cc9f) are code PAVE does not use.
+
+| Upstream commit | Change | Decision | Reason | Evidence |
+|---|---|---|---|---|
+| 4adc014589 | Special splice regions: a built-in resource `splice/special_splice_regions.tsv` (gene, transcript, exon rank, exon start or end, bases from / to), read once; ImpactClassifier marks a variant overlapping one (on the listed transcript and exon, or the next exon) as in a splice region, as for the standard region; effects, HGVS and splice impact unchanged | accepted | The purpose is stated (AUS-424) and the one entry is right: ENST00000397752 is MET's canonical transcript (NM_000245, + strand) in the Ensembl cache, its exon 14 chr7:116,771,849-116,771,989 is the 141-base juxtamembrane exon (phases 1 to 1, an in-frame 47-codon loss) whose skipping is METex14; on the + strand the exon start is the acceptor, so bases -30 to -10 are intron 13's polypyrimidine tract and branch point region, where METex14 deletions and substitutions lie. The flag reaches the IMPACT field's canonical splice region (and with it PURPLE's driver candidates: SPLICE_REGION likelihood, not reported) and the transcript file's SpliceRegion column. It stays with that transcript and exon (MET's other transcript ENST00000318493, which has the same exon, is not flagged). Two edges are kept as written and asked about (PA10). | Java at ca04e6c39d and at 883ab11bba on the synthetic `met14` case: 137 of 323 records change, only the canonical splice region flag of ENST00000397752 (21 SNVs at -30 to -10, 3 MNVs, 113 INDELs); the port in Java mode is byte-identical to the new Java. No other case has a variant there: all 29 regression cases are unchanged. |
+| 4adc014589 | SpliceContextTest.testSpecialSpliceRegion | accepted | | ported (`tests::splice_context::test_special_splice_region`) |
+
+**References and results.** The 29 cases of `work/pave/scripts` and the new `met14` were run with the 883ab11bba jar
+(`baseline/pave/java_883ab11bba/<case>`, same commands and threads as before) and with the port in Java mode
+(`baseline/pave/rust_up/<case>`): every case that was identical before is identical (VCF, BGZF bytes, tabix index,
+transcript file); the four that end with exit 1 in Java (plain_vcf_chr21: PA3; hg008_germline_reportable and
+reannotate: PA9; pa4_complex: PA4) end so in the port with the same partial VCF, as before (the partial outputs
+compare as they did: the VCF text equal, the truncated index files not). Times (2 threads, a loaded machine): HG008
+somatic Java 20.8 s and 5.5 GB, the port 3.4 s and 0.20 GB; the synthetic set 87.6 s and 9.0 GB against 10.5 s and
+0.90 GB; `met14` (1 thread, transcript file) 112.5 s and 8.6 GB against 6.7 s and 0.16 GB. Scripts: `work/up_pave_qsee/scripts/pave/` (cases.sh, run_one.sh, java_all.sh,
+rust_all.sh, compare.sh, make_met14.py).
+
+**Effect in the default mode** (the merged port, `rust_before_default`, against this one, `rust_up_default`): no
+change on the 29 cases (none has a variant in MET's intron 13 region); on `met14` the 137 records above, as in Java.

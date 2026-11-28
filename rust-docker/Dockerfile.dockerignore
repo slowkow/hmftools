@@ -61,6 +61,7 @@
 !pave-rs/Cargo.lock
 !pave-rs/build.rs
 !pave-rs/src
+!pave-rs/resources
 !purple-rs/Cargo.toml
 !purple-rs/Cargo.lock
 !purple-rs/build.rs

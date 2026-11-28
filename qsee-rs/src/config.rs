@@ -9,6 +9,7 @@ use hmf_common::metrics::check_add_dir_separator;
 
 use crate::common::{SampleIds, SampleType};
 use crate::compat;
+use crate::coverage::ExonExclusions;
 use crate::status::{read_threshold_overrides, ThresholdRegistry};
 
 /// SequencingType, in enum order
@@ -110,6 +111,11 @@ pub fn parse_categories(skip: Option<&str>) -> Result<Vec<PrepCategory>> {
 
 /// QseeConfig.registerConfig (with QseePlotConfig's and TrainConfig's items when asked)
 pub fn register(cb: &mut ConfigBuilder, plot: bool, train: bool) {
+    register_with(cb, plot, train, false)
+}
+
+/// QseeConfig.registerConfig, with ExonExclusionsConfig's items when `exclusions`
+pub fn register_with(cb: &mut ConfigBuilder, plot: bool, train: bool, exclusions: bool) {
     let plurals = "(s), separated by ','";
     cb.add_str("tumor", false, &format!("Tumor ID{plurals}"));
     cb.add_str("reference", false, &format!("Reference ID{plurals}"));
@@ -126,17 +132,27 @@ pub fn register(cb: &mut ConfigBuilder, plot: bool, train: bool) {
     cb.add_path("driver_gene_panel", false, "Path to driver gene panel");
     cb.add_path("cohort_percentiles_file", false, "Path to the cohort percentiles file");
     cb.add_path("threshold_overrides_file", false, "Path to threshold overrides file");
+    cb.add_path("exon_exclusions_file", false, "Path to exon exclusions file with columns GeneName and ExonRank (one row per exon)");
     cb.add_str("skip_categories", false, "Comma-separated list of categories to skip");
     cb.add_flag("targeted_mode", "Run in targeted mode (use different threshold defaults for targeted mode)");
     cb.add_flag("allow_missing_input", "Continue sample data extraction even if some input files are missing");
     cb.add_flag("skip_plot", "Write output files only, without plotting");
-    cb.add_flag("write_lod_details", "Write exon depth distribution columns to gene LoD file");
+    cb.add_integer("lod_min_alt_reads", "Assumed min alt read support needed to detect a variant, used to model MVLH and LoD VAF", crate::coverage::DEFAULT_LOD_MIN_ALT_READS);
+    cb.add_flag("write_lod_details", "Write exon depth distribution columns to exon variant LoD file");
     cb.add_path("output_dir", true, "Output directory");
     cb.add_str("output_id", false, "Output directory");
     cb.add_str_default("threads", false, "Number of threads, 0 or 1 not multi-threaded", "1");
     cb.add_logging_options();
     if plot {
         register_plot(cb);
+    }
+    if exclusions {
+        cb.add_decimal("min_low_coverage_lod_vaf", "Min LoD VAF for an exon to count as low coverage in a sample", crate::coverage::DEFAULT_MIN_LOW_COVERAGE_LOD_VAF);
+        cb.add_decimal(
+            "min_low_coverage_cohort_fraction",
+            "Min fraction of samples with low coverage for an exon to be excluded",
+            crate::coverage::DEFAULT_MIN_LOW_COVERAGE_COHORT_FRACTION,
+        );
     }
     if train {
         cb.add_integer("num_percentiles", "Number of percentiles (e.g. 5 would give percentiles: 0, 25, 50, 75, 100)", 101);
@@ -220,12 +236,16 @@ pub struct QseeConfig {
     #[allow(dead_code)] // Java's field: read into `thresholds`
     pub thresholds_file: Option<String>,
     pub thresholds: ThresholdRegistry,
+    /// upstream bdceb2302a: `-exon_exclusions_file`
+    pub exon_exclusions: ExonExclusions,
     pub sequencing_type: SequencingType,
     pub categories: Vec<PrepCategory>,
     #[allow(dead_code)] // Java's field: applied in `thresholds`
     pub targeted_mode: bool,
     pub allow_missing_input: bool,
     pub skip_plot: bool,
+    /// upstream bdceb2302a: `-lod_min_alt_reads`
+    pub lod_min_alt_reads: i32,
     pub write_lod_details: bool,
     pub output_dir: String,
     pub output_id: Option<String>,
@@ -253,6 +273,10 @@ impl QseeConfig {
             None => ThresholdRegistry::create_default(targeted_mode),
             Some(f) => read_threshold_overrides(f, targeted_mode)?,
         };
+        let exon_exclusions = match cb.value("exon_exclusions_file") {
+            Some(f) => ExonExclusions::read(&f)?,
+            None => ExonExclusions::empty(),
+        };
         let sequencing_type = SequencingType::value_of(&cb.value("sequencing_type").unwrap_or_default())?;
         let categories = parse_categories(cb.value("skip_categories").as_deref())?;
         let output_dir = check_add_dir_separator(&cb.value("output_dir").unwrap_or_default());
@@ -272,11 +296,13 @@ impl QseeConfig {
             cohort_percentiles_file,
             thresholds_file,
             thresholds,
+            exon_exclusions,
             sequencing_type,
             categories,
             targeted_mode,
             allow_missing_input: cb.has_flag("allow_missing_input"),
             skip_plot: cb.has_flag("skip_plot"),
+            lod_min_alt_reads: cb.integer("lod_min_alt_reads"),
             write_lod_details: cb.has_flag("write_lod_details"),
             output_dir,
             output_id,
