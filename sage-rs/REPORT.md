@@ -5,9 +5,10 @@ Java code along the way. It is written so that it can later be turned into an an
 upstream issue list or a pull request description. Detail lives in [PLAN.md](PLAN.md) (status and
 measurements) and [QUIRKS.md](QUIRKS.md) (the Java findings by subject).
 
-Baseline: Java SAGE 5.1 at upstream commit `a224a2c`.
+Baseline: Java SAGE 5.1 at upstream master `883ab11bba` (2026-11-27); until then `a224a2c` (`sage-v5.1-beta.4`).
+Section 9 has the update from one to the other.
 
-Two modes. By default the port corrects 32 of the 56 Java findings of section 5. With `-java_compat`
+Two modes. By default the port corrects 33 of the 60 Java findings of section 5. With `-java_compat`
 (or `SAGE_JAVA_COMPAT=1`) it behaves as Java does. **Sections 1, 2, 3 and 6 describe the port run with
 `-java_compat`**: every "identical", every record count and every timing there was measured in that
 mode, or before the corrections existed, when it was the only mode. Section 5.5 has what the corrected
@@ -137,7 +138,7 @@ few percent without faster storage.
 
 ## 5. Java findings
 
-Numbered S1 to S56 and grouped by kind. File references are to
+Numbered S1 to S60 and grouped by kind. File references are to
 `sage/src/main/java/com/hartwig/hmftools/sage/` unless they name `hmf-common`. "Reproduced" means the
 port behaves the same way under `-java_compat`, so that its output equals Java's.
 
@@ -265,6 +266,23 @@ against the code before they were taken in.
   read. Reproduced. Left: counting on the merged read is the obvious reading, but its effect is large
   (5.5) and the thresholds were set with Java's BAM behaviour; to be confirmed with the SAGE authors.
 
+**Found in the upstream update (2026-11-27)**
+
+- **S57. `evidence/Realignment.java:94` (from `de50386378`)** `realignedReadIndexPosition` moves the core end
+  position back by the insert length for every insert whose read context's cigar ends in a soft clip. The move
+  is right for a context built from a read whose insert is soft-clipped (no `I` for it, e.g. `14M84S` for a
+  72-base insert on the public SBX slice): `ReadCigarInfo` counted the inserted bases as reference positions, so
+  the core end position is the insert length too far. It is wrong when the context's cigar holds the insert as
+  an `I` before the clip (e.g. `12M1I16M3S`): the position is then already right, the move puts the realigned
+  index the insert length before the variant, and a read that needs realignment (aligned from the base after
+  the insert, with the insert in a soft clip) loses its support. And it is too large by the length of the `I`
+  when the context holds part of a long insert as an `I` and clips the rest (`27M1I21M51S` for 35 bases): there
+  the extra base of shift makes the reads of a neighbouring allele one repeat base longer (a 36-base insert at the
+  same `AAAT` repeat, called as its own record) match the context exactly and count as realigned support for
+  both alleles. Unit tests: `tests::realign_soft_clip` (the three kinds of context). Effect: section 9. Reproduced.
+  **Corrected by default**: the core end position is moved by the number of the variant's inserted bases that the
+  context's cigar does not hold as an insert element (all of them, none, or the clipped part).
+
 ### 5.2 Nondeterminism
 
 - **S22. `phase/PhaseSetCounter.java:12`** `LPS` ids come from a counter shared by all region threads,
@@ -343,7 +361,9 @@ against the code before they were taken in.
   records, the merged fragments of S52). Upstream's fix covers the evidence stage only: the candidate
   stage (`candidate/RefContextConsumer.java:245`) passes a null genome, so the caller would stop with a
   `NullPointerException` on the same read; the port gives the candidate stage the genome as well. Unit
-  tests: `tests::split_read::s54`.
+  tests: `tests::split_read::s54`. From the update to `883ab11bba` (section 9) the port counts as upstream's
+  `NumberEvents.calcMutations` does (bases compared as bytes; a block whose bases cannot be had ends the
+  count), so with `-java_compat` it matches Java there wherever Java does not stop.
 
 ### 5.4 Oddity
 
@@ -394,13 +414,30 @@ against the code before they were taken in.
   250. Taking 255 as 60 changes `RC_QUAL` on 4 of the 25 records of section 8 (by 0.2% to 0.7%) and
   rescales `AFMQ` on 18. Kept, in both modes: the effect is small, and appended samples are not filtered.
 
+- **S58. `sage/README.md:70`, `:357`** The README lists `base_qual_fixed_penalty | 12` as an option, which the code
+  has never read (it was a constant at `a224a2c` too), and gives `modifiedBaseQuality = baseQuality -
+  baseQualityFixedPenalty (12) - edgeDistancePenalty`; from `de50386378` the penalty of an SNV or MNV is scaled
+  from 6 to 12 by the recalibrated quality (12 from 36, 6 at 24 and below), and the fixed 12 holds only for
+  indels, Ultima model qualities and Illumina artefact qualities. Documentation only; the port's README
+  describes the scaled penalty. Left.
+- **S59. `append/SageAppendApplication.java:280` (from `de50386378`)** `addAppendHeader` writes
+  `##sageAppendVersion` only when the input has none, so a VCF appended twice keeps the first append's version.
+  WISP (master) takes that one value to choose its quality-per-read threshold (21 from 5.1, 18 before) for every
+  sample of the VCF, so samples appended by 5.1 after an earlier append by 5.0 are held to 18. With samples from
+  two versions no single value is right (a version per sample would be needed). oncoanalyser appends once. Kept
+  in both modes.
+- **S60. `hmf-common` `variant/VcfFileReader.java:161` (from `de50386378`)** `parseToolVersion` reads a version
+  as a decimal number ("5.1-beta.3" is 5.1, "5.10" is 5.1, so "5.9" is above "5.10"). Append's minimum (4.0)
+  and WISP's 5.1 give the intended answer for every SAGE version so far and for a 5.10; a later minimum such as
+  5.2 would not. Kept in both modes (`hmf_common::vcf::parse_tool_version`).
+
 Also found while porting, in REDUX 2.1 (see `redux-rs`): `BaseQualityResults.addPerfCounter` merges a
 counter into itself and fails during BQR; `-form_consensus` fails on the public Ultima slices on a
 consensus read with an empty base.
 
 ### 5.5 Corrections
 
-32 of the findings above are corrected by default. Each corrected place in the code asks
+33 of the findings above are corrected by default. Each corrected place in the code asks
 `compat::java("S<n>")` (`src/compat.rs`) and keeps the Java path beside the corrected one.
 
 - `-java_compat`, or `SAGE_JAVA_COMPAT=1` in the environment: Java behaviour for every finding.
@@ -437,6 +474,7 @@ particular should be confirmed with the SAGE authors.
 | S24 | a contig is cut into the slices of one thread at any thread count | chrM at 3 threads: 2 of 128 records change in their read counts, and the output is byte for byte Java's at 1 thread; at 1 thread none |
 | S49 | a change of more than 5 repeat units, longer or shorter, is outside the jitter model | Illumina chr21: 18 indel records changed (quality and support values), `FILTER` on 3, 245 passing as before. `-germline`: 1 gone, 335 changed (330 indels), `FILTER` on 22, passing 72,902 to 72,897. Whole genome, a 35x Illumina pair on Google Batch (2026-11-26; the image before and after S49 to S51, on the same BAMs): somatic 416,119 to 416,053 records (92 gone, 26 new, 7,274 changed), passing 4,378 to 4,365: 17 homopolymer deletions of 6 to 23 bases become `minTumorQual` with the same support, 2 of 6 bases become passing; after PAVE and PURPLE one of the 17 had been passing (3,824 to 3,823) |
 | S50 | an MNV filtered on the way is skipped on both sides of a pair | Illumina chr21 `-germline`: `FILTER` on 4 records (2 MNVs, 2 SNVs), passing the same; with soft filters none |
+| S57 | the core end position is moved by the variant's inserted bases that the read context's cigar does not hold as an insert element (upstream: by the insert length whenever the cigar ends in a soft clip) | somatic runs with soft filters (Illumina, SBX, Ultima chr21): none. Illumina chr21 `-germline`: 44 records (apart from `LPS` renumbering): realigned support up on 9 + 7 inserts, down on 2 + 3, one insert PASS to filtered; unfiltered SBX 14 records, PASS the same; unfiltered Ultima 2; append 1 to 17 records of the appended sample (section 9) |
 
 **TINC**
 
@@ -562,7 +600,7 @@ In Java mode the same holds except for chrM (S24), where the port follows Java.
 
 **Unit tests** of the corrected behaviour, each beside the Java behaviour: `phase::tests` (S1, S2,
 S3), `tests::corrections` (S4, S5, S6, S15, S24, S38, S40, S41, S44, S49, S50), `tests::alignment_reading` (S7),
-`tests::realignment` (S9), `tinc::tests` (S10, S11, S12, S51), `append::tests` (S19, S20). Without one: S8
+`tests::realignment` (S9), `tests::realign_soft_clip` (S57), `tinc::tests` (S10, S11, S12, S51), `append::tests` (S19, S20). Without one: S8
 (the index of a split segment, covered through S9's test only for the jitter path), S13 and S21 (they
 need input files), S16 to S18 (no observable effect), S39, S45, S46 and S47 (covered by the visualiser
 runs above).
@@ -578,6 +616,8 @@ runs above).
 | S42, S43 | dead code |
 | S55, S56 | RNA in append: the intent may be what the code does (S55), the effect is small (S56); see 5.4 |
 | S48 | no effect |
+| S58 | documentation only |
+| S59, S60 | upstream's behaviour; no effect on the cases of section 9 (one append per VCF; SAGE versions 4.2 and 5.1) |
 | S22, S23, S26, S27, S29, S31 to S37, S54 | the port already does one fixed thing in both modes, because Java's own result is not reproducible or Java fails |
 
 ## 6. Later additions
@@ -695,25 +735,12 @@ With both changes the experimental build equals the image on all 4,384 records; 
 equals the beta.5 jar on all 4,384. So the port is right for the version it reproduces: the image is an
 earlier pre-release, and 5 of the 25 differences are its own fault.
 
-**Whether the port should follow.**
-
-- The scaled penalty is upstream's model for 5.1, not a correction of a fault, and it changes the
-  quality of every SNV and MNV read below Q36 in the caller as well as in append. It belongs with moving
-  the port's Java reference from beta.4 to beta.5: the scaled penalty, the realignment test for indels
-  near a soft-clipped end, the new `NM` routine, append's check of the input version and its header line.
-  That needs a beta.5 jar (one was built for this comparison from `git archive de50386378`) and new
-  stored Java outputs for the regression suite. Not done here.
-- beta.3's `NM`: no, it is a fault that upstream fixed.
-- `##sageAppendVersion`: not written, as before. beta.5's append writes it, and WISP in master reads it:
-  an append version of 5.1 or more makes WISP require a quality per allele read of 21 in place of 18
-  (`wisp/.../variant/SomaticVariants.java:152`, `WispConstants.java:25-36`), the threshold for qualities
-  made with the scaled penalty. The port makes its qualities with the fixed penalty, so writing the line
-  now would make WISP filter the port's appended samples against the wrong threshold. It should come with
-  the scaled penalty.
-- The pipeline's Java SAGE caller is the same beta.3 image. Its somatic calls should differ from the
-  port's by the same two changes, and beta.3's `NM` should lower the quality of reads with long indels
-  there (DNA map quality is at most 60, so the event penalty of about 7 per extra event binds). Not
-  measured here.
+**Whether the port should follow.** Done on 2026-11-27 (section 9): the port's reference is now upstream master
+`883ab11bba`, which has beta.5's SAGE code. The scaled penalty and the `NM` routine are taken as upstream has them,
+append checks the input version and writes `##sageAppendVersion` (now that its qualities are made with the scaled
+penalty, so that WISP applies the threshold meant for them), and the realignment change is taken with a correction
+(S57). beta.3's `NM` is not: a fault upstream fixed. The pipeline's Java SAGE caller is still the beta.3 image, so
+its calls differ from the port's by beta.3's `NM` fault (and by S57 and the other corrections in the default mode).
 
 **RNA checks.** Spliced reads, STAR's map qualities, Picard's duplicates and soft clips, on the slice and
 on the three whole tumor RNAs of the second private project (section 2):
@@ -739,3 +766,73 @@ are byte-identical to the stored Java output, VCFs and fragment lengths, in Java
 the change for S54, and so are the caller on chr21 of the Illumina pair from BAM and from CRAM (where
 Java mode counts `NM` itself). In the default mode the 15 append cases are identical to the build before
 the change.
+
+## 9. Following upstream to `883ab11bba` (2026-11-27)
+
+The port's Java reference moved from `a224a2cd8e` (`sage-v5.1-beta.4`) to upstream master `883ab11bba`. In between,
+SAGE changed in one commit, `de50386378` (`sage-v5.1-beta.5`), and hmf-common in the code SAGE uses there and in
+`76f6774e65`; REDUX did not change. Each change was read in full and decided on its own (the decision table, for
+`../UPSTREAM.md`, is in the merge notes):
+
+| Change | Decision |
+|---|---|
+| Base-quality penalty of SNVs and MNVs scaled from 6 (recalibrated quality 24 and below) to 12 (36 and above) | accepted |
+| SAGE's own `NM` count for reads without the tag (`NumberEvents.calcMutations`) | accepted; fixes S54 in the evidence stage |
+| `realignedReadIndexPosition`: core end moved back by the insert length for inserts whose context cigar ends in a soft clip | accepted with a correction: S57 |
+| Append: input SAGE 4.0 or later (read as a number, S60); writes `##sageAppendVersion` (S59) | accepted |
+| hmf-common `SpecificRegions.includePosition` with no filters | accepted; no port has the old behaviour (every caller checks `hasFilters()` first) |
+| Refactors, constants, documentation; other programs' parts | not applicable |
+
+**Java references** were remade with the jar at `883ab11bba` for every regression case, with the same commands,
+`-threads 1`, beside the old ones. With `-java_compat` the port is byte-identical to them on all 47 cases (VCFs,
+fragment lengths, the TINC VCF and fit variants), at 2 threads; chrM differs at 2 threads by design (S24: 2 of 177
+records) and is identical at 1.
+
+**Effect in the default mode** (the port before the update against after, 2 threads; "changed" leaves out records
+whose only change is a renumbered `LPS` id):
+
+| Input | Records | Gone / new / changed | Passing |
+|---|---|---|---|
+| Illumina chr21 | 6,023 to 6,385 | 2 / 364 / 3,513 | 245 to 246 |
+| Illumina chr21, `-germline` | 110,832 to 111,612 | 1 / 781 / 82,772 | 72,895 to 72,914 |
+| Illumina chr21, unfiltered | 110,729 to 111,504 | 1 / 776 / 82,799 | 103,341 to 104,038 |
+| Illumina chr21, `-high_depth_mode` | 5,955 to 5,967 | 1 / 13 / 489 | 243 to 243 |
+| SBX chr21 | 3,318 to 3,374 | 4 / 60 / 1,717 | 174 to 174 |
+| SBX chr21, unfiltered | 68,807 to 68,889 | 1 / 83 / 50,925 | 63,440 to 63,500 |
+| Ultima chr21 (and unfiltered) | 2,695 (87,240) | none | 150 (83,349) |
+| Append, 9 public cases | as before | 0 / 0 / 0 to 50,633 (the appended sample's values) | as before |
+| RNA append, 6 cases | as before | 0 / 0 / 20 to 915 (RC_QUAL, AFBQ of the RNA sample) | as before |
+
+The scaled penalty raises the final quality of bases below a recalibrated Q36 by up to 6: more low-quality
+candidates pass the hard filters and are written as filtered records, and RC_QUAL / AFBQ rise. The Illumina tumor's
+main BQR bins recalibrate to 36 or more, so only its low bins change; SBX's simplex bins (about Q32) change most;
+Ultima SNVs use the BQR entry of the maximum raw quality and do not change. Every appended VCF has
+`##sageAppendVersion=5.1`. The port does the same work as before (instructions within 0.5%).
+
+**Truth set.** GIAB's draft HG008-T somatic small variant benchmark (v0.4, GRCh38, `tumorvariants.vcf.gz` inside
+`all.bed`: 179 variants on chr21). PASS calls before and after are the same on both public slices: SBX 141 true, 8
+false, 38 missed; Ultima 103, 19, 76 (also with calls under AF 0.05 dropped). In the unfiltered SBX run, ranked by
+QUAL after removing calls with normal support, the 45 new records are all false and rank above a few true ones (true
+variants before the 1,000th false one: 127 to 122). So the scaled penalty is taken as upstream's model on its
+rationale; on these data it changes no call the benchmark can judge.
+
+**S57.** With upstream's rule against the corrected one, both with the scaled penalty: the somatic runs with soft
+filters are the same (Illumina, SBX, Ultima chr21); Illumina chr21 `-germline` 44 records, realigned support up on
+9 + 7 inserts (normal, tumor) and down on 2 + 3, one insert from PASS to filtered; unfiltered SBX 14 records; append
+1 to 17. Where upstream's rule gives more support it is through reads of a neighbouring allele (a 36-base insert
+counted for a 35-base one at the same repeat) or a move by one repeat unit of a duplication (5.1, S57).
+
+**Time and memory** (same machine, shared; Java at 1 thread; the port in Java mode):
+
+| Case | Java, 1 thread | port, 1 thread | port, 2 threads | Java / port (1 thread) |
+|---|---|---|---|---|
+| chr21 | 506.1 s, 3179 MB | 59.3 s, 197 MB | 30.9 s, 271 MB | 8.5x |
+| chr21_germline | 549.9 s, 4511 MB | 58.9 s, 162 MB | 31.7 s, 275 MB | 9.3x |
+| sbx_chr21 | 114.8 s, 2639 MB | 38.3 s, 108 MB | 22.6 s, 144 MB | 3.0x |
+| ultima_chr21 | 275.0 s, 2577 MB | 111.3 s, 109 MB | 60.6 s, 177 MB | 2.5x |
+| cram_chr21 | 768.9 s, 2933 MB | 109.7 s, 132 MB | 56.7 s, 163 MB | 7.0x |
+| multi_check_ultima | 730.1 s, 2697 MB | 287.2 s, 187 MB | 147.2 s, 239 MB | 2.5x |
+| tinc_multi | 261.4 s, 19488 MB | 63.6 s, 174 MB | 35.6 s, 206 MB | 4.1x |
+| append_check_nosoft | 321.9 s, 6180 MB | 65.8 s, 891 MB | 35.0 s, 919 MB | 4.9x |
+| rna_t1_somatic | 185.8 s, 4290 MB | 40.5 s, 207 MB | 24.4 s, 225 MB | 4.6x |
+

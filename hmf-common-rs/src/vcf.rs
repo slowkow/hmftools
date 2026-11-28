@@ -353,6 +353,35 @@ fn normalise_alt(alt: &str) -> String {
     if symbolic { alt.to_string() } else { alt.to_ascii_uppercase() }
 }
 
+/// VcfFileReader.parseToolVersion(String) (hmf-common, upstream de50386378): the leading number of a version
+/// string, with at most one decimal point ("5.1-beta.3" is 5.1, "5.1.2" is 5.1, "12" is 12); None when it does
+/// not start with a digit. Note that the result is a number: "5.10" reads as 5.1.
+pub fn parse_tool_version(version: &str) -> Option<f64> {
+    let mut numerical = String::new();
+    let mut has_decimal = false;
+    for (i, c) in version.chars().enumerate() {
+        if c == '.' {
+            if i == 0 || has_decimal {
+                break;
+            }
+            numerical.push(c);
+            has_decimal = true;
+        } else if c.is_ascii_digit() {
+            numerical.push(c);
+        } else {
+            break;
+        }
+    }
+    if numerical.is_empty() { None } else { numerical.parse().ok() }
+}
+
+/// VcfFileReader.parseToolVersion(VCFHeader, toolName): the version in the first `##<tool>=` meta line
+/// (VCFHeader.getMetaDataLine), or None without one.
+pub fn tool_version<S: AsRef<str>>(meta_lines: &[S], tool: &str) -> Option<f64> {
+    let prefix = format!("##{tool}=");
+    meta_lines.iter().find_map(|l| l.as_ref().strip_prefix(prefix.as_str())).and_then(parse_tool_version)
+}
+
 /// The FILTER column of a line without parsing the rest (None for a short line)
 pub fn filter_column(line: &str) -> Option<&str> {
     line.split('\t').nth(6)
@@ -1039,6 +1068,24 @@ impl VcfFileWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_versions() {
+        // hmf-common VcfFileReader.parseToolVersion (no Java test; values worked through the Java loop)
+        assert_eq!(parse_tool_version("5.1"), Some(5.1));
+        assert_eq!(parse_tool_version("5.1-beta.3"), Some(5.1));
+        assert_eq!(parse_tool_version("5.1.2"), Some(5.1));
+        assert_eq!(parse_tool_version("4"), Some(4.0));
+        assert_eq!(parse_tool_version("5."), Some(5.0));
+        assert_eq!(parse_tool_version("5.10"), Some(5.1));
+        assert_eq!(parse_tool_version(".5"), None);
+        assert_eq!(parse_tool_version("v5.1"), None);
+        assert_eq!(parse_tool_version(""), None);
+        let meta = vec!["##fileformat=VCFv4.2".to_string(), "##sageVersion=3.4".to_string(), "##sageVersion=5.1".to_string()];
+        assert_eq!(tool_version(&meta, "sageVersion"), Some(3.4));
+        assert_eq!(tool_version(&meta, "sageAppendVersion"), None);
+        assert_eq!(tool_version(&["##sageVersionX=1".to_string()], "sageVersion"), None);
+    }
 
     fn header() -> VcfHeader {
         let meta = vec![

@@ -27,7 +27,11 @@ use std::sync::{Arc, Mutex};
 
 pub const LPS_APPEND_INFO: &str = "LPSA";
 const LPS_APPEND_HEADER: &str = "##FORMAT=<ID=LPSA,Number=1,Type=String,Description=\"Local Phase Set Append Info\">";
-const MIN_PRIOR_VERSION: &str = "2.8";
+/// SageAppendApplication.MIN_PRIOR_VERSION: 4.0 from upstream de50386378 (2.8 before), compared as a number
+const MIN_PRIOR_VERSION: f64 = 4.0;
+/// SageVcfTags.SAGE_APPEND_TAG: written by append from upstream de50386378; WISP (master) reads it, and takes an
+/// append version of 5.1 or more to mean qualities made with the scaled base-quality penalty
+pub const SAGE_APPEND_TAG: &str = "sageAppendVersion";
 const READ_CONTEXT_EXTENSION_LENGTH: i32 = 50;
 const MISSING: &str = ".";
 
@@ -1127,12 +1131,6 @@ fn encode_record(v: &VariantContext, defs: &HeaderDefs, added: usize) -> String 
 
 // --- SageAppendApplication ---
 
-/// The numeric components of a version, compared as java.lang.module.ModuleDescriptor.Version does for
-/// plain dotted versions.
-fn version_numbers(version: &str) -> Vec<u64> {
-    version.split(|c: char| !c.is_ascii_digit()).filter(|x| !x.is_empty()).map(|x| x.parse().unwrap_or(0)).collect()
-}
-
 struct InputVcf {
     meta_lines: Vec<String>,
     samples: Vec<String>,
@@ -1256,10 +1254,11 @@ pub fn run(args: &[String]) -> Result<()> {
 
     let input = read_vcf(&input_vcf)?;
 
-    // validateInputHeader
-    let version = input.meta_lines.iter().find_map(|l| l.strip_prefix("##sageVersion=")).unwrap_or("0");
-    if version_numbers(version) < version_numbers(MIN_PRIOR_VERSION) {
-        bail!("Sage VCF version({version}) older than required({MIN_PRIOR_VERSION})");
+    // validateInputHeader: VcfFileReader.parseToolVersion of the sageVersion line, as a number
+    let version = hmf_common::vcf::tool_version(&input.meta_lines, "sageVersion");
+    if version.is_none_or(|v| v < MIN_PRIOR_VERSION) {
+        let shown = version.map_or("null".to_string(), hmf_common::fmt::java_double_to_string);
+        bail!("Sage VCF version({shown}) older than required({})", hmf_common::fmt::java_double_to_string(MIN_PRIOR_VERSION));
     }
     eprintln!("existing VCF samples: {}", input.samples.join(", "));
     for sample in &cfg.reference_ids {
@@ -1281,6 +1280,11 @@ pub fn run(args: &[String]) -> Result<()> {
         .filter(|l| !["GT", "AD", "DP"].iter().any(|id| l.starts_with(&format!("##FORMAT=<ID={id},"))))
         .collect();
     new_lines.push(LPS_APPEND_HEADER);
+    // addAppendHeader: the append version, unless the input already has one (then the first append's stays)
+    let append_prefix = format!("##{SAGE_APPEND_TAG}=");
+    if !meta_lines.iter().any(|l| l.starts_with(&append_prefix)) {
+        meta_lines.push(format!("{append_prefix}{}", vcfout::SAGE_VERSION));
+    }
     for line in new_lines {
         let id = parse_field_line(line).map(|f| f.1);
         let exists = meta_lines.iter().any(|l| l.starts_with("##FORMAT=") && parse_field_line(l).map(|f| f.1) == id);
@@ -1555,9 +1559,10 @@ mod tests {
 
     #[test]
     fn version_check() {
-        assert!(version_numbers("5.1") >= version_numbers(MIN_PRIOR_VERSION));
-        assert!(version_numbers("2.8") >= version_numbers(MIN_PRIOR_VERSION));
-        assert!(version_numbers("2.7") < version_numbers(MIN_PRIOR_VERSION));
-        assert!(version_numbers("0") < version_numbers(MIN_PRIOR_VERSION));
+        // SageAppendApplication.validateInputHeader (upstream de50386378): sageVersion as a number, at least 4.0
+        let ok = |v: &str| hmf_common::vcf::tool_version(&[format!("##sageVersion={v}")], "sageVersion").is_some_and(|x| x >= MIN_PRIOR_VERSION);
+        assert!(ok("5.1") && ok("4.0") && ok("5.1-beta.3") && ok("4"));
+        assert!(!ok("3.4") && !ok("2.8") && !ok("0") && !ok("beta"));
+        assert!(hmf_common::vcf::tool_version(&["##fileformat=VCFv4.2"], "sageVersion").is_none());
     }
 }

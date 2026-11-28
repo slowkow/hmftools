@@ -239,9 +239,51 @@ impl SplitReadSegment {
     }
 }
 
+/// S57: how many of the variant's inserted bases (context indices var_index + 1 to var_index + insert length) the
+/// read context's cigar holds as aligned or soft-clipped bases rather than as an insert element: those ReadCigarInfo
+/// counted as reference positions, so the core end position is that many bases too far.
+fn inserted_bases_counted_as_positions(ctx: &VariantReadContext) -> i32 {
+    let first = ctx.var_index + 1;
+    let last = ctx.var_index + ctx.variant.indel_length();
+    let mut covered = 0;
+    let mut read_index = 0;
+    let mut len = 0;
+    for c in ctx.read_cigar.bytes() {
+        if c.is_ascii_digit() {
+            len = len * 10 + (c - b'0') as i32;
+            continue;
+        }
+        match c {
+            b'I' => {
+                let (a, b) = (read_index.max(first), (read_index + len - 1).min(last));
+                if b >= a {
+                    covered += b - a + 1;
+                }
+                read_index += len;
+            }
+            b'M' | b'S' | b'=' | b'X' => read_index += len,
+            _ => {}
+        }
+        len = 0;
+    }
+    ctx.variant.indel_length() - covered
+}
+
 /// Realignment.realignedReadIndexPosition
 pub(crate) fn realigned_read_index_position(ctx: &VariantReadContext, read: &Read) -> i32 {
-    let core_end_index = read_index_from_position(read.start, &read.cigar, ctx.core_position_end);
+    let mut variant_core_end_position = ctx.core_position_end;
+    // Upstream de50386378: for an insert whose read context's cigar ends in a soft clip, the core end position is
+    // moved back by the insert length. That is right for a context built from a read whose insert is soft-clipped
+    // (its cigar has no I for it, so ReadCigarInfo counted the inserted bases as reference positions and the core end
+    // position is the insert length too far); for a context whose cigar holds the insert as an I before the clip,
+    // the position is already right and the move puts the realigned index the insert length before the variant.
+    // S57: Java moves it by the insert length in every such case; corrected, by the inserted bases the context's
+    // cigar does not hold as an insert (all of them, none, or the clipped part of a long insert).
+    if ctx.variant.is_insert() && ctx.read_cigar.ends_with('S') {
+        variant_core_end_position -=
+            if crate::compat::java("S57") { ctx.variant.indel_length() } else { inserted_bases_counted_as_positions(ctx) };
+    }
+    let core_end_index = read_index_from_position(read.start, &read.cigar, variant_core_end_position);
     if core_end_index == INVALID_INDEX {
         return INVALID_INDEX;
     }
@@ -1384,22 +1426,31 @@ impl<'a> QualityCalculator<'a> {
             return QualityScores::invalid();
         }
 
+        // the base quality penalty (upstream de50386378): scaled by the recalibrated quality for a BQR quality (SNVs and
+        // MNVs), the full fixed penalty otherwise
         let mut recalibrated = seq_tech;
+        let mut penalised: Option<f64> = None;
         if is_ultima() {
             if ctx.variant.is_snv() {
                 let bqr_qual = rc.qual_cache.get_qual(
                     self, crate::ultima::max_raw_qual() as u8, read.consensus, 0, !read.negative_strand(),
                 );
                 recalibrated = jmin(seq_tech, bqr_qual);
+                penalised =
+                    Some(jmin(seq_tech - BASE_QUAL_FIXED_PENALTY_MAX as f64, bqr_qual - base_qual_penalty(bqr_qual)));
             }
         } else if !rc.is_indel && ctx.artefact.is_none() {
             recalibrated = self.recalibrated_base_quality(rc, read_var_index, read);
+            penalised = Some(recalibrated - base_qual_penalty(recalibrated));
             // don't boost the recalibrated qual of SBX artefacts
             if is_sbx()
                 && ctx.has_indel_in_core
                 && seq_tech < min_base_qual_across_range(read_var_index, read_var_index + ctx.variant.ref_len() - 1, read)
             {
                 recalibrated = jmin(recalibrated, seq_tech);
+                if let Some(p) = penalised.as_mut() {
+                    *p = jmin(*p, seq_tech - BASE_QUAL_FIXED_PENALTY_MAX as f64);
+                }
             }
         }
 
@@ -1412,10 +1463,17 @@ impl<'a> QualityCalculator<'a> {
             read.mapq - self.cfg.fixed_map_qual_penalty - improper - event_penalty
         };
 
-        let mut penalised_base_quality = recalibrated;
-        if !rc.use_msi_error_rate() {
-            penalised_base_quality -= DEFAULT_BASE_QUAL_FIXED_PENALTY as f64;
-        }
+        let mut penalised_base_quality = match penalised {
+            Some(p) => p,
+            None => {
+                // the full fixed penalty: an Ultima model or indel quality, not a BQR quality
+                let mut p = recalibrated;
+                if !rc.use_msi_error_rate() {
+                    p -= BASE_QUAL_FIXED_PENALTY_MAX as f64;
+                }
+                p
+            }
+        };
 
         // readEdgeDistancePenalty
         let n = read.len();
@@ -1466,6 +1524,18 @@ impl<'a> QualityCalculator<'a> {
             quality = jmin(quality, rc.qual_cache.get_qual(self, raw, consensus, i as usize, pos_orient));
         }
         quality
+    }
+}
+
+/// QualityCalculator.getBaseQualPenalty: 12 from a recalibrated quality of 36, scaled down to 6 at 24 and below
+/// (upstream de50386378). The expression keeps Java's order of operations.
+pub fn base_qual_penalty(recalibrated_base_quality: f64) -> f64 {
+    if recalibrated_base_quality >= BASE_QUAL_FIXED_PENALTY_UPPER_THRESHOLD as f64 {
+        BASE_QUAL_FIXED_PENALTY_MAX as f64
+    } else {
+        let min_penalty = BASE_QUAL_FIXED_PENALTY_MAX as f64 * 0.5;
+        let qual_above_threshold = jmax(recalibrated_base_quality - BASE_QUAL_FIXED_PENALTY_LOWER_THRESHOLD as f64, 0.0);
+        min_penalty + qual_above_threshold / BASE_QUAL_FIXED_PENALTY_RANGE as f64 * min_penalty
     }
 }
 

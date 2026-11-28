@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# `gatk` as oncoanalyser calls it (GATK4_MARKDUPLICATES: gatk --java-options "-Xmx<mem>M" MarkDuplicates ...), run
+# by markdups-rs. --java-options go to markdups-rs, which takes -Dsamjdk.compression_level from them and drops the
+# rest. Any GATK tool other than MarkDuplicates fails. `gatk --version` prints markdups-rs's version and the GATK
+# version it reproduces (not GATK's own text). -java_compat or MARKDUPS_JAVA_COMPAT=1 gives GATK 4.6.1.0's output.
+set -euo pipefail
+args=()
+tool=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --java-options)
+            [ $# -ge 2 ] || { echo "gatk (markdups-rs): --java-options needs a value" >&2; exit 2; }
+            args+=("$1" "$2"); shift 2; continue ;;
+        --version|-version)
+            if [ -z "$tool" ]; then exec markdups-rs --version; fi
+            args+=("$1") ;;
+        --list|--help|-h)
+            if [ -z "$tool" ]; then echo "gatk (markdups-rs): only MarkDuplicates is available in this image" >&2; exit 2; fi
+            args+=("$1") ;;
+        -*) args+=("$1") ;;
+        *)
+            if [ -z "$tool" ]; then
+                tool=$1
+                if [ "$tool" != MarkDuplicates ]; then
+                    echo "gatk (markdups-rs): tool $tool is not available; this image runs MarkDuplicates only (markdups-rs)" >&2
+                    exit 2
+                fi
+            fi
+            args+=("$1") ;;
+    esac
+    shift
+done
+if [ -z "$tool" ]; then
+    echo "gatk (markdups-rs): no tool given; this image runs MarkDuplicates only" >&2
+    exit 2
+fi
+exec markdups-rs "${args[@]}"

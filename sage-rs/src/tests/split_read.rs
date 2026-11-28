@@ -163,7 +163,8 @@ mod s54 {
         read.nm = None;
 
         assert_eq!(3, calc_adjusted_num_mutations(&read, &ref_seq, Some(&g)));
-        // without a genome only the bases inside the window are counted (the port before S54)
+        // without a genome (Java's candidate stage, which throws there) the count stops at the first block
+        // outside the window, as upstream's calcMutations does where it gets no bases
         assert_eq!(1, calc_adjusted_num_mutations(&read, &ref_seq, None));
 
         // a block that starts before the window
@@ -171,14 +172,14 @@ mod s54 {
         let mut read = build_sam_record(101, "50M850N50M", &read_bases);
         read.nm = None;
         assert_eq!(3, calc_adjusted_num_mutations(&read, &ref_seq, Some(&g)));
-        assert_eq!(1, calc_adjusted_num_mutations(&read, &ref_seq, None));
+        assert_eq!(0, calc_adjusted_num_mutations(&read, &ref_seq, None));
 
         // a block that straddles the window end
         let read_bases = bases(&g, 1981, 2010, &[5, 25]);
         let mut read = build_sam_record(1981, "30M", &read_bases);
         read.nm = None;
         assert_eq!(2, calc_adjusted_num_mutations(&read, &ref_seq, Some(&g)));
-        assert_eq!(1, calc_adjusted_num_mutations(&read, &ref_seq, None));
+        assert_eq!(0, calc_adjusted_num_mutations(&read, &ref_seq, None));
     }
 
     #[test]

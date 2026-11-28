@@ -11,75 +11,76 @@ use crate::types::*;
 use crate::ultima::RefBases;
 use std::sync::Arc as Rc;
 
-/// NumberEvents.calcAdjustedNumMutations. `genome` gives the reference bases of the aligned blocks of a read
-/// without an NM tag that lie outside `ref_seq` (finding S54); without it those bases are not counted.
+/// NumberEvents.calcAdjustedNumMutations (upstream de50386378): the NM tag less length - 1 per indel ("BWA counts
+/// indels for their full length, whereas Sage wants a mutation of 1 per indel"); without an NM tag, SAGE's own count
+/// (`calc_mutations`). `genome` gives the reference bases of aligned blocks outside `ref_seq` (finding S54).
 pub fn calc_adjusted_num_mutations(read: &Read, ref_seq: &RefSequence, genome: Option<&dyn RefBases>) -> i32 {
-    let nm = read.nm.unwrap_or_else(|| calculate_nm(read, ref_seq, genome));
-    let mut additional = 0;
-    for el in &read.cigar {
-        if el.op.is_indel() {
-            additional += el.len - 1;
+    if let Some(nm) = read.nm {
+        let mut indel_adjustment = 0;
+        for el in &read.cigar {
+            if el.op.is_indel() {
+                indel_adjustment += el.len - 1;
+            }
         }
+        return nm - indel_adjustment;
     }
-    nm - additional
+    calc_mutations(read, ref_seq, genome)
 }
 
-/// Fallback for a missing NM tag: mismatches in aligned blocks plus inserted and deleted bases.
+/// NumberEvents.calcMutations (upstream de50386378), for a read without an NM tag: the mismatches of the aligned
+/// blocks (bases compared as bytes, as everywhere else in SAGE) plus one per insert or delete element.
 ///
-/// S54: Java 5.1 counts with htsjdk's `SequenceUtil.calculateSamNmTag` on the region's reference bases (the
-/// region plus 1,000 bases), without a bounds check, so a split (RNA) read whose blocks reach beyond them throws
-/// and the run stops. The port counts such a block on bases taken from the genome, as upstream SAGE does from
-/// commit de50386378 on, in both modes: a read Java can count is counted the same way.
-fn calculate_nm(read: &Read, ref_seq: &RefSequence, genome: Option<&dyn RefBases>) -> i32 {
-    let mut nm = 0;
+/// A block inside the region's reference bases is counted on them; one outside (a split RNA read whose intron
+/// reaches beyond the region's 1,000-base margin) on bases taken from the genome. Where no bases can be had (past
+/// the contig end) the count stops at that block, as Java's does on a null answer; Java's genome lookup throws there
+/// instead, and its candidate stage, which passes no genome, throws on any block outside the region (S54).
+///
+/// Before de50386378 (5.1-beta.4) Java counted with htsjdk's `SequenceUtil.calculateSamNmTag` on the region's bases
+/// (case-insensitive, and throwing on blocks outside them): the same count on every read it could count, given a
+/// reference whose primary contigs are upper case (the only kind SAGE's candidate stage works with, since it too
+/// compares bytes).
+pub fn calc_mutations(read: &Read, ref_seq: &RefSequence, genome: Option<&dyn RefBases>) -> i32 {
+    let mut error_count = 0;
     let mut read_index = 0usize;
     let mut ref_pos = read.start;
-    for el in &read.cigar {
+    'blocks: for el in &read.cigar {
         match el.op {
             Op::M | Op::Eq | Op::X => {
                 let block_end = ref_pos + el.len - 1;
-                let outside = ref_seq.index(ref_pos) < 0 || ref_seq.index(block_end) >= ref_seq.bases.len() as i32;
-                let fetched = if outside {
-                    genome.and_then(|g| g.get_bases(ref_pos, block_end)).filter(|b| b.len() == el.len as usize)
+                let fetched: Option<Vec<u8>>;
+                let ref_bases: Option<&[u8]> = if ref_pos >= ref_seq.start && block_end <= ref_seq.end {
+                    ref_seq.base_range(ref_pos, block_end)
                 } else {
-                    None
+                    fetched = genome.and_then(|g| g.get_bases(ref_pos, block_end));
+                    fetched.as_deref()
                 };
-                if let Some(ref_bases) = fetched {
-                    let read_bases = read.bases.get(read_index..).unwrap_or(&[]);
-                    nm += read_bases
-                        .iter()
-                        .zip(ref_bases.iter())
-                        .filter(|(b, r)| b.to_ascii_uppercase() != r.to_ascii_uppercase())
-                        .count() as i32;
-                } else {
-                    for i in 0..el.len {
-                        let ri = ref_seq.index(ref_pos + i);
-                        if ri >= 0 && (ri as usize) < ref_seq.bases.len() {
-                            let r = ref_seq.bases[ri as usize].to_ascii_uppercase();
-                            let b = read.bases[read_index + i as usize].to_ascii_uppercase();
-                            if r != b {
-                                nm += 1;
-                            }
-                        }
+                let Some(ref_bases) = ref_bases.filter(|b| b.len() == el.len as usize) else {
+                    break 'blocks;
+                };
+                let mut ri = read_index;
+                for &r in ref_bases {
+                    if ri >= read.bases.len() {
+                        break;
                     }
+                    if read.bases[ri] != r {
+                        error_count += 1;
+                    }
+                    ri += 1;
                 }
                 read_index += el.len as usize;
                 ref_pos += el.len;
             }
-            Op::I => {
-                nm += el.len;
-                read_index += el.len as usize;
-            }
-            Op::D => {
-                nm += el.len;
-                ref_pos += el.len;
-            }
-            Op::N => ref_pos += el.len,
-            Op::S => read_index += el.len as usize,
+            Op::I | Op::S => read_index += el.len as usize,
+            Op::D | Op::N => ref_pos += el.len,
             _ => {}
         }
     }
-    nm
+    for el in &read.cigar {
+        if el.op.is_indel() {
+            error_count += 1;
+        }
+    }
+    error_count
 }
 
 /// NumberEvents.calcSoftClipAdjustment

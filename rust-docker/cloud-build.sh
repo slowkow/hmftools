@@ -17,7 +17,7 @@ case "${image##*/}" in
     *:*) ;;
     *) image="$image:$(git -C "$root" rev-parse --short=10 HEAD)" ;;
 esac
-if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs hmf-plot-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs sigs-rs virus-interpreter-rs peach-rs chord-rs neo-rs cuppa-rs qsee-rs orange-rs isofox-rs rust-docker)" ]; then
+if [ -n "$(git -C "$root" status --porcelain -- hmf-common-rs hmf-plot-rs sage-rs redux-rs esvee-rs amber-rs cobalt-rs bam-tools-rs teal-rs lilac-rs cider-rs pave-rs purple-rs linx-rs sigs-rs virus-interpreter-rs peach-rs chord-rs neo-rs cuppa-rs qsee-rs orange-rs isofox-rs markdups-rs rust-docker)" ]; then
     echo "note: uncommitted changes are not part of the build; it uses HEAD" >&2
 fi
 
@@ -50,6 +50,7 @@ git -C "$root" archive HEAD \
     qsee-rs/Cargo.toml qsee-rs/Cargo.lock qsee-rs/.cargo qsee-rs/src qsee-rs/resources qsee-rs/testdata \
     orange-rs/Cargo.toml orange-rs/Cargo.lock orange-rs/src orange-rs/resources \
     isofox-rs/Cargo.toml isofox-rs/Cargo.lock isofox-rs/src \
+    markdups-rs/Cargo.toml markdups-rs/Cargo.lock markdups-rs/src \
     rust-docker/Dockerfile rust-docker/Dockerfile.dockerignore rust-docker/bin \
     | tar -x -C "$tmp"
 

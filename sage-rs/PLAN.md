@@ -1,6 +1,6 @@
 # SAGE reimplementation plan
 
-Target: a native reimplementation of SAGE 5.1 (`sage/`, upstream `a224a2c`) that produces the same
+Target: a native reimplementation of SAGE 5.1 (upstream master `883ab11bba`; `a224a2c` until 2026-11-27) that produces the same
 calls as the Java version on tumor/normal Illumina data, and runs substantially faster.
 
 ## Status
@@ -9,7 +9,7 @@ The Rust port runs the full tumor/normal Illumina somatic pipeline and writes a 
 VCF. With `-java_compat`, on every region tested so far the decompressed VCF is byte-identical to Java
 SAGE 5.1 run with `-threads 1`, at any Rust thread count.
 
-Since 2026-11-22 the default is the corrected mode: 32 of the 56 Java findings numbered in REPORT.md,
+Since 2026-11-22 the default is the corrected mode: 33 of the 60 Java findings numbered in REPORT.md,
 section 5, are corrected unless `-java_compat` (or `SAGE_JAVA_COMPAT=1`) is given. **Every statement
 below about equality with Java, and every record count given beside one, is about the port run with
 `-java_compat`.** What the corrections change is measured in REPORT.md 5.5; step 14 of the table is
@@ -33,6 +33,7 @@ that work.
 | 13. Visualiser | Done: `-vis_variants`, `-vis_pass_only`, `-vis_max_support_reads`, `-vis_output_dir`, `-vis_purple_vcf` (with the amino acid track). Compared with Java on the public HG008 data (SBX and Ultima, one and several samples, tumor only) and on the Illumina pair (paired reads, merged fragments, a PURPLE VCF): the same file names, and the same bytes once the read rows that Java orders at random are sorted. The VCF of a run with the visualiser on is identical to Java's. 181 unit tests pass. See "Visualiser" in QUIRKS.md for what cannot match. |
 
 | 14. Corrections | Done: `src/compat.rs` holds the switch (`-java_compat`, `-java_compat_except <ids>`, taken off the command line in `main`); each corrected place asks `compat::java("S<n>")` and keeps the Java path beside the corrected one. In Java mode the regression suite passes as before; the corrected mode runs the same inputs, gives the same output at 1, 3 and 6 threads, and gives the same calls from a CRAM as from the BAM of the same reads. Unit tests: see REPORT.md 5.5. |
+| 15. Following upstream | Done for `a224a2cd8e..883ab11bba` (2026-11-27): the scaled base-quality penalty, SAGE's own `NM` count, append's version check and header line, the realigned index for inserts before a soft clip (with S57). Java references remade at `883ab11bba`; REPORT.md section 9. |
 
 Regions compared (records identical / total), tumor and normal WGS BAMs on an external volume, 20-core machine:
 

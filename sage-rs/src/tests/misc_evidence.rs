@@ -165,6 +165,53 @@ fn test_long_insert_partial_read_matches() {
 }
 
 // Java: testReadEdgeDistancePenalty
+// Java: testBaseQualPenality (upstream de50386378): the base quality penalty scaled by the recalibrated quality
+#[test]
+fn test_base_qual_penalty() {
+    let fixture = Fixture::new();
+    let qc = fixture.qc();
+
+    let ref_pos_start = 100;
+    let var_position = 120;
+    let var_read_index = var_position - ref_pos_start;
+    let ref_bases = sub(REF_BASES_200, ref_pos_start as usize, ref_pos_start as usize + 40);
+    let read_bases = format!("{}G{}", &ref_bases[..20], &ref_bases[21..]);
+    let mut read = create_sam_record(&next_read_id(), ref_pos_start, &read_bases, "40M");
+
+    let variant = create_simple_variant(var_position, "T", "G");
+    let read_context = create_context(&variant, &read, var_read_index, &fixture.ref_seq, DEFAULT_FLANK_LENGTH).expect("read context");
+    let read_counter = ReadContextCounter::new(Arc::new(read_context), Tier::LowConfidence, DEFAULT_MAX_READ_DEPTH, 1, &qc, true);
+
+    let scores = qc.calculate_quality_scores(&read_counter, var_read_index, &read, 0.0);
+    assert!((scores.final_base_quality - 25.0).abs() < 0.1);
+
+    // again but with lower read qual
+    read.quals[var_read_index as usize] = 30;
+    let scores = qc.calculate_quality_scores(&read_counter, var_read_index, &read, 0.0);
+    assert!((scores.final_base_quality - 21.0).abs() < 0.1);
+
+    read.quals[var_read_index as usize] = 20;
+    let scores = qc.calculate_quality_scores(&read_counter, var_read_index, &read, 0.0);
+    assert!((scores.final_base_quality - 14.0).abs() < 0.1);
+}
+
+// the penalty itself, at and between the thresholds (not from Java)
+#[test]
+fn test_base_qual_penalty_scale() {
+    use crate::evidence::base_qual_penalty;
+    for (q, p) in [(40.0, 12.0), (36.0, 12.0), (35.0, 11.5), (30.0, 9.0), (25.0, 6.5), (24.0, 6.0), (11.0, 6.0), (0.0, 6.0)] {
+        assert_eq!(base_qual_penalty(q), p, "quality {q}");
+    }
+    // the penalised quality never falls as the recalibrated quality rises
+    let mut last = f64::MIN;
+    for i in 0..=500 {
+        let q = i as f64 / 10.0;
+        let penalised = q - base_qual_penalty(q);
+        assert!(penalised >= last, "quality {q}");
+        last = penalised;
+    }
+}
+
 #[test]
 fn test_read_edge_distance_penalty() {
     let fixture = Fixture::new();
@@ -556,4 +603,42 @@ fn test_high_base_qual_threshold_option() {
     set_test_base_qual_thresholds(None);
     assert_eq!(1, read_context_counter.counts.full);
     assert_eq!(1, read_context_counter.high_qual_strong_support);
+}
+
+// Java: testNumberOfEvents (upstream de50386378): SAGE's own count for a read without an NM tag
+#[test]
+fn test_number_of_events() {
+    use crate::candidate::calc_adjusted_num_mutations;
+    // the ref sequence only has a subset (100-150) of the full sequence
+    let ref_sequence = RefSequence::from_bases(100, REF_BASES_200.as_bytes()[100..150].to_vec());
+    // MockRefGenome with RefGenomeMap CHR_1 = REF_BASES_200 (zero-based, as REF_SEQUENCE_200)
+    let ref_genome = RefSequence::from_bases(0, REF_BASES_200.as_bytes().to_vec());
+
+    let read_bases = sub(REF_BASES_200, 120, 140);
+    let read_id = "READ_001";
+    let mut read = create_sam_record(read_id, 120, read_bases, "20M");
+    read.nm = Some(0);
+    assert_eq!(0, calc_adjusted_num_mutations(&read, &ref_sequence, None)); // reads from attribute
+
+    // now test using the ref genome when outside the ref sequence
+    read.nm = None;
+    assert_eq!(0, calc_adjusted_num_mutations(&read, &ref_sequence, Some(&ref_genome)));
+
+    // 2 mismatches
+    let read_bases = format!("C{}C", sub(REF_BASES_200, 121, 139));
+    let mut read = create_sam_record(read_id, 120, &read_bases, "20M");
+    read.nm = None;
+    assert_eq!(2, calc_adjusted_num_mutations(&read, &ref_sequence, Some(&ref_genome)));
+
+    // a RNA read outside the sequence bounds due to N-splits
+    let read_bases = format!("{}{}{}", sub(REF_BASES_200, 50, 60), sub(REF_BASES_200, 120, 130), sub(REF_BASES_200, 170, 180));
+    let mut read = create_sam_record(read_id, 50, &read_bases, "10M60N10M40N10M");
+    read.nm = None;
+    assert_eq!(0, calc_adjusted_num_mutations(&read, &ref_sequence, Some(&ref_genome)));
+
+    // with indels (as in Java, the read is one base shorter than its cigar: the last base is not counted)
+    let read_bases = format!("{}CCC{}{}", sub(REF_BASES_200, 120, 130), sub(REF_BASES_200, 130, 135), sub(REF_BASES_200, 137, 139));
+    let mut read = create_sam_record(read_id, 120, &read_bases, "10M3I5M2D3M");
+    read.nm = None;
+    assert_eq!(2, calc_adjusted_num_mutations(&read, &ref_sequence, Some(&ref_genome)));
 }

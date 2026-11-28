@@ -313,7 +313,7 @@ the original, and we can adapt it.
 | sambamba view and sort | sorts bwa-mem3's output for REDUX | inside the alignment tasks, not measured on its own | stays for now; measure it, then consider a sort in Rust |
 | STAR 2.7.3a | RNA alignment | 14 min on 64 vCPUs for a 74 M read-pair tumor RNA | stays. Hartwig's newer RNA route (bwa-mem3, TARS, REDUX) would replace it once TARS's resources are published |
 | samtools sort | sorts STAR's output | 7.5 min using 2.6 cores | to be folded into the duplicate marking below |
-| GATK MarkDuplicates (Picard) | marks duplicate RNA reads before ISOFOX | 15.3 min using 1.8 cores of 64, 59 GB peak (its heap is set to 80% of the task's memory) | port to Rust (below) |
+| GATK MarkDuplicates (Picard) | marks duplicate RNA reads before ISOFOX | 15.3 min using 1.8 cores of 64, 59 GB peak (its heap is set to 80% of the task's memory) | ported: `markdups-rs` (below) |
 | samtools index; `samtools --version`, `sambamba --version` | TEAL's prep indexes its output BAMs; version lines in `versions.yml` | seconds | teal-rs to write the index itself; then the Rust image needs neither program |
 | VIRUSBreakend (GRIDSS 2.13.2 with kraken2) | viral presence and integration | 1.9 CPU hours, 5.9 GB | Hartwig's Viridian replaces it and Virus Interpreter. Port Viridian when oncoanalyser adopts it. It calls BWA through JNI, and esvee-rs already vendors BWA |
 | MultiQC | summary report | minutes | stays (its own container; optional) |
@@ -327,6 +327,14 @@ Under `-java_compat` it gives the same duplicate flags and metrics, and it corre
 default. Then fold the sort in. STAR's unsorted output keeps each pair's records together, so duplicates
 can be found as the records stream in and the sorted BAM written once. That saves samtools sort and a
 pass over the BAM.
+
+Done (2026-11-28): `markdups-rs`, with the `gatk` wrapper in the image. Under `-java_compat` its output equals
+GATK 4.6.1.0's (the BAM's uncompressed bytes, and the metrics apart from the date line) on a tumor RNA slice,
+three public HG008 slices and 39 synthetic cases, at 1 and 2 threads; the one-step mode (`SortAndMarkDuplicates`)
+equals samtools 1.21 sort followed by GATK. On the RNA slice it takes 5 s and 0.3 GB against GATK's 21 s and 2.6 GB
+(2 threads). Seven Picard faults are corrected by default (MD1-MD7, in its README); one touches this kind of data:
+cluster coordinates above 32767 wrap in Picard (MD1), which on the RNA slice changes 3 tied duplicate pairs and
+optical duplicates from 19,851 to 19,885.
 
 Alternatives looked at:
 

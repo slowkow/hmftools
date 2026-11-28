@@ -118,7 +118,12 @@ pub const INDEL_UNCERTAIN_BASE_REPEAT_MIN: i32 = 3;
 pub const REQUIRED_UNIQUE_FRAG_COORDS_2: i32 = 3;
 pub const EVIDENCE_MIN_MAP_QUAL: i32 = 1;
 pub const HIGHLY_POLYMORPHIC_GENES_MAX_QUALITY: i32 = 10;
-pub const DEFAULT_BASE_QUAL_FIXED_PENALTY: i32 = 12;
+// the base quality penalty (upstream de50386378, SAGE 5.1-beta.5): 12 for recalibrated qualities of 36 and above,
+// scaled down linearly to 6 at 24 and below (QualityCalculator.getBaseQualPenalty)
+pub const BASE_QUAL_FIXED_PENALTY_UPPER_THRESHOLD: i32 = 36;
+pub const BASE_QUAL_FIXED_PENALTY_LOWER_THRESHOLD: i32 = 24;
+pub const BASE_QUAL_FIXED_PENALTY_RANGE: i32 = BASE_QUAL_FIXED_PENALTY_UPPER_THRESHOLD - BASE_QUAL_FIXED_PENALTY_LOWER_THRESHOLD;
+pub const BASE_QUAL_FIXED_PENALTY_MAX: i32 = 12;
 pub const READ_EDGE_PENALTY_0: i32 = 15;
 pub const READ_EDGE_PENALTY_1: i32 = 5;
 pub const DEFAULT_HARD_MIN_TUMOR_QUAL: i32 = 50;

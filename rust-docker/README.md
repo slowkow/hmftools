@@ -39,8 +39,8 @@ For AWS, build the same Dockerfile and push it to ECR.
 
 | Command | What it is |
 |---|---|
-| `sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`, `bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, `chord-rs`, `neo-rs`, `cuppa-rs`, `qsee-rs`, `orange-rs`, `isofox-rs` | the ports (the folders of the same names) |
-| `sage`, `redux`, `esvee`, `amber`, `cobalt`, `bamtools`, `teal`, `lilac`, `cider`, `pave`, `purple`, `linx`, `sigs`, `virusinterpreter`, `peach`, `chord`, `neo`, `cuppa`, `qsee`, `orange`, `isofox` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them |
+| `sage-rs`, `redux-rs`, `esvee-rs`, `amber-rs`, `cobalt-rs`, `bam-tools-rs`, `teal-rs`, `lilac-rs`, `cider-rs`, `pave-rs`, `purple-rs`, `linx-rs`, `sigs-rs`, `virus-interpreter-rs`, `peach-rs`, `chord-rs`, `neo-rs`, `cuppa-rs`, `qsee-rs`, `orange-rs`, `isofox-rs`, `markdups-rs` | the ports (the folders of the same names); `markdups-rs` is Picard's MarkDuplicates as GATK 4.6.1.0 runs it, not an hmftools program |
+| `sage`, `redux`, `esvee`, `amber`, `cobalt`, `bamtools`, `teal`, `lilac`, `cider`, `pave`, `purple`, `linx`, `sigs`, `virusinterpreter`, `peach`, `chord`, `neo`, `cuppa`, `qsee`, `orange`, `isofox`, `gatk` | wrappers (`bin/`) that take the Java tools' command lines as oncoanalyser writes them; `gatk` runs only `gatk [--java-options ...] MarkDuplicates ...`, and `gatk --version` prints markdups-rs's own version |
 | `samtools`, `sambamba` | given to REDUX and ESVEE as `-bamtool`; the ports only check that the path exists (they sort and index BAMs themselves), so on the host these must be on `PATH` too |
 
 The wrappers drop JVM options (`-Xmx...`, `-XX:...`, `-D...=...`) and turn Java main classes into

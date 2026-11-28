@@ -189,6 +189,55 @@ pub fn decimal_format(v: f64, max_fraction: usize) -> String {
     out
 }
 
+/// `decimal_format` with the given rounding mode: DecimalFormat("#.###...") after setRoundingMode, as
+/// htsjdk's FormatUtil uses it (HALF_DOWN, at most 6 fraction digits).
+pub fn decimal_format_rounding(v: f64, max_fraction: usize, mode: Rounding) -> String {
+    if mode == Rounding::HalfEven {
+        return decimal_format(v, max_fraction);
+    }
+    if v.is_nan() {
+        return "NaN".into();
+    }
+    let negative = v < 0.0 || (v == 0.0 && v.is_sign_negative());
+    if v.is_infinite() {
+        return if negative { "-\u{221e}".into() } else { "\u{221e}".into() };
+    }
+    let a = v.abs();
+    let (digits, mut decimal_at) = if a == 0.0 { (Vec::new(), 0) } else { digit_list_mode(a, max_fraction as i32, mode) };
+    if digits.is_empty() {
+        decimal_at = 0;
+    }
+    let mut out = String::new();
+    if negative {
+        out.push('-');
+    }
+    let count = decimal_at.max(1);
+    let mut index = 0usize;
+    for i in (0..count).rev() {
+        if i < decimal_at && index < digits.len() {
+            out.push(digits[index] as char);
+            index += 1;
+        } else {
+            out.push('0');
+        }
+    }
+    if index < digits.len() {
+        out.push('.');
+        for i in 0..max_fraction as i32 {
+            if index >= digits.len() {
+                break;
+            }
+            if -1 - i > decimal_at - 1 {
+                out.push('0');
+                continue;
+            }
+            out.push(digits[index] as char);
+            index += 1;
+        }
+    }
+    out
+}
+
 /// java.text.DecimalFormat("0.000...") with English symbols and exactly `places` digits after the point
 /// (zeros added): the rounding of `decimal_format`; "-0.0000" for negative values that round to zero.
 pub fn decimal_format_fixed(v: f64, places: usize) -> String {
@@ -265,6 +314,17 @@ pub fn decimal_format_min(v: f64, min_fraction: usize, max_fraction: usize) -> S
 /// DigitList.set(boolean, double, int, true) for a positive finite value: the kept digits (ASCII) and
 /// decimalAt, the number of digits before the point.
 fn digit_list(a: f64, maximum_digits: i32) -> (Vec<u8>, i32) {
+    digit_list_mode(a, maximum_digits, Rounding::HalfEven)
+}
+
+/// java.math.RoundingMode values DigitList supports here.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Rounding {
+    HalfEven,
+    HalfDown,
+}
+
+fn digit_list_mode(a: f64, maximum_digits: i32, mode: Rounding) -> (Vec<u8>, i32) {
     let conv = java_double_digits(a);
     // parse the Java format string as DigitList does
     let s = conv.java_format_string();
@@ -304,7 +364,7 @@ fn digit_list(a: f64, maximum_digits: i32) -> (Vec<u8>, i32) {
     if -decimal_at > maximum_digits {
         return (Vec::new(), decimal_at);
     } else if -decimal_at == maximum_digits {
-        if should_round_up(&digits, 0, conv.rounded_up, conv.exact) {
+        if should_round_up_mode(&digits, 0, conv.rounded_up, conv.exact, mode) {
             return (vec![b'1'], decimal_at + 1);
         }
         return (Vec::new(), decimal_at);
@@ -316,7 +376,7 @@ fn digit_list(a: f64, maximum_digits: i32) -> (Vec<u8>, i32) {
     let max = maximum_digits + decimal_at;
     if max >= 0 && (max as usize) < digits.len() {
         let mut max = max as usize;
-        if should_round_up(&digits, max, conv.rounded_up, conv.exact) {
+        if should_round_up_mode(&digits, max, conv.rounded_up, conv.exact, mode) {
             // roundUp
             loop {
                 if max == 0 {
@@ -339,6 +399,29 @@ fn digit_list(a: f64, maximum_digits: i32) -> (Vec<u8>, i32) {
         }
     }
     (digits, decimal_at)
+}
+
+/// DigitList.shouldRoundUp for HALF_EVEN or HALF_DOWN (they differ only on an exact tie)
+fn should_round_up_mode(digits: &[u8], maximum_digits: usize, already_rounded: bool, exact: bool, mode: Rounding) -> bool {
+    match mode {
+        Rounding::HalfEven => should_round_up(digits, maximum_digits, already_rounded, exact),
+        Rounding::HalfDown => {
+            if maximum_digits >= digits.len() {
+                return false;
+            }
+            let d = digits[maximum_digits];
+            if d > b'5' {
+                return true;
+            }
+            if d == b'5' {
+                if maximum_digits == digits.len() - 1 {
+                    return !exact && !already_rounded;
+                }
+                return digits[maximum_digits + 1..].iter().any(|&c| c != b'0');
+            }
+            false
+        }
+    }
 }
 
 /// DigitList.shouldRoundUp for HALF_EVEN
@@ -826,6 +909,29 @@ impl Big {
 
 #[cfg(test)]
 mod tests {
+    /// java.text.NumberFormat (en_US, no grouping, 6 fraction digits) after setRoundingMode(HALF_DOWN), as
+    /// htsjdk's FormatUtil: values from Java 23
+    #[test]
+    fn decimal_format_half_down_as_java() {
+        let cases = [
+            (0.0000125, "0.000013"),
+            (0.1234565, "0.123456"),
+            (0.0000005, "0"),
+            (0.9999995, "1"),
+            (2.5e-7, "0"),
+            (0.653476123, "0.653476"),
+            (1.0026884999, "1.002688"),
+            (123456.1234565, "123456.123457"),
+            (0.5, "0.5"),
+            (1e-7, "0"),
+            (0.0000015, "0.000002"),
+        ];
+        for (v, want) in cases {
+            assert_eq!(decimal_format_rounding(v, 6, Rounding::HalfDown), want, "{v}");
+        }
+        assert_eq!(decimal_format_rounding(0.1234565, 6, Rounding::HalfEven), decimal_format(0.1234565, 6));
+    }
+
     use super::*;
     #[test]
     fn formats() {

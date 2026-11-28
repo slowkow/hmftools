@@ -21,6 +21,7 @@ mod phasing_groups; // evidence/PhasingGroupsTest
 mod read_context_matching; // common/ReadContextMatchingTest
 mod read_context_utils; // common/ReadContextUtilsTest
 mod realignment; // evidence/RealignmentTest
+mod realign_soft_clip; // not from Java: upstream de50386378 realigned index for inserts before a soft clip
 mod ref_context_consumer; // candidate/RefContextConsumerTest
 mod ref_sequence; // common/RefSequenceTest
 mod repeat_info; // common/RepeatInfoTest

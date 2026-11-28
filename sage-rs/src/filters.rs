@@ -479,7 +479,7 @@ impl<'a> VariantFilters<'a> {
         let alt_non_medium_final = q.alt_final_base_quality_total - q.alt_medium_final_base_quality_total;
         let mut qual_per_read = jround(alt_non_medium_final / strong_non_medium as f64) as i32;
         if boost_novel_indel(t) {
-            qual_per_read += DEFAULT_BASE_QUAL_FIXED_PENALTY;
+            qual_per_read += BASE_QUAL_FIXED_PENALTY_MAX;
         }
         let min_qual = if t.qual_cache.is_msi_sample_and_variant { 20 } else { 15 };
         let floored = qual_per_read.max(min_qual) as i8;
@@ -621,7 +621,7 @@ fn below_min_tumor_vaf_probability(t: &ReadContextCounter) -> bool {
     let support = t.strong_alt_support();
     let mut alt_base_qual_avg = t.average_alt_recalibrated_base_quality();
     if boost_novel_indel(t) {
-        alt_base_qual_avg += DEFAULT_BASE_QUAL_FIXED_PENALTY as f64;
+        alt_base_qual_avg += BASE_QUAL_FIXED_PENALTY_MAX as f64;
     }
     let adjusted = adjusted_alt_support_count(support, alt_base_qual_avg / base_qual_avg);
     let probability = 10f64.powf(-base_qual_avg / 10.0);

@@ -1,6 +1,6 @@
 # Java behaviours found while porting, by subject
 
-Each is a candidate for an upstream report. The ids (S1 to S56) are those of [REPORT.md](REPORT.md),
+Each is a candidate for an upstream report. The ids (S1 to S60) are those of [REPORT.md](REPORT.md),
 section 5, which has the Java file and line of each and, in 5.5, what the corrections change. File
 references here are to `sage/src/main/java/com/hartwig/hmftools/sage/`.
 
@@ -14,6 +14,13 @@ Three states:
 
 ## Affect output
 
+- **S57, corrected. Upstream's realigned index for inserts before a soft clip** (`evidence/Realignment`, from
+  `de50386378`). For an insert whose read context's cigar ends in a soft clip, the core end position is moved
+  back by the insert length. Right for a context built from a read whose insert is soft-clipped (the inserted
+  bases were counted as reference positions); wrong for a context whose cigar has the insert as an `I` before
+  the clip (the position was already right, and reads that need realignment lose their support); too large when
+  part of a long insert is an `I` (reads of a neighbouring, one-base-longer allele in a repeat then count for
+  both). Corrected: moved by the inserted bases the context's cigar does not hold as an insert.
 - **S22, port differs. Phase set ids are thread-order dependent in Java.** `phase/PhaseSetCounter` is
   shared by all region threads, so `LPS` values (and anything ordered by them) change between runs with
   more than one thread. The port assigns ids in region order, which equals Java with `-threads 1`.
@@ -54,6 +61,12 @@ Three states:
 
 ## Do not affect output here, but look unintended
 
+- S58, kept (documentation). SAGE's README lists a `base_qual_fixed_penalty` option (12) that the code never
+  read, and its formula still has a fixed penalty of 12; from `de50386378` the SNV and MNV penalty is scaled from
+  6 to 12 by the recalibrated quality.
+- S59, kept. Append writes `##sageAppendVersion` only when the input has none, so after two appends the first
+  version stays, and WISP chooses one quality-per-read threshold from it for every sample.
+- S60, kept. hmf-common's `parseToolVersion` reads a version as a decimal number ("5.10" is 5.1).
 - S40, corrected. `RC_JIT` is declared with three values in the VCF header and written with two.
   Corrected: declared with two.
 - S41, corrected. The `fragmentLength` filter is declared in the header but its test is commented out.
@@ -118,7 +131,8 @@ Three states:
   intron takes it beyond them throws and the run exits. STAR leaves `NM` out by default. The port takes
   the bases of such a block from the genome, in both modes, as upstream does from `de50386378` on; it
   used to count only the bases inside the region. Upstream's fix covers the evidence stage only (the
-  candidate stage passes a null genome); the port gives both stages the genome.
+  candidate stage passes a null genome); the port gives both stages the genome. Since the update to
+  `883ab11bba` the port counts as upstream's `calcMutations` does.
 - **S55, kept, intent uncertain. Soft-clipped reads in the depth.** A read that reaches the variant only
   through a soft clip is counted in `DP` when its clipped bases support neither allele. In RNA these
   include the overhangs STAR clips at splice junctions; on the tumor RNA of REPORT.md section 8 they

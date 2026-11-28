@@ -149,7 +149,7 @@ pub fn build_sam_record(alignment_start: i32, cigar: &str, read_bases: &str) -> 
 }
 
 /// TestUtils.createSamRecord(readId, chr, readStart, readBases, cigar): first of pair, proper pair, mate
-/// 300 bases downstream on the negative strand with the same cigar, NM 1.
+/// 300 bases downstream on the negative strand with the same cigar, NM 0 (1 before upstream de50386378).
 pub fn create_sam_record(read_id: &str, read_start: i32, read_bases: &str, cigar: &str) -> Read {
     let mut read = build_sam_record(read_start, cigar, read_bases);
     read.name = read_id.to_string();
@@ -157,7 +157,7 @@ pub fn create_sam_record(read_id: &str, read_start: i32, read_bases: &str, cigar
     read.mate_tid = 0;
     read.mate_start = read_start + 300;
     read.mate_cigar = Some(cigar.to_string());
-    read.nm = Some(1);
+    read.nm = Some(0);
     read.insert_size = 0;
     read
 }

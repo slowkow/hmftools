@@ -3,15 +3,15 @@
 A Rust reimplementation of [SAGE](../sage/README.md) 5.1, the somatic SNV / MNV / indel caller.
 It takes the same command-line options, and is faster and uses less memory.
 
-The Java reference is SAGE 5.1 as of hmftools commit `a224a2cd8e` (upstream tag `sage-v5.1-beta.4`). The
-Java source beside this crate is newer: upstream commit `de50386378` (`sage-v5.1-beta.5`, 2026-11) changed
-SAGE without changing its version number (the realigned-support test for indels near a soft-clipped end,
-a base-quality penalty scaled between 6 and 12, SAGE's own `NM` count, and append's version check and
-`##sageAppendVersion` header line). Those changes are not in the port yet, so `-java_compat` reproduces
-the earlier commit, not the current Java source. Hartwig's image `sage:5.1-beta.3`, which the
-oncoanalyser dev-3.1.0 line uses, is older again and was built from a side branch: it has the scaled
-penalty and a faulty early version of the `NM` count. Built from source, each of the three reports
-"Sage version 5.1" (the image reports 5.1-beta.3). REPORT.md section 8 compares them on an RNA append.
+The Java reference is SAGE 5.1 as of upstream hmftools master `883ab11bba` (2026-11-27), which for SAGE is the
+code of `de50386378` (tag `sage-v5.1-beta.5`). The port started from `a224a2cd8e` (`sage-v5.1-beta.4`) and
+has followed upstream since, one reviewed change at a time (see "Upstream" below): the base-quality penalty
+scaled between 6 and 12 by the recalibrated quality, SAGE's own `NM` count for reads without the tag, append's
+version check (4.0 or later) and its `##sageAppendVersion` header line, all as upstream has them; upstream's new
+realigned-index adjustment for inserts before a soft clip is reproduced under `-java_compat` only (finding S57).
+Every version reports "Sage version 5.1"; Hartwig's image `sage:5.1-beta.3`, which the oncoanalyser dev-3.1.0
+line uses, is an earlier side-branch build with the scaled penalty and a faulty early `NM` count (REPORT.md
+section 8).
 
 By default the port corrects the faults found in the Java code. With `-java_compat` it behaves as Java
 does and writes the same VCF, byte for byte; that is how the port was verified. See "Corrections and
@@ -75,13 +75,21 @@ the log says so. The `minAvgRawBaseQual` filter has its own Java options (`-min_
 `-min_avg_base_qual_hotspot`, 18). Hartwig tuned its filters on data with the usual qualities, so calls
 made with moved bands need checking, for example against another sample of the same tumor.
 
+**Base-quality penalty.** A read's base quality at an SNV or MNV is its recalibrated (BQR) quality less a
+penalty of 12 from a recalibrated quality of 36 up, scaled down linearly to 6 at 24 and below (upstream
+`de50386378`; a fixed 12 before, which SAGE's README still gives: S58). Indels, Ultima model qualities and
+Illumina artefact qualities keep the fixed 12. On a BQR table whose main bins recalibrate to 36 or more
+(Illumina Q37 to Q41) only the low-quality bins change; SBX's simplex bins (about Q32 after recalibration)
+change most. `sage-rs append` records the version in `##sageAppendVersion`, which WISP reads to choose its
+quality-per-read threshold for such qualities.
+
 `cargo build --release --features mimalloc` links the mimalloc allocator: the same output for about 16%
 less CPU time, at several times the memory (11.6 GB against 1.7 GB on a whole genome). It only pays
 when storage is fast enough to keep every thread busy.
 
 ## Corrections and `-java_compat`
 
-The faults found in Java SAGE are numbered S1 to S56 in [REPORT.md](REPORT.md), section 5. For 32 of
+The faults found in Java SAGE are numbered S1 to S60 in [REPORT.md](REPORT.md), section 5. For 33 of
 them the port takes a corrected path by default; section 5.5 says what each correction does and what
 it changes on the test data.
 
@@ -171,5 +179,7 @@ HG008 SBX slices.
 
 ## Upstream
 
-Started from hmftools commit `a224a2cd8e` (2026-11-17); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
-[`../UPSTREAM.md`](../UPSTREAM.md).
+Started from hmftools commit `a224a2cd8e` (2026-11-17) and brought to upstream master `883ab11bba` (2026-11-27);
+`-java_compat` reproduces the Java built at `883ab11bba`, and the regression cases are compared with Java
+references made with that jar. Each upstream change, and what was decided about it, is in
+[`../UPSTREAM.md`](../UPSTREAM.md); REPORT.md section 9 has the measurements.

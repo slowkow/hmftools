@@ -20,6 +20,7 @@ change since, with what we decided and why.
 | `orange-rs` | ORANGE 5.1 | `ca04e6c39d`, plus upstream's Viridian loading (`f5f660cc9f`), taken while porting: ORANGE as at `883ab11bba` | 2026-11-24 |
 | `hmf-common-rs` | the parts of hmf-common the ports use | `ca04e6c39d` | 2026-11-20 |
 | `hmf-plot-rs` | draws what PURPLE's, LINX's, CUPPA's and qsee's R, Circos and matplotlib code draws, and ORANGE's PDF | the scripts at `ca04e6c39d`; BUI pinned at `1af5d5084d92e8ed30c637076bc964c3769386ca` | 2026-11-20 |
+| `markdups-rs` | Picard MarkDuplicates, not an hmftools program | Picard 3.3.0 with htsjdk 4.1.3, as bundled in GATK 4.6.1.0 (the image oncoanalyser runs) | (Picard release) |
 
 The `rust-ports` branch was cut from `a224a2cd8e` (first commit `a0b24b3299`, SAGE, 2026-11-18). Upstream
 master at `ca04e6c39d` was merged into it once, as `4184ab9cb4` on 2026-11-22; the Java sources on the
@@ -35,6 +36,8 @@ The commit whose Java `-java_compat` reproduces. A port not listed still tracks 
 
 | Port | Tracks | Since | What moving brought |
 |---|---|---|---|
+| `sage-rs` | `883ab11bba` | 2026-11-28 | the scaled base-quality penalty, SAGE's own NM count, `##sageAppendVersion`, and the soft-clip realignment index with one correction (S57) |
+| `redux-rs` | `883ab11bba` | 2026-11-28 | nothing (REDUX unchanged upstream; reviewed with SAGE) |
 | `orange-rs` | `883ab11bba` | 2026-11-27 (while porting) | Viridian and Virus Interpreter loading |
 | `purple-rs` | `883ab11bba` | 2026-11-27 | the new biallelic model, with one correction (PU10) |
 | `linx-rs` | `883ab11bba` | 2026-11-28 | enhancer fusions up to 1 Mb, with one correction (LX6); exonic 5' breakends fuse more widely |
@@ -81,8 +84,13 @@ jars at that commit, for the references, are built in a separate checkout.
 
 | Upstream commit | Date | Program | Change | Decision |
 |---|---|---|---|---|
-| `de50386378` (tag `sage-v5.1-beta.5`) | 2026-11-19 | SAGE, WISP | base-quality penalty scaled by quality, NM counting fix for reads without an NM tag, `##sageAppendVersion` header, WISP purity changes | SAGE: under review. WISP: not applicable (not ported) |
-| `76f6774e65` | 2026-11-19 | ESVEE, hmf-common | prep BAM loading with `-output_id`; specific-region position check without chromosomes | ESVEE: accepted (in the ESVEE reference since `ca04e6c39d`). The hmf-common check: under review for SAGE and REDUX (`-specific_regions`) |
+| `de50386378` (tag `sage-v5.1-beta.5`) | 2026-11-19 | SAGE | base-quality penalty scaled from 6 (recalibrated quality 24 and below) to 12 (36 and above), in place of a fixed 12 | **accepted**, on upstream's rationale: on our data it changes no call a truth set can judge. On the GIAB HG008-T somatic draft benchmark (v0.4), chr21 PASS calls are the same before and after (SBX 141 true, 8 false, 38 missed; Ultima 103, 19, 76); Illumina chr21 gains one PASS call (6,023 to 6,385 records) |
+| `de50386378` | 2026-11-19 | SAGE | SAGE counts NM itself for reads without an NM tag | **accepted**: it fixes the crash of sage-rs S54 in the evidence stage. The candidate stage still passes no reference genome, so S54's correction stays there |
+| `de50386378` | 2026-11-19 | SAGE | append: the input VCF must come from SAGE 4.0 or later; `##sageAppendVersion` written | **accepted**; now written in both modes, so WISP applies the threshold meant for scaled-penalty qualities. Noted, kept as upstream: a second append leaves the first one's version line (S59); versions compared as decimal numbers, so "5.10" reads as 5.1 (S60) |
+| `de50386378` | 2026-11-19 | SAGE | realigned read index for inserts before a soft clip | **accepted with a correction** (sage-rs S57): upstream moves the core end back by the whole insert length whenever the read context's CIGAR ends in a soft clip; that is right only when the insert itself was soft-clipped. With the insert held as an `I` element the shift loses reads that need realigning (9 and 7 inserts in normal and tumor on Illumina chr21, germline mode); with part of a long insert held as an `I` it shifts one base too far and counts reads of a neighbouring allele (14 tumor reads at one public SBX site). The port shifts by the inserted bases the CIGAR does not hold as an insert. Somatic runs with soft filters are unchanged |
+| `de50386378` | 2026-11-19 | SAGE | README | noted (S58): it still documents a fixed penalty of 12 and a `base_qual_fixed_penalty` option the code never had |
+| `de50386378` | 2026-11-19 | WISP | purity changes | not applicable (not ported) |
+| `76f6774e65` | 2026-11-19 | ESVEE, hmf-common | prep BAM loading with `-output_id`; specific-region position check without chromosomes | ESVEE: accepted (in the ESVEE reference since `ca04e6c39d`). The hmf-common check: accepted, no change needed: every hmftools caller checks for filters first, and hmf-common-rs, sage-rs and redux-rs never had the old behaviour |
 | `c2564fce30` | 2026-11-19 | qsee, BamTools | limit of detection for exon variants | accepted: before `ca04e6c39d`, so in qsee-rs and bam-tools-rs from the start |
 | `a6a26719c4` | 2026-11-18 | Viridian | viral read alignments | not applicable (not ported) |
 

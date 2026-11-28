@@ -1,0 +1,24 @@
+[package]
+name = "markdups-rs"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Picard MarkDuplicates, as GATK 4.6.1.0 runs it, in Rust; and duplicate marking with the coordinate sort in one step"
+
+[dependencies]
+anyhow = "1.0.104"
+hashbrown = "0.17.1"
+# the deflate library rust-htslib links: BGZF blocks are inflated and deflated through it directly
+libdeflate-sys = "1.26.1"
+regex = "1.12"
+mimalloc = { version = "0.1.52", default-features = false, optional = true }
+hmf-common = { path = "../hmf-common-rs" }
+
+[features]
+default = ["mimalloc"]
+# a faster allocator for the many small allocations; build with --no-default-features to use the system one
+mimalloc = ["dep:mimalloc"]
+
+[profile.release]
+panic = "abort"
+debug = 1

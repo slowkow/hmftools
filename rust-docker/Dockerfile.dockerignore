@@ -112,4 +112,7 @@
 !isofox-rs/Cargo.toml
 !isofox-rs/Cargo.lock
 !isofox-rs/src
+!markdups-rs/Cargo.toml
+!markdups-rs/Cargo.lock
+!markdups-rs/src
 !rust-docker/bin

@@ -1283,7 +1283,7 @@ impl UltimaRealignedQualModels {
         }
         // the default is the max raw qual, allowing for the fixed penalty deducted later
         let model_qual =
-            model_qual.unwrap_or((max_raw_qual() as i32 + DEFAULT_BASE_QUAL_FIXED_PENALTY) as i8) as f64;
+            model_qual.unwrap_or((max_raw_qual() as i32 + BASE_QUAL_FIXED_PENALTY_MAX) as i8) as f64;
         if is_indel {
             // floor the base qual due to realignment issues from nearby MSI sites dominating indel errors
             // at quals above 40: probabilityToPhredQual(MSI_JITTER_DEFAULT_ERROR_RATE)
