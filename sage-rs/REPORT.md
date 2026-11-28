@@ -836,3 +836,16 @@ counted for a 35-base one at the same repeat) or a move by one repeat unit of a 
 | append_check_nosoft | 321.9 s, 6180 MB | 65.8 s, 891 MB | 35.0 s, 919 MB | 4.9x |
 | rna_t1_somatic | 185.8 s, 4290 MB | 40.5 s, 207 MB | 24.4 s, 225 MB | 4.6x |
 
+
+**Whole genome** (the private Illumina pair of section 2, `bench/run_java.sh` and `run_rust.sh`, 8 threads,
+2026-11-28). The jar at `883ab11bba` against the jar at `a224a2cd8e` (upstream's effect, Java against Java): 360,440
+to 384,789 records (53 gone, 24,402 new, almost all filtered `minTumorQual;minTumorSupport`, with `minAvgRawBaseQual`
+on 17,195 of them), passing 15,881 to 15,915: 44 gained (42 were `minTumorQual`), 10 lost (8 SNVs now merged into
+MNVs by `dedupSnvMnv`, 5 MNVs gained). The port with `-java_compat` against the jar at `883ab11bba`: the same 384,789
+records, every line identical but for 2,302 renumbered `LPS` ids (S22); 521 s and 1.3 GB against Java's 4,492 s and
+14.1 GB (8.6 times faster, a tenth of the memory).
+
+**In the pipeline** (HG008, Google Batch, 2026-11-28, oncoanalyser `rust_ports` in Java mode, image `55ce55b212`,
+against the first run's SAGE from before the update in the default mode): somatic records 346 k to 386 k, the new
+ones low-quality filtered records as above; passing 17,255 to 17,276 (34 gained, 30 of them `minTumorQual` before;
+13 lost). After PAVE and PURPLE: TMB 3.772 to 3.775 per Mb, purity and ploidy unchanged.

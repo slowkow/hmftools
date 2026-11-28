@@ -334,7 +334,10 @@ three public HG008 slices and 39 synthetic cases, at 1 and 2 threads; the one-st
 equals samtools 1.21 sort followed by GATK. On the RNA slice it takes 5 s and 0.3 GB against GATK's 21 s and 2.6 GB
 (2 threads). Seven Picard faults are corrected by default (MD1-MD7, in its README); one touches this kind of data:
 cluster coordinates above 32767 wrap in Picard (MD1), which on the RNA slice changes 3 tied duplicate pairs and
-optical duplicates from 19,851 to 19,885.
+optical duplicates from 19,851 to 19,885. In the pipeline on the whole 74 M read-pair tumor RNA (Google Batch,
+`rust_ports` in Java mode): decoded records identical to GATK's (164.7 M), metrics identical, 4 min 45 s and 1.7 GB
+at 16 threads against GATK's 15 min 19 s and 59.4 GB; ISOFOX, CIDER and CUPPA on its BAM byte-identical to the same
+steps on GATK's (`markdups-rs/REPORT.md`).
 
 Alternatives looked at:
 

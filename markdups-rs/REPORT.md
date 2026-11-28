@@ -181,3 +181,26 @@ holds SORT_MEMORY_MB of records plus 32 bytes per held record, writes runs at le
 quarter of the uncompressed size), and saves the sorted BAM's level-6 compression, its write and two reads, and
 its disk space.
 
+
+## The whole sample in the pipeline (Google Batch, 2026-11-28)
+
+The 74 M read-pair tumour RNA, through oncoanalyser's STAR route (fork profile `rust_ports`, `--rust_java_compat`;
+STAR 2.7.3a and samtools sort from the cache), image `55ce55b212`, against GATK 4.6.1.0's task of the first RNA run on
+the same sorted BAM:
+
+| | GATK 4.6.1.0 | markdups-rs, `--threads 16` |
+|---|---|---|
+| machine | n2-standard-64 (the alignment selector; the pipeline's -Xmx is 80% of 200 GB) | n2-standard-16 |
+| wall time of the tool | 15 min 19 s | 4 min 45 s (286% CPU) |
+| peak memory | 59.4 GB | 1.7 GB |
+| VM cost | $0.98 | $0.09 |
+| BAM size | 9.08 GB | 8.38 GB |
+
+- Records: `samtools view --no-PG -h` of the two BAMs has the same MD5 (164.7 M records, 99.3 M marked duplicates).
+- Metrics: identical apart from the `# Started on` line.
+- Index: `samtools idxstats` through each BAM's own `.bai` identical, and region counts on four regions equal.
+- Downstream, against the earlier rust_ports run on GATK's BAM: ISOFOX 2.0.1 mode (all 9 files), CIDER, CUPPA and
+  BamTools byte-identical, apart from BamTools' `partition_stats` (row order and process times, as between any two runs).
+
+The time is mostly the two passes' single-threaded record handling (the estimate above); the memory is one
+reference's ends, as estimated.
