@@ -96,7 +96,7 @@ impl FusionDisruptionAnalyser {
     pub fn run(&mut self, sample_id: &str, full_sv_list: &[Sv], clusters: &[Cluster], vis: &mut VisSampleData) -> Result<()> {
         self.sample_id = sample_id.to_string();
         self.unique_fusions.clear();
-        self.finder.reset();
+        self.finder.reset_ids();
         let sv_list: Vec<Sv> = full_sv_list.iter().filter(|x| x.linked_svs().is_none() || !x.is_sgl_breakend()).cloned().collect();
         if self.is_germline {
             self.disruption_finder.find_reportable_disruptions(&sv_list, clusters, Some(vis));
@@ -533,16 +533,25 @@ impl FusionDisruptionAnalyser {
             let cluster_id = f.annotations().map(|a| a.cluster_id).unwrap_or(-1);
             let up = f.upstream_trans();
             let down = f.downstream_trans();
-            for t in [up, down] {
-                vis.add_gene_exon_data(VisGeneData::new(
-                    cluster_id,
-                    t.gene().gene_id(),
-                    t.gene_name(),
-                    t.trans_name(),
-                    t.trans_id(),
-                    &t.gene().chromosome(),
-                    VisGeneAnnotationType::FUSION,
-                ));
+            // the upstream side of an enhancer fusion carries its known enhancer region (upstream 7a4490caa6)
+            let enhancer_region = if up.trans_name().starts_with(ENHANCER_TRANSCRIPT_PREFIX) {
+                Some((up.trans_data.trans_start, up.trans_data.trans_end))
+            } else {
+                None
+            };
+            for (t, region) in [(up, enhancer_region), (down, None)] {
+                vis.add_gene_exon_data(
+                    VisGeneData::new(
+                        cluster_id,
+                        t.gene().gene_id(),
+                        t.gene_name(),
+                        t.trans_name(),
+                        t.trans_id(),
+                        &t.gene().chromosome(),
+                        VisGeneAnnotationType::FUSION,
+                    )
+                    .with_region_override(region),
+                );
             }
             vis_fusions.push(VisFusion {
                 cluster_id,

@@ -538,7 +538,10 @@ impl std::fmt::Display for BreakendTransData {
     }
 }
 
-/// BreakendGenePrep.setSvGeneData
+/// BreakendGenePrep.setSvGeneData. The specific pre-gene distances (the 3' genes of the known enhancer pairs, 1 Mb since
+/// upstream 7a4490caa6) are turned into regions upstream of those genes; Java searches every gene from a breakend in such
+/// a region with that distance, so all genes up to 1 Mb away, not only the enhancer partner, are annotated and can form
+/// fusions (LX6). Corrected: the specific distance for the genes it is given for, the default distance for the others.
 pub fn set_sv_gene_data(sv_list: &[Sv], cache: &GeneCache, default_pre_gene_distance: i32, specific_pre_gene_distances: &JavaHashMap<String, i32>) {
     let mut specific_ranges: Vec<hmf_common::regions::ChrBaseRegion> = Vec::new();
     let mut specific_distance = default_pre_gene_distance;
@@ -552,13 +555,38 @@ pub fn set_sv_gene_data(sv_list: &[Sv], cache: &GeneCache, default_pre_gene_dist
     let pre_gene_distance = |chr: &str, pos: i32| -> i32 {
         if specific_ranges.iter().any(|r| r.chromosome == chr && r.contains_position(pos)) { specific_distance } else { default_pre_gene_distance }
     };
+    let per_gene = !crate::compat::java("LX6");
+    // LX6: in a specific region, the genes the default distance finds plus the specific genes within their own distance
+    // (searched with the larger of the two distances, should -fusion_gene_distance exceed the specific one)
+    let gene_filter = |chr: &str, pos: i32, d: i32| -> Option<Box<dyn Fn(&GeneData) -> bool + '_>> {
+        if !per_gene || d == default_pre_gene_distance {
+            return None;
+        }
+        let default_ids: Vec<&str> = cache.find_gene_regions(chr, pos, default_pre_gene_distance).iter().map(|g| g.gene_id.as_str()).collect();
+        Some(Box::new(move |g: &GeneData| {
+            default_ids.contains(&g.gene_id.as_str())
+                || specific_pre_gene_distances.get(&g.gene_name).is_some_and(|gd| {
+                    if g.strand == 1 { pos >= g.gene_start - *gd && pos <= g.gene_end } else { pos >= g.gene_start && pos <= g.gene_end + *gd }
+                })
+        }))
+    };
     for var in sv_list {
         for be in [SE_START, SE_END] {
             let is_start = is_start(be);
             if be == SE_END && var.is_sgl_breakend() {
                 for mapping in var.sgl_mappings() {
                     let d = pre_gene_distance(&mapping.chromosome, mapping.position);
-                    let genes = find_gene_annotations_by_sv(cache, var.id(), is_start, &mapping.chromosome, mapping.position, mapping.orientation, d);
+                    let filter = gene_filter(&mapping.chromosome, mapping.position, d);
+                    let genes = find_gene_annotations_filtered(
+                        cache,
+                        var.id(),
+                        is_start,
+                        &mapping.chromosome,
+                        mapping.position,
+                        mapping.orientation,
+                        if filter.is_some() { d.max(default_pre_gene_distance) } else { d },
+                        filter.as_deref(),
+                    );
                     for g in &genes {
                         g.set_type(var.sv_type());
                     }
@@ -566,14 +594,16 @@ pub fn set_sv_gene_data(sv_list: &[Sv], cache: &GeneCache, default_pre_gene_dist
                 }
             } else {
                 let d = pre_gene_distance(var.chromosome(is_start), var.position(is_start));
-                let genes = find_gene_annotations_by_sv(
+                let filter = gene_filter(var.chromosome(is_start), var.position(is_start), d);
+                let genes = find_gene_annotations_filtered(
                     cache,
                     var.id(),
                     is_start,
                     var.chromosome(is_start),
                     var.position(is_start),
                     var.orientation(is_start),
-                    d,
+                    if filter.is_some() { d.max(default_pre_gene_distance) } else { d },
+                    filter.as_deref(),
                 );
                 var.genes_mut()[se(is_start)].extend(genes);
                 for g in var.genes_list(is_start) {
@@ -588,8 +618,21 @@ pub fn set_sv_gene_data(sv_list: &[Sv], cache: &GeneCache, default_pre_gene_dist
 pub fn find_gene_annotations_by_sv(
     cache: &GeneCache, sv_id: i32, is_start: bool, chromosome: &str, position: i32, orientation: i8, upstream_distance: i32,
 ) -> Vec<BreakendGene> {
+    find_gene_annotations_filtered(cache, sv_id, is_start, chromosome, position, orientation, upstream_distance, None)
+}
+
+/// findGeneAnnotationsBySv limited to the genes `keep` accepts (LX6); the alternative gene regions are positional and
+/// always kept
+#[allow(clippy::too_many_arguments)]
+pub fn find_gene_annotations_filtered(
+    cache: &GeneCache, sv_id: i32, is_start: bool, chromosome: &str, position: i32, orientation: i8, upstream_distance: i32,
+    keep: Option<&dyn Fn(&GeneData) -> bool>,
+) -> Vec<BreakendGene> {
     let mut out = Vec::new();
     for gene in cache.find_gene_regions(chromosome, position, upstream_distance) {
+        if keep.is_some_and(|k| !k(gene)) {
+            continue;
+        }
         let Some(trans_list) = cache.transcripts(&gene.gene_id) else { continue };
         if trans_list.is_empty() {
             continue;

@@ -11,6 +11,7 @@ mod drivers;
 mod fusion;
 mod germline;
 mod misc;
+mod upstream;
 
 use std::rc::Rc;
 

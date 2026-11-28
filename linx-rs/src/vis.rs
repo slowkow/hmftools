@@ -7,9 +7,9 @@ use hmf_common::purple_files::write_lines;
 
 use crate::analysis::classification::is_filtered_resolved_type;
 use crate::cn::SvCnData;
+use crate::fusion::ENHANCER_TRANSCRIPT_PREFIX;
 use crate::gene::GeneCache;
 use crate::types::*;
-use crate::utils::ref_genome_is_v37;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VisGeneAnnotationType {
@@ -37,6 +37,9 @@ pub struct VisGeneData {
     pub annotation_type: VisGeneAnnotationType,
     pub exon_position_offsets: JavaHashMap<i32, [i32; 2]>,
     pub exons_lost_offsets: JavaHashMap<i32, [i32; 2]>,
+    /// RegionOverride: the known enhancer region (start, end) an enhancer fusion's upstream side was made from, on
+    /// `chromosome` (upstream 7a4490caa6)
+    pub region_override: Option<(i32, i32)>,
 }
 
 impl VisGeneData {
@@ -53,7 +56,12 @@ impl VisGeneData {
             annotation_type: t,
             exon_position_offsets: JavaHashMap::new(),
             exons_lost_offsets: JavaHashMap::new(),
+            region_override: None,
         }
+    }
+    pub fn with_region_override(mut self, region: Option<(i32, i32)>) -> Self {
+        self.region_override = region;
+        self
     }
 }
 
@@ -256,7 +264,7 @@ impl VisDataWriter {
         write_lines(&vis_file(&self.output_dir, &sample.sample_id, "vis_segments", self.germline), &lines)
     }
 
-    fn write_gene_data(&self, sample: &VisSampleData) -> Result<()> {
+    pub(crate) fn write_gene_data(&self, sample: &VisSampleData) -> Result<()> {
         let mut exons = vec!["ClusterId\tGene\tTranscript\tChromosome\tAnnotationType\tExonRank\tExonStart\tExonEnd".to_string()];
         let mut proteins = vec!["ClusterId\tTranscript\tChromosome\tStart\tEnd\tInfo".to_string()];
         let cache = self.gene_cache.expect("Ensembl data for the visualiser data");
@@ -264,11 +272,13 @@ impl VisDataWriter {
             if g.cluster_id < 0 {
                 continue;
             }
-            if g.annotation_type == VisGeneAnnotationType::FUSION && g.trans_name.contains("@IG") {
-                let ig = g.trans_name.replace('@', "");
-                let (s, e) = ig_region(&ig).expect("IG region");
-                exons.push(format!("{}\t{}\t{}\t{}\t{}\t1\t{s}\t{e}", g.cluster_id, g.trans_name, g.trans_name, g.chromosome, g.annotation_type));
-                continue;
+            // checkAddEnhancerExonRegions: an enhancer fusion's upstream side is drawn as one exon over the known enhancer
+            // region it was made from (until upstream 7a4490caa6: only "@IG" transcripts, over ImmuneRegions' IG locus)
+            if g.annotation_type == VisGeneAnnotationType::FUSION && g.trans_name.starts_with(ENHANCER_TRANSCRIPT_PREFIX) {
+                if let Some((s, e)) = g.region_override {
+                    exons.push(format!("{}\t{}\t{}\t{}\t{}\t1\t{s}\t{e}", g.cluster_id, g.trans_name, g.trans_name, g.chromosome, g.annotation_type));
+                    continue;
+                }
             }
             let Some(t) = cache.transcript_data(&g.gene_id, &g.trans_name) else { continue };
             if t.exons.is_empty() {
@@ -390,16 +400,5 @@ fn position_value(b: &Be, is_chain_end: bool) -> String {
         DIRECTION_CENTROMERE.to_string()
     } else {
         p
-    }
-}
-
-/// ImmuneRegions.getIgRegion
-fn ig_region(gene: &str) -> Option<(i32, i32)> {
-    let v37 = ref_genome_is_v37();
-    match gene {
-        "IGK" => Some(if v37 { (89156674, 90538397) } else { (88857161, 90315836) }),
-        "IGH" => Some(if v37 { (106032614, 107288051) } else { (105586437, 106879844) }),
-        "IGL" => Some(if v37 { (22380474, 23265085) } else { (22026076, 22922913) }),
-        _ => None,
     }
 }

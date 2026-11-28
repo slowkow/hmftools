@@ -28,7 +28,7 @@ pub fn java(id: &'static str) -> bool {
 }
 
 /// The number of findings, LX1 to LX<FINDINGS>; raise it when a finding is added.
-pub const FINDINGS: u32 = 5;
+pub const FINDINGS: u32 = 6;
 
 /// The visualiser's findings, LV1 to LV<VIS_FINDINGS>.
 pub const VIS_FINDINGS: u32 = 4;

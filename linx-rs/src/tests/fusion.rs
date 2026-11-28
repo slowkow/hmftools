@@ -112,7 +112,7 @@ fn test_reportable_fusion_comparison() {
     let mut env = FusionEnv::new();
     let gene_id1 = "ENSG0001";
     let mut genes = vec![create_ensembl_gene_data(gene_id1, "GENE1", CHR_1, POS_STRAND, 100, 1000)];
-    let t1 = create_trans_exons(gene_id1, 1, POS_STRAND, &[100, 300, 500, 700, 900], 99, Some(300), Some(998), true, "");
+    let t1 = create_trans_exons(gene_id1, 1, POS_STRAND, &[100, 300, 500, 700, 900], 99, Some(300), Some(998), true, BIOTYPE_PROTEIN_CODING);
     add_trans_exon_data(&mut env.ensembl, gene_id1, vec![t1]);
     let gene_id2 = "ENSG0002";
     genes.push(create_ensembl_gene_data(gene_id2, "GENE2", CHR_1, 1, 10000, 12000));
@@ -137,9 +137,6 @@ fn test_reportable_fusion_comparison() {
     for (g, pos) in down.iter().zip([10250, 10450, 10650, 10850]) {
         g.set_positional_data(CHR_1, pos, -1);
     }
-    fa.finder.config.require_phase_match = true;
-    fa.finder.config.allow_exon_skipping = true;
-    fa.finder.config.require_upstream_biotypes = false;
     let fusions = fa.finder.find_fusions(&up, &down);
     for f in &fusions {
         f.set_known_type(KNOWN_PAIR);
@@ -379,20 +376,24 @@ fn coding_bases(s: Option<i32>, e: Option<i32>) -> i32 {
         _ => 0,
     }
 }
-fn rules_config(allow_skipping: bool, require_phase: bool) -> FusionConfig {
-    FusionConfig { allow_exon_skipping: allow_skipping, require_phase_match: require_phase, require_upstream_biotypes: false, ..Default::default() }
+fn rules_config() -> FusionConfig {
+    FusionConfig::default()
 }
 
 #[test]
 fn test_fusion_types() {
     let gene1 = create_gene_annotation(0, true, "GENE1", "ENSG0001", POS_STRAND, CHR_1, 150, 1);
     let gene2 = create_gene_annotation(0, false, "GENE2", "ENSG0003", NEG_STRAND, CHR_1, 150, 1);
-    let params = rules_config(false, true);
+    let params = rules_config();
     let (none, some) = (None, None::<i32>);
     let tr = |g: &BreakendGene, id: i32, canon: bool, cs: Option<i32>, ce: Option<i32>, eu: i32, ed: i32, phase: i32, cb: i32| {
         create_transcript(g, id, canon, 50, 250, cs, ce, "", eu, ed, phase, cb, coding_bases(cs, ce))
     };
-    let trans1 = tr(&gene1, 1, false, none, some, 2, 3, PHASE_NONE, 0);
+    // the upstream transcripts of the Java test are protein coding since upstream 7a4490caa6
+    let tr_pc = |g: &BreakendGene, id: i32, canon: bool, cs: Option<i32>, ce: Option<i32>, eu: i32, ed: i32, phase: i32, cb: i32| {
+        create_transcript(g, id, canon, 50, 250, cs, ce, BIOTYPE_PROTEIN_CODING, eu, ed, phase, cb, coding_bases(cs, ce))
+    };
+    let trans1 = tr_pc(&gene1, 1, false, none, some, 2, 3, PHASE_NONE, 0);
     let (cs, ce) = (Some(100), Some(200));
     let trans2 = tr(&gene2, 2, false, cs, ce, 2, 3, PHASE_NONE, 10);
     assert!(trans1.non_coding());
@@ -417,7 +418,7 @@ fn test_fusion_types() {
     assert!(check_fusion_logic(&trans1, &trans2, &params).is_none());
 
     gene1.set_positional_data(CHR_1, 40, 1);
-    let trans1 = tr(&gene1, 1, true, cs, ce, 2, 3, PHASE_NONE, 0);
+    let trans1 = tr_pc(&gene1, 1, true, cs, ce, 2, 3, PHASE_NONE, 0);
     let trans2 = tr(&gene2, 2, true, cs, ce, 2, 3, PHASE_NONE, 10);
     assert!(trans1.pre_coding());
     assert!(check_fusion_logic(&trans1, &trans2, &params).is_none());
@@ -427,53 +428,56 @@ fn test_fusion_types() {
     assert!(check_fusion_logic(&trans1, &trans2, &params).is_none());
     trans1.set_is_disruptive(true);
 
-    let trans1 = tr(&gene1, 1, true, cs, ce, 2, 2, PHASE_NONE, 0);
+    // the Java test calls this "up coding exonic to not down coding exonic", but at position 40 the transcript is
+    // pre-coding: it is the pre-coding exonic rule that rejects it, before and after upstream 7a4490caa6
+    let trans1 = tr_pc(&gene1, 1, true, cs, ce, 2, 2, PHASE_NONE, 0);
     let trans2 = tr(&gene2, 2, false, cs, ce, 2, 3, PHASE_NONE, 0);
     assert!(trans1.is_exonic());
+    assert!(trans1.pre_coding());
     assert!(trans2.is_intronic());
     assert!(check_fusion_logic(&trans1, &trans2, &params).is_none());
 
-    gene1.set_positional_data(CHR_1, 110, 1);
-    let trans1 = tr(&gene1, 1, true, cs, ce, 2, 3, PHASE_NONE, 10);
-    let trans2 = tr(&gene2, 2, true, cs, ce, 2, 3, PHASE_0, 10);
-    assert!(trans1.is_coding() && trans2.is_coding());
-    assert!(trans1.is_intronic() && trans2.is_intronic());
-    assert!(check_fusion_logic(&trans1, &trans2, &params).is_none());
+    // "unmatched phasing intronic" left the Java test with RequirePhaseMatch (upstream 7a4490caa6)
 
     gene1.set_positional_data(CHR_1, 40, 1);
-    let trans1 = create_transcript(&gene1, 1, true, 50, 450, cs, ce, "", 1, 2, PHASE_NONE, 0, coding_bases(cs, ce));
+    let trans1 = create_transcript(&gene1, 1, true, 50, 450, cs, ce, BIOTYPE_PROTEIN_CODING, 1, 2, PHASE_NONE, 0, coding_bases(cs, ce));
     let trans2 = create_transcript(&gene1, 1, true, 50, 550, cs, ce, "", 4, 5, PHASE_NONE, 0, coding_bases(cs, ce));
     assert!(trans1.pre_coding() && trans2.pre_coding());
     assert!(check_fusion_logic(&trans1, &trans2, &params).is_none());
 
     gene1.set_positional_data(CHR_1, 110, 1);
-    let trans1 = create_transcript_ex(&gene1, 1, true, 50, 250, cs, ce, "", 2, 2, PHASE_1, PHASE_2, 10, coding_bases(cs, ce));
+    let trans1 =
+        create_transcript_ex(&gene1, 1, true, 50, 250, cs, ce, BIOTYPE_PROTEIN_CODING, 2, 2, PHASE_1, PHASE_2, 10, coding_bases(cs, ce));
     gene2.set_positional_data(CHR_1, 190, 1);
     let trans2 = create_transcript_ex(&gene2, 2, true, 50, 250, cs, ce, "", 2, 2, PHASE_0, PHASE_2, 10, coding_bases(cs, ce));
     assert!(trans1.is_exonic() && trans2.is_exonic());
-    assert!(check_fusion_logic(&trans1, &trans2, &params).is_none());
+    // unphased fusions are kept since upstream 7a4490caa6
+    let f = check_fusion_logic(&trans1, &trans2, &params).unwrap();
+    assert!(!f.phase_matched());
 
-    let trans1 = tr(&gene1, 1, true, cs, ce, 2, 2, PHASE_2, 11);
-    assert!(check_fusion_logic(&trans1, &trans2, &params).is_none());
+    let trans1 = tr_pc(&gene1, 1, true, cs, ce, 2, 2, PHASE_2, 11);
+    let f = check_fusion_logic(&trans1, &trans2, &params).unwrap();
+    assert!(!f.phase_matched());
     let trans2 = tr(&gene2, 2, true, cs, ce, 2, 2, PHASE_0, 12);
-    assert!(check_fusion_logic(&trans1, &trans2, &params).is_some());
+    let f = check_fusion_logic(&trans1, &trans2, &params).unwrap();
+    assert!(f.phase_matched());
 
     gene1.set_positional_data(CHR_1, 90, 1);
-    let trans1 = tr(&gene1, 1, true, cs, ce, 2, 2, PHASE_NONE, 0);
+    let trans1 = tr_pc(&gene1, 1, true, cs, ce, 2, 2, PHASE_NONE, 0);
     gene2.set_positional_data(CHR_1, 210, 1);
     let trans2 = tr(&gene2, 2, true, cs, ce, 2, 2, PHASE_NONE, 0);
     assert!(trans1.is_exonic() && trans2.is_exonic());
     assert!(trans1.pre_coding() && trans2.pre_coding());
     assert!(check_fusion_logic(&trans1, &trans2, &params).is_some());
 
-    let trans1 = tr(&gene1, 1, true, cs, ce, 2, 3, PHASE_1, 10);
+    let trans1 = tr_pc(&gene1, 1, true, cs, ce, 2, 3, PHASE_1, 10);
     let trans2 = tr(&gene2, 2, true, cs, ce, 2, 3, PHASE_1, 10);
     assert!(check_fusion_logic(&trans1, &trans2, &params).is_some());
 
     let mut kfc = KnownFusionCache::new();
     kfc.add_data(KnownFusionData::new(KNOWN_PAIR, gene1.gene_name(), gene2.gene_name(), "", ""));
     let kfc: &'static KnownFusionCache = Box::leak(Box::new(kfc));
-    let finder = FusionFinder::new(rules_config(false, true), leak_cache(create_gene_data_cache()), kfc);
+    let finder = FusionFinder::new(rules_config(), leak_cache(create_gene_data_cache()), kfc);
     gene1.add_transcript(trans1);
     gene2.add_transcript(trans2);
     let fusions = finder.find_fusions(&[gene1], &[gene2]);
@@ -487,9 +491,9 @@ fn test_alternate_phasings() {
     let gene2 = create_gene_annotation(0, false, "GENE2", "ENSG0003", NEG_STRAND, CHR_1, 150, 1);
     let (cs, ce) = (Some(100), Some(200));
     let cb = coding_bases(cs, ce);
-    let up = create_transcript(&gene1, 1, true, 50, 250, cs, ce, "", 2, 3, PHASE_1, 10, cb);
+    let up = create_transcript(&gene1, 1, true, 50, 250, cs, ce, BIOTYPE_PROTEIN_CODING, 2, 3, PHASE_1, 10, cb);
     let down = create_transcript(&gene2, 2, false, 50, 250, cs, ce, "", 2, 3, PHASE_0, 10, cb);
-    let params = rules_config(true, false);
+    let params = rules_config();
     assert!(up.is_coding() && down.is_coding());
     let f = check_fusion_logic(&up, &down, &params).unwrap();
     assert!(!f.phase_matched());
@@ -508,7 +512,7 @@ fn test_alternate_phasings() {
     assert_eq!(1, f.exons_skipped(false));
 
     gene1.set_positional_data(CHR_1, 210, 1);
-    let up = create_transcript(&gene1, 1, true, 50, 250, cs, ce, "", 6, 7, PHASE_NONE, 100, 100);
+    let up = create_transcript(&gene1, 1, true, 50, 250, cs, ce, BIOTYPE_PROTEIN_CODING, 6, 7, PHASE_NONE, 100, 100);
     assert!(up.post_coding());
     assert_eq!(POST_CODING_PHASE, up.phase);
     up.alternative_phasing_mut().clear();
@@ -518,7 +522,7 @@ fn test_alternate_phasings() {
     assert_eq!(3, f.exons_skipped(true));
     assert_eq!(0, f.exons_skipped(false));
 
-    let up = create_transcript(&gene1, 1, true, 50, 250, cs, ce, "", 2, 3, PHASE_1, 10, cb);
+    let up = create_transcript(&gene1, 1, true, 50, 250, cs, ce, BIOTYPE_PROTEIN_CODING, 2, 3, PHASE_1, 10, cb);
     let down = create_transcript(&gene2, 2, true, 50, 250, cs, ce, "", 2, 3, PHASE_0, 10, cb);
     let f = check_fusion_logic(&up, &down, &params).unwrap();
     assert!(!f.phase_matched());
@@ -542,10 +546,7 @@ fn test_exonic_fusions() {
         create_trans_exons("ENSG0002", 2, POS_STRAND, &[10100, 10300, 10500, 10700, 10900], 100, Some(10150), Some(10950), true, BIOTYPE_PROTEIN_CODING);
     add_trans_exon_data(&mut env.ensembl, "ENSG0002", vec![t2]);
     let pre_gene = 100000;
-    let (gc, mut fa) = env.analyser();
-    fa.finder.config.require_phase_match = false;
-    fa.finder.config.allow_exon_skipping = true;
-    fa.finder.config.require_upstream_biotypes = false;
+    let (gc, fa) = env.analyser();
 
     let up = find_gene_annotations_by_sv(gc, 0, true, CHR_1, 701, 1, pre_gene);
     up[0].set_positional_data(CHR_1, 701, 1);
@@ -761,11 +762,6 @@ fn breakend_genes(gc: &GeneCache, sv_id: i32, is_start: bool, chr: &str, pos: i3
     genes[0].set_positional_data(chr, pos, o);
     genes
 }
-fn params(fa: &mut FusionDisruptionAnalyser, require_phase: bool, allow_skipping: bool, require_biotypes: bool) {
-    fa.finder.config.require_phase_match = require_phase;
-    fa.finder.config.allow_exon_skipping = allow_skipping;
-    fa.finder.config.require_upstream_biotypes = require_biotypes;
-}
 const DEFAULT_PRE_GENE: i32 = 100000;
 
 #[test]
@@ -775,7 +771,6 @@ fn test_same_gene_fusions() {
     let (gc, mut fa) = env.analyser();
     let up = breakend_genes(gc, 0, false, CHR_1, 1950, 1, DEFAULT_PRE_GENE);
     let down = breakend_genes(gc, 0, true, CHR_1, 1350, -1, DEFAULT_PRE_GENE);
-    params(&mut fa, true, true, false);
     let fusions = fa.finder.find_fusions(&up, &down);
     assert_eq!(1, fusions.len());
     let f = &fusions[0];
@@ -813,7 +808,6 @@ fn test_exon_del_dup_fusion() {
     kf.set_known_exon_data(&generate_trans_name(10), "2;5", "10;14").unwrap();
     env.kfc.add_data(kf);
     let (gc, mut fa) = env.analyser();
-    params(&mut fa, true, true, false);
 
     let up = breakend_genes(gc, 0, true, CHR_1, 1550, 1, DEFAULT_PRE_GENE);
     let down = breakend_genes(gc, 0, false, CHR_1, 2150, -1, DEFAULT_PRE_GENE);
@@ -876,7 +870,6 @@ fn test_enhancer_region_fusion() {
     kf.apply_overrides(&ig_region).unwrap();
     env.kfc.add_data(kf);
     let (gc, mut fa) = env.analyser();
-    params(&mut fa, true, true, false);
 
     let up = breakend_genes(gc, 0, true, chr, 200, -1, 1000);
     let down = breakend_genes(gc, 0, false, chr, 9500, -1, 1000);

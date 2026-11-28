@@ -3,7 +3,7 @@
 A port of hmftools LINX 2.4 (Java) to Rust: clustering, chaining and annotation of PURPLE's structural
 variants, with fusions, disruptions and the LINX driver catalog, for one sample, somatic or germline. It
 takes LINX's command line and writes the same files; with `-java_compat` they equal Java's byte for
-byte. Without it, the Java faults listed in [REPORT.md](REPORT.md) (LX1 to LX5) are corrected.
+byte. Without it, the Java faults listed in [REPORT.md](REPORT.md) (LX1 to LX6) are corrected.
 
 ## Usage
 
@@ -34,7 +34,7 @@ Options, as in Java:
 | `-write_vis_data`, `-no_vis_files`, `-write_type` | the visualiser files (written for a somatic sample unless `-no_vis_files`) |
 | `-write_neo_epitopes` | the neo-epitope candidate fusions |
 | `-fusion_gene_distance` | upstream distance for fusion candidate genes (default 100000) |
-| `-skip_unphased_fusions`, `-write_all_vis_fusions`, `-log_reportable_fusions`, `-fusion_debug_sv_genes` | fusion options |
+| `-write_all_vis_fusions`, `-log_reportable_fusions`, `-fusion_debug_sv_genes` | fusion options (`-skip_unphased_fusions` was removed upstream in `7a4490caa6` and is refused, as by Java) |
 | `-proximity_distance` (default 5000), `-chaining_sv_limit`, `-annotations`, `-gene_id_file` | clustering and chaining options |
 | `-fragile_site_file`, `-line_element_file` | in place of the bundled files (`resources/`) |
 | `-output_dir`, `-log_level`, `-log_debug`, `-threads` | as in Java (LINX uses threads only for several samples) |
@@ -116,5 +116,7 @@ of the corrected faults. The build needs cmake and a C compiler for hmf-plot-rs 
 
 ## Upstream
 
-Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+Started from hmftools commit `ca04e6c39d` (2026-11-20) and follows upstream master `883ab11bba` (2026-11-27), which adds the
+immunoglobulin (IG) fusion changes of `7a4490caa6`; `-java_compat` reproduces the Java built at `883ab11bba`. Changes upstream has
+made since the start, and what was decided about each, are in
 [`../UPSTREAM.md`](../UPSTREAM.md).

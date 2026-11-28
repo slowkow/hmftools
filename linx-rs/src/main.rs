@@ -66,7 +66,7 @@ use crate::vis::{VisDataWriter, VisSampleData};
 pub const VERSION: &str = "2.4";
 const APP_NAME: &str = "Linx";
 
-const FLAGS: [&str; 22] = [
+const FLAGS: [&str; 21] = [
     "germline",
     "write_all",
     "write_sv_data",
@@ -79,7 +79,6 @@ const FLAGS: [&str; 22] = [
     "fail_on_missing",
     "perf_debug",
     "log_verbose",
-    "skip_unphased_fusions",
     "write_neo_epitopes",
     "log_reportable_fusions",
     "log_all_potential_fusions",
@@ -261,9 +260,6 @@ impl LinxConfig {
             log_reportable_only: a.has_flag("log_reportable_fusions"),
             log_all_potentials: a.has_flag("log_all_potential_fusions"),
             write_all_vis_fusions: a.has_flag("write_all_vis_fusions"),
-            allow_exon_skipping: true,
-            require_phase_match: a.has_flag("skip_unphased_fusions"),
-            require_upstream_biotypes: true,
             debug_sv_genes,
         };
         if a.has_value("rna_fusions_file") {

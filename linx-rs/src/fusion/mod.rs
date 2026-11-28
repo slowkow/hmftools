@@ -20,7 +20,8 @@ use crate::types::handle;
 
 // FusionConstants
 pub const MAX_UPSTREAM_DISTANCE_KNOWN: i32 = 100000;
-pub const MAX_UPSTREAM_DISTANCE_ENHANCER_KNOWN: i32 = 250000;
+/// 250000 until upstream 7a4490caa6 (IG fusions, AUS-509)
+pub const MAX_UPSTREAM_DISTANCE_ENHANCER_KNOWN: i32 = 1_000_000;
 pub const MAX_UPSTREAM_DISTANCE_OTHER: i32 = 10000;
 pub const MAX_ENHANCER_PARTNER_GENE_DISTANCE_NO_ORIENT: i32 = 50000;
 pub const MIN_ENHANCER_PARTNER_GENE_DISTANCE: i32 = 1_000_000;
@@ -30,6 +31,8 @@ pub const REQUIRED_BIOTYPES: [&str; 5] =
 pub const FUSION_MAX_CHAIN_LENGTH: i64 = 150000;
 pub const FUSION_MAX_CHAIN_LINKS: i32 = 4;
 pub const ENHANCER_PROMISCUOUS_MIN_DISTANCE: i32 = 100000;
+/// the name prefix of the transcripts LINX makes for enhancer regions ("@IGH")
+pub const ENHANCER_TRANSCRIPT_PREFIX: &str = "@";
 
 /// first entries for V37, second for V38 in Ensembl
 pub const PROTEINS_REQUIRED_LOST: [&str; 2] = ["Raf-like Ras-binding", "RBD"];
@@ -51,31 +54,16 @@ pub const PROTEINS_REQUIRED_KEPT: [&str; 15] = [
     "BROMODOMAIN_2",
 ];
 
-/// FusionConfig (the options LINX's annotation reads; the logging-only ones are kept for completeness)
-#[derive(Clone, Debug)]
+/// FusionConfig (the options LINX's annotation reads; the logging-only ones are kept for completeness). Upstream
+/// 7a4490caa6 removed AllowExonSkipping, RequirePhaseMatch (`-skip_unphased_fusions`) and RequireUpstreamBiotypes:
+/// exon skipping is always allowed, unphased fusions are always kept and upstream biotypes always required.
+#[derive(Clone, Debug, Default)]
 pub struct FusionConfig {
     pub log_reportable_only: bool,
     pub log_all_potentials: bool,
     pub write_all_vis_fusions: bool,
-    pub allow_exon_skipping: bool,
-    pub require_phase_match: bool,
-    pub require_upstream_biotypes: bool,
     /// fusion_debug_sv_genes: gene and SV id pairs to limit fusions to
     pub debug_sv_genes: Vec<(String, i32)>,
-}
-
-impl Default for FusionConfig {
-    fn default() -> Self {
-        FusionConfig {
-            log_reportable_only: false,
-            log_all_potentials: false,
-            write_all_vis_fusions: false,
-            allow_exon_skipping: true,
-            require_phase_match: false,
-            require_upstream_biotypes: true,
-            debug_sv_genes: Vec::new(),
-        }
-    }
 }
 
 impl FusionConfig {

@@ -37,6 +37,7 @@ The commit whose Java `-java_compat` reproduces. A port not listed still tracks 
 |---|---|---|---|
 | `orange-rs` | `883ab11bba` | 2026-11-27 (while porting) | Viridian and Virus Interpreter loading |
 | `purple-rs` | `883ab11bba` | 2026-11-27 | the new biallelic model, with one correction (PU10) |
+| `linx-rs` | `883ab11bba` | 2026-11-28 | enhancer fusions up to 1 Mb, with one correction (LX6); exonic 5' breakends fuse more widely |
 
 ## How we follow upstream
 
@@ -89,7 +90,10 @@ REDUX itself has not changed upstream since `a224a2cd8e`.
 
 | Upstream commit | Date | Program | Change | Decision |
 |---|---|---|---|---|
-| `7a4490caa6` | 2026-11-23 | LINX | immunoglobulin (IG) fusions; the visualiser's data files | under review |
+| `7a4490caa6` | 2026-11-23 | LINX | enhancer (IG and other) fusions: the 3' gene's upstream distance for enhancer partners 250 kb to 1 Mb | **accepted with a correction** (linx-rs LX6): Java applies the 1 Mb to every gene near a breakend in an enhancer partner's window, not only to the enhancer partner, so FGFR1-3 fusions, which skip the distance check, can take partners 300-740 kb away that no other LINX rule allows. The port gives the 1 Mb to the enhancer partner genes only. Evidence: IGH-MYC at 400 kb and IGL-BCL6 at 700 kb are now reported, nothing within the old limits changes; on synthetic FGFR2 cases Java reports far partners in 4 of 7 and replaces a 5 kb partner by a 736 kb one in another. On the real cases no fusion, driver or visualiser file changes; `breakend.tsv` loses the unrelated-gene rows the old 250 kb windows also gave (17 on HG008) |
+| `7a4490caa6` | 2026-11-23 | LINX | three fusion settings fixed, and with them `-skip_unphased_fusions` removed | accepted (oncoanalyser does not pass the option; the port now refuses it, as Java does) |
+| `7a4490caa6` | 2026-11-23 | LINX | a 5' breakend inside a coding exon may fuse with any valid 3' transcript, not only one on the same SV | accepted: consistent with how LINX treats such breakends; on a synthetic BCR-ABL1 it finds the canonical in-frame exon 13 to exon 2 fusion where it chose an out-of-frame non-coding transcript before |
+| `7a4490caa6` | 2026-11-23 | LINX | visualiser data: the enhancer side of a fusion drawn over its enhancer region (all enhancers) | accepted: TRA and BCL11B fusions get their row. The pipeline's known fusion data already has the 53 enhancer pairs |
 | `110f42ee7d` | 2026-11-23 | COMPAR | compares Viridian reports | not applicable (not ported; not in oncoanalyser) |
 | `f5f660cc9f` | 2026-11-24 | ORANGE, hmf-common | loads Viridian and Virus Interpreter files | accepted in `orange-rs` (hmftools `e471239079`) |
 | `3807790a20` | 2026-11-24 | PURPLE | README: purity status and QC column descriptions | not applicable (documentation). The corrections are right, checked against the files PURPLE writes; purple-rs's README did not repeat the old descriptions |

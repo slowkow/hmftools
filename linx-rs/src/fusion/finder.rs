@@ -28,7 +28,8 @@ impl FusionFinder {
     pub fn has_valid_config_data(&self) -> bool {
         self.known_fusion_cache.has_valid_data()
     }
-    pub fn reset(&self) {
+    /// resetIds (FusionIdGenerator.reset)
+    pub fn reset_ids(&self) {
         self.next_fusion_id.set(0)
     }
     pub fn next_fusion_id(&self) -> i32 {
@@ -71,7 +72,7 @@ impl FusionFinder {
                 let known_pair = kfc.has_known_fusion(up_gene.gene_name(), down_gene.gene_name());
                 let known_unmappable3 = kfc.has_known_unmappable3_fusion(up_gene.gene_name(), down_gene.gene_name());
                 for up_trans in up_gene.transcripts() {
-                    if !is_valid_upstream_transcript(&up_trans, !known_pair, self.config.require_upstream_biotypes) {
+                    if !is_valid_upstream_transcript(&up_trans, !known_pair, true) {
                         continue;
                     }
                     for down_trans in down_gene.transcripts() {
@@ -96,67 +97,6 @@ impl FusionFinder {
             }
         }
         potential
-    }
-
-    fn check_enhancer_fusion(&self, start_gene: &BreakendGene, end_gene: &BreakendGene, potential: &mut Vec<GeneFusion>) {
-        let kfc = self.known_fusion_cache;
-        let start_is = kfc.within_enhancer_region(&start_gene.chromosome(), start_gene.position());
-        let end_is = kfc.within_enhancer_region(&end_gene.chromosome(), end_gene.position());
-        if start_is == end_is {
-            return;
-        }
-        let enhancer_gene = if start_is { start_gene } else { end_gene };
-        let down_gene = if start_is { end_gene } else { start_gene };
-        let ech = enhancer_gene.chromosome();
-        let epos = enhancer_gene.position();
-        let mut kf_data: Option<&KnownFusionData> =
-            kfc.data_by_type(ENHANCER_KNOWN_PAIR).find(|x| x.three_gene == down_gene.gene_name() && x.within_gene_region(&ech, epos));
-        if kf_data.is_none() {
-            kf_data = kfc.data_by_type(ENHANCER_PROMISCUOUS).find(|x| x.within_gene_region(&ech, epos));
-            if kf_data.is_none() {
-                return;
-            }
-            if ech == down_gene.chromosome() {
-                let distance = (epos - down_gene.position()).abs();
-                if distance < MIN_ENHANCER_PARTNER_GENE_DISTANCE {
-                    return;
-                }
-            }
-        }
-        let kf_data = kf_data.unwrap();
-        let known_type = kf_data.fusion_type;
-        let mut down_transcripts: Vec<BreakendTrans> = Vec::new();
-        let mut max_downstream_distance = -1;
-        let mut allow_coding = false;
-        if kf_data.gene_strand().is_none() {
-            max_downstream_distance = MAX_ENHANCER_PARTNER_GENE_DISTANCE_NO_ORIENT;
-            allow_coding = true;
-        } else if kf_data.downstream_distance(FS_DOWN) > 0 {
-            max_downstream_distance = kf_data.downstream_distance(FS_DOWN);
-        }
-        for t in down_gene.transcripts() {
-            if t.coding_bases == 0 && !t.is_upstream() {
-                if t.distance_upstream() <= MAX_UPSTREAM_DISTANCE_ENHANCER_KNOWN {
-                    down_transcripts.push(t);
-                }
-            } else if t.coding_type() == TranscriptCodingType::CODING && allow_coding {
-                down_transcripts.push(t);
-            } else if t.coding_type() == TranscriptCodingType::UTR_3P && t.is_upstream() && max_downstream_distance > 0 {
-                if t.distance_downstream() <= max_downstream_distance {
-                    down_transcripts.push(t);
-                }
-            }
-        }
-        let up_trans = generate_enhancer_transcript(enhancer_gene, kf_data);
-        for down_trans in down_transcripts {
-            if has_matching_enhancer_fusion(potential, known_type, &up_trans, &down_trans) {
-                continue;
-            }
-            let fusion = GeneFusion::create(&up_trans, &down_trans, true);
-            fusion.set_id(self.next_fusion_id());
-            fusion.set_known_type(known_type);
-            potential.push(fusion);
-        }
     }
 
     /// findTopReportableFusion
@@ -306,14 +246,14 @@ fn is_valid_downstream_transcript(t: &BreakendTrans) -> bool {
 
 /// checkFusionLogic
 pub fn check_fusion_logic(up: &BreakendTrans, down: &BreakendTrans, config: &FusionConfig) -> Option<GeneFusion> {
-    if !is_valid_upstream_transcript(up, true, config.require_upstream_biotypes) || !is_valid_downstream_transcript(down) {
+    if !is_valid_upstream_transcript(up, true, true) || !is_valid_downstream_transcript(down) {
         return None;
     }
     transcript_pair_has_fusion(up, down, config, false, false)
 }
 
 fn transcript_pair_has_fusion(
-    up: &BreakendTrans, down: &BreakendTrans, config: &FusionConfig, is_known_pair: bool, exon_del_dup_candidate: bool,
+    up: &BreakendTrans, down: &BreakendTrans, _config: &FusionConfig, is_known_pair: bool, exon_del_dup_candidate: bool,
 ) -> Option<GeneFusion> {
     let mut check_exact_match = false;
     if up.pre_coding() {
@@ -332,12 +272,8 @@ fn transcript_pair_has_fusion(
             return None;
         }
         if up.is_exonic() {
-            if !down.is_exonic() && (!config.allow_exon_skipping || !down.is_intronic()) {
-                return None;
-            }
-            if up.gene().var_id() != down.gene().var_id() {
-                return None;
-            }
+            // since upstream 7a4490caa6 no restriction on what a coding exonic breakend fuses with (it had to be the
+            // same SV and an exonic or intronic downstream breakend)
             check_exact_match = down.is_exonic();
         }
     } else if up.non_coding() {
@@ -358,16 +294,14 @@ fn transcript_pair_has_fusion(
     }
     if check_exact_match {
         phase_matched = exon_to_exon_in_phase(up, down);
-        if phase_matched || !config.require_phase_match {
-            return Some(GeneFusion::create(up, down, phase_matched));
-        }
+        return Some(GeneFusion::create(up, down, phase_matched));
     } else {
         if up.is_exonic() && down.is_exonic() {
             phase_matched = ((up.pre_coding() || up.non_coding()) && down.pre_coding()) || (up.post_coding() && down.post_coding());
         } else {
             phase_matched = up.phase == down.phase;
         }
-        if !phase_matched && config.allow_exon_skipping && (up.gene().gene_id() != down.gene().gene_id() || exon_del_dup_candidate) {
+        if !phase_matched && (up.gene().gene_id() != down.gene().gene_id() || exon_del_dup_candidate) {
             let up_alt: Vec<(i32, i32)> = up.alternative_phasing().iter().map(|(k, v)| (*k, *v)).collect();
             let down_alt: Vec<(i32, i32)> = down.alternative_phasing().iter().map(|(k, v)| (*k, *v)).collect();
             if let Some((_, v)) = up_alt.iter().find(|(k, _)| *k == down.phase) {
@@ -397,13 +331,10 @@ fn transcript_pair_has_fusion(
         if down.is_exonic() && skipped_down == 1 {
             skipped_down = 0;
         }
-        if phase_matched || !config.require_phase_match {
-            let fusion = GeneFusion::create(up, down, phase_matched);
-            fusion.set_exons_skipped(skipped_up, skipped_down);
-            return Some(fusion);
-        }
+        let fusion = GeneFusion::create(up, down, phase_matched);
+        fusion.set_exons_skipped(skipped_up, skipped_down);
+        Some(fusion)
     }
-    None
 }
 
 fn exon_to_exon_in_phase(up: &BreakendTrans, down: &BreakendTrans) -> bool {
@@ -477,7 +408,7 @@ fn new_gene(gene_id: &str, gene_name: &str, chromosome: &str, strand: i8, start:
 
 fn generate_enhancer_transcript(gene: &BreakendGene, kf: &KnownFusionData) -> BreakendTrans {
     let region = kf.gene_region().expect("enhancer gene region");
-    let trans = new_transcript(&format!("@{}", kf.five_gene), gene.gene_id(), gene.strand(), region.start, region.end);
+    let trans = new_transcript(&format!("{ENHANCER_TRANSCRIPT_PREFIX}{}", kf.five_gene), gene.gene_id(), gene.strand(), region.start, region.end);
     let t = BreakendTrans::create(gene, trans, -1, -1, PHASE_NONE, PHASE_NONE, 0, 0);
     t.set_coding_type(TranscriptCodingType::ENHANCER);
     t.set_region_type(TranscriptRegionType::IG);
@@ -512,6 +443,71 @@ fn protein_feature_preserved(t: &BreakendTrans, is_downstream: bool, feature_sta
 }
 
 // SpecialFusions
+
+impl FusionFinder {
+    /// SpecialFusions.checkEnhancerFusion (in FusionFinder until upstream 7a4490caa6): one breakend in a known enhancer
+    /// region (IG, TR, ...), the other on a known or any (promiscuous) 3' partner
+    pub(crate) fn check_enhancer_fusion(&self, start_gene: &BreakendGene, end_gene: &BreakendGene, potential: &mut Vec<GeneFusion>) {
+        let kfc = self.known_fusion_cache;
+        let start_is = kfc.within_enhancer_region(&start_gene.chromosome(), start_gene.position());
+        let end_is = kfc.within_enhancer_region(&end_gene.chromosome(), end_gene.position());
+        if start_is == end_is {
+            return;
+        }
+        let enhancer_gene = if start_is { start_gene } else { end_gene };
+        let down_gene = if start_is { end_gene } else { start_gene };
+        let ech = enhancer_gene.chromosome();
+        let epos = enhancer_gene.position();
+        let mut kf_data: Option<&KnownFusionData> =
+            kfc.data_by_type(ENHANCER_KNOWN_PAIR).find(|x| x.three_gene == down_gene.gene_name() && x.within_gene_region(&ech, epos));
+        if kf_data.is_none() {
+            kf_data = kfc.data_by_type(ENHANCER_PROMISCUOUS).find(|x| x.within_gene_region(&ech, epos));
+            if kf_data.is_none() {
+                return;
+            }
+            if ech == down_gene.chromosome() {
+                let distance = (epos - down_gene.position()).abs();
+                if distance < MIN_ENHANCER_PARTNER_GENE_DISTANCE {
+                    return;
+                }
+            }
+        }
+        let kf_data = kf_data.unwrap();
+        let known_type = kf_data.fusion_type;
+        let mut down_transcripts: Vec<BreakendTrans> = Vec::new();
+        let mut max_downstream_distance = -1;
+        let mut allow_coding = false;
+        if kf_data.gene_strand().is_none() {
+            max_downstream_distance = MAX_ENHANCER_PARTNER_GENE_DISTANCE_NO_ORIENT;
+            allow_coding = true;
+        } else if kf_data.downstream_distance(FS_DOWN) > 0 {
+            max_downstream_distance = kf_data.downstream_distance(FS_DOWN);
+        }
+        for t in down_gene.transcripts() {
+            if t.coding_bases == 0 && !t.is_upstream() {
+                if t.distance_upstream() <= MAX_UPSTREAM_DISTANCE_ENHANCER_KNOWN {
+                    down_transcripts.push(t);
+                }
+            } else if t.coding_type() == TranscriptCodingType::CODING && allow_coding {
+                down_transcripts.push(t);
+            } else if t.coding_type() == TranscriptCodingType::UTR_3P && t.is_upstream() && max_downstream_distance > 0 {
+                if t.distance_downstream() <= max_downstream_distance {
+                    down_transcripts.push(t);
+                }
+            }
+        }
+        let up_trans = generate_enhancer_transcript(enhancer_gene, kf_data);
+        for down_trans in down_transcripts {
+            if has_matching_enhancer_fusion(potential, known_type, &up_trans, &down_trans) {
+                continue;
+            }
+            let fusion = GeneFusion::create(&up_trans, &down_trans, true);
+            fusion.set_id(self.next_fusion_id());
+            fusion.set_known_type(known_type);
+            potential.push(fusion);
+        }
+    }
+}
 
 /// getSpecificPreGeneDistances: the ENHANCER_KNOWN_PAIR 3' genes
 pub fn specific_pre_gene_distances(kfc: &KnownFusionCache) -> JavaHashMap<String, i32> {
