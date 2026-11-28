@@ -1,9 +1,10 @@
 # PURPLE in Rust: record of the port
 
 This report covers how `purple-rs` was checked against Java PURPLE 4.5, the faults found in the Java
-code, and the timings. Java PURPLE 4.5 is this repository's `purple/target/purple-4.5-jar-with-dependencies.jar`,
-built from sources that follow upstream commit ca04e6c39d of 2026-11-20. Options and outputs are in
-[README.md](README.md).
+code, and the timings. The port started from upstream commit ca04e6c39d of 2026-11-20 (this repository's
+`purple/target/purple-4.5-jar-with-dependencies.jar`) and now follows upstream master 883ab11bba of 2026-11-27,
+which adds the new biallelic model (section 9): `-java_compat` reproduces the jar built at 883ab11bba. Options and
+outputs are in [README.md](README.md).
 
 ## 1. What is ported
 
@@ -151,6 +152,23 @@ Each is corrected by default and kept in Java mode (`-java_compat`).
 - **PU9 (germline amplifications typed as deletions).** GermlineAmpDelFinder gives germline
   amplification drivers the driver type GERMLINE_DELETION, though DriverType has GERMLINE_AMP and
   DRIVERS_PURPLE_GERMLINE lists it. Corrected: GERMLINE_AMP.
+- **PU10 (the biallelic threshold count wraps; upstream bc9b187516).** BiallelicModel rounds the read count at the
+  no-wildtype threshold with `(int)Math.round(x)`: Math.round returns a long, and Java narrows a long to an int by
+  keeping its low 32 bits. A count beyond the int range therefore wraps: -infinity, which a variant copy number of 0
+  in a segment with copy number <= 0 gives, becomes 0, so P(no wildtype | LOH) is 1 - exp(-mean) where it is 1; and
+  +infinity would become -1, giving 1 where it is 0. The old model's `(int)Math.floor(x)` is a double-to-int cast,
+  which saturates. Corrected: the count saturates at the int range. Only BIALLELIC_PROB of variants in segments with
+  copy number <= 0 can change (the flag stays set, as 1 - exp(-mean) >= 0.63); no variant of the regression cases is
+  in a segment below 0.5 copies.
+- **PU11 (the variant copy number adjustment ignores read depth), noted, not corrected.** BiallelicModel moves
+  P(no wildtype | no LOH) by ln(distance of the variant copy number to the nearest allele copy number / its
+  distance to the segment copy number), with both distances floored at 1e-10, so by up to about 23 log units. The
+  move is the same at 5 reads as at 500, though the variant copy number of a 5-read variant is uncertain by about a
+  copy. Synthetic example: purity 0.6, copy number 2, minor allele copy number 1, 3 alt reads of 5. The variant copy
+  number is then exactly 2, the adjustment is +23 and the probability 1.0000 (the old model: 0.045), where comparing
+  the reads with one variant copy (allele fraction 0.3) and with two (0.6) gives about 0.72. It is how upstream's
+  tests describe the model, and changing it would make a new model, so the port keeps it and the question goes
+  upstream. 3 of the 7 calls the model gains on the private pair are at 8 reads or fewer; none on HG008.
 - **PU3 and PU7** were withdrawn. ImmutablePurpleQC builds its status sets with `Sets.immutableEnumSet`
   (checked in the jar's bytecode), so the QC file lists them in enum order.
 
@@ -165,10 +183,11 @@ ChromosomeCopyNumbers.armForSegment looks up the start position twice.
 
 ## 4. Tests
 
-`cargo test --release` runs 61 tests, ported from 15 Java test classes with synthetic data
+`cargo test --release` runs 72 tests, ported from 16 Java test classes with synthetic data
 (`src/test_support.rs` builds records, variants, driver genes, gene and region copy numbers, COBALT
 chromosomes and the default fitting config):
-- somatic: KataegisQueueTest;
+- somatic: KataegisQueueTest; BiallelicProbabilityTest, plus BiallelicModel bit for bit against Java at 883ab11bba
+  on 5,014 synthetic cases (`src/testdata/biallelic_java.tsv`: upstream's cases, edge cases and 5,000 random ones);
 - germline: GermlineReportedTest, and the genotype status calls of GermlineGenotypeEnrichment;
 - fitting: PurityAdjusterTest, AmbiguousBAFTest, RegionFitCalculatorTest, WeightedPloidyHistogramTest;
 - region: GermlineStatusCalcsTest;
@@ -185,7 +204,7 @@ Not ported yet (about 25 classes):
 - ResegmentationTest and ObservedRegionFactoryTest;
 - amp/del and fitting: GermlineAmpDelFinderTest, FittedPurityFactoryTest, AneuploidyDetectorTest;
 - inputs: AmberPointsProviderTest, CobaltDataTest;
-- SomaticPurityEnrichmentTest and GeneCopyNumberBuilderTest;
+- GeneCopyNumberBuilderTest (upstream deleted SomaticPurityEnrichmentTest, the old model's test, in bc9b187516);
 - SV copy number: StructuralVariantImplied/LegsFactory/PloidyFactory and CopyNumberChangeTest;
 - diploid extension: ExtendDiploidBAFTest, ExtendLongArmTest, ExtendNonDiploidTest;
 - PurpleCopyNumberFactoryTest, TargetRegionsCopyNumbersTest and the regression test.
@@ -290,3 +309,83 @@ PURPLE added to `hmf-common-rs`:
   - logGamma(0.5): computed once.
 
 Each of these is used by other ports, whose tests and regressions were rerun after the merge.
+
+## 9. Following upstream to 883ab11bba (2026-11-27)
+
+Upstream changed PURPLE once between ca04e6c39d and 883ab11bba: the biallelic model of somatic variants
+(bc9b187516, "Purple biallelic model changes (AUS-504)"), ported in `src/biallelic.rs` with PU10 corrected. The
+other commits are documentation (3807790a20, the purity and QC column descriptions, which this README did not
+repeat) or hmf-common code PURPLE does not reach (the pipeline directory layouts keep PURPLE's AMBER, COBALT,
+ESVEE and PAVE folders; ORANGE's virus loaders). Decisions are in [`../UPSTREAM.md`](../UPSTREAM.md).
+
+### The biallelic model
+
+P(biallelic) = P(LOH) P(no wildtype | LOH) + (1 - P(LOH)) P(no wildtype | no LOH), as before, with four changes:
+- **P(LOH):** the logistic step at a minor allele copy number of 0.5 now has growth rate purity x 70 (at least 20)
+  instead of 40, so it is sharper at high purity and softer at low purity, where the minor allele copy number is
+  noisier.
+- **P(no wildtype | LOH):** the Poisson mean is the alt read count moved towards the read count at the no-wildtype
+  threshold by at most 2.5% of it, and above 300 reads both are scaled to 300 + (n - 300)^0.75, so deep variants
+  are not called with near-certainty from depth alone (real read counts are overdispersed). The threshold count is
+  rounded rather than floored.
+- **P(no wildtype | no LOH):** 0.02/((1 - p) + 0.02) became pLOH/(odds/2 + pLOH) with odds = (1 - p)/p, which can
+  reach 0, so the old floor of about 0.0196 for every variant is gone.
+- **The adjustment:** that probability is then moved by ln(distance of the variant copy number to the nearest
+  allele copy number / distance to the segment copy number): up when the variant is on as many copies as the
+  segment has, down when it matches one allele (PU11).
+
+Upstream's README still describes the old model (growth rate 40, the old heuristic for P(no wildtype | no LOH)).
+
+### Identity and speed
+
+The Java references were remade with the jar built at 883ab11bba, with the same commands and defined references as
+before (`-threads 1`, `-XX:+UnlockExperimentalVMOptions -XX:hashCode=2`), beside the old ones. The port with
+`-java_compat`:
+
+| Case | Threads | Java at 883ab11bba | Rust | Speed-up | Result |
+|---|---|---|---|---|---|
+| HG008 tumor/normal | 1 | 35.6 s, 2.68 GB | 12.3 s, 1.24 GB | 2.9x | identical to the `hashCode=2` reference, BGZF bytes and indexes included |
+| HG008 tumor/normal | 2 | 26.5 s, 2.82 GB | 8.5 s, 1.27 GB | 3.1x | identical but KT (PU1) and baf.circos (PU2) |
+| HG008 tumor-only | 1 | 28.3 s, 2.32 GB | 9.7 s, 0.90 GB | 2.9x | identical |
+| HG008 germline-only | 1 | 35.8 s, 2.52 GB | 4.3 s, 0.84 GB | 8.3x | identical |
+| HG008 targeted | 1 | 51.6 s, 2.69 GB | 15.6 s, 1.23 GB | 3.3x | identical |
+| Private pair, tumor/normal | 1 | 51.7 s, 4.68 GB | 16.8 s, 1.06 GB | 3.1x | identical |
+| Private pair, tumor/normal | 2 | 32.8 s, 4.51 GB | 10.7 s, 1.09 GB | 3.1x | identical but KT and baf.circos |
+
+Java's times are default-JVM runs with R and Circos as stand-ins; the port's include drawing the 9 plots natively,
+which is why its memory is above section 2's (that table predates the plots). The port before this update takes the
+same time and memory (12.7 s and 1.29 GB on the first case).
+
+### Effect in the default mode
+
+Before = the port at ca04e6c39d, after = this one, both by default. Only the somatic VCF and, on HG008 with a
+somatic VCF, one driver catalog line change; segments, copy numbers, purity, QC, clonality, the other VCFs,
+Circos files and the 9 plots are byte-identical.
+
+| Case | Variants with a probability | Probability changed | BIALLELIC flag changed (gained, lost) | PASS variants flagged | Driver catalog |
+|---|---|---|---|---|---|
+| HG008 tumor/normal | 17,252 | 15,982 | 260 (13, 247) | 3,263 -> 3,086 | NF1 likelihood 0.7945 -> 0.8038 |
+| HG008 tumor-only | 10,837 | 9,912 | 194 (7, 187) | 3,265 -> 3,085 | NF1 likelihood 0.7943 -> 0.8039 |
+| HG008 targeted | 17,252 | 16,141 | 301 (15, 286) | 3,241 -> 3,042 | unchanged |
+| Private pair | 4,206 | 3,859 | 32 (7, 25) | 228 -> 216 | unchanged |
+
+(The 2-thread runs are identical to the 1-thread ones, every file; germline-only has no somatic variants.) No reported variant changes its
+flag. NF1's own variant stays biallelic; its dN/dS likelihood rises because it uses the sample's count of biallelic
+passenger variants, which fell. Every lost flag is a variant whose copy number is within 0.15 of the no-wildtype
+threshold, min(CN - 0.5, max(1.4, CN - 0.8)); on HG008, 176 of the 247 are closer still to the major allele of a
+segment with a minor allele copy number of 0.2-0.8, so the minor (wildtype) allele remains. The gains are variants
+with nearly all reads alt in segments called heterozygous.
+
+**Are the new calls right?** Checked against the reads alone: a binomial test of "no wildtype" (the variant on all
+the segment's tumor copies) and of "one wildtype copy left" (on the major allele, or on CN - 1 copies in an LOH
+segment), at the fitted purity, p < 0.01. HG008 is a cell line fitted at purity 1, so its read fractions measure
+the fraction of copies directly.
+- Of the changed flags, every one on HG008 (260, 194, 301) agrees with its reads; on the private pair (purity 0.65,
+  lower depth) 7 agree, 25 are inconclusive and none disagrees.
+- Over all PASS variants, the flags that contradict the reads fall from 478 to 361 on HG008 tumor/normal (wildtype
+  shown but flagged: 471 -> 361; no wildtype shown but not flagged: 7 -> 0), and from 10 to 5 on the private pair.
+  The 361 that remain come from the threshold rule (no wildtype above CN - 0.5), which the update did not change.
+
+**ORANGE** reads BIALLELIC_PROB ("Biall", a whole percent) and the driver likelihood ("Driver") of every reported
+somatic variant. On HG008: KRAS's Biall 4% -> 1%, NF1's Driver 79% -> 80%. On the private pair: two reported
+variants' Biall 2% -> 0%. The JSON carries the same values.

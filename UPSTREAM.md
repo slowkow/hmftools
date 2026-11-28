@@ -29,6 +29,15 @@ from them.
 ISOFOX's 2.0.1 mode follows the released ISOFOX 2.0.1 (the image `hmftools-isofox:2.0.1--hdfd78af_0`), which
 oncoanalyser runs on STAR alignments.
 
+## What each port tracks now
+
+The commit whose Java `-java_compat` reproduces. A port not listed still tracks its start commit.
+
+| Port | Tracks | Since | What moving brought |
+|---|---|---|---|
+| `orange-rs` | `883ab11bba` | 2026-11-27 (while porting) | Viridian and Virus Interpreter loading |
+| `purple-rs` | `883ab11bba` | 2026-11-27 | the new biallelic model, with one correction (PU10) |
+
 ## How we follow upstream
 
 1. **What we track.** Upstream master. Hartwig also publishes pre-releases from side branches before they
@@ -83,10 +92,11 @@ REDUX itself has not changed upstream since `a224a2cd8e`.
 | `7a4490caa6` | 2026-11-23 | LINX | immunoglobulin (IG) fusions; the visualiser's data files | under review |
 | `110f42ee7d` | 2026-11-23 | COMPAR | compares Viridian reports | not applicable (not ported; not in oncoanalyser) |
 | `f5f660cc9f` | 2026-11-24 | ORANGE, hmf-common | loads Viridian and Virus Interpreter files | accepted in `orange-rs` (hmftools `e471239079`) |
-| `3807790a20` | 2026-11-24 | PURPLE | README: purity status and QC column descriptions | not applicable (documentation) |
+| `3807790a20` | 2026-11-24 | PURPLE | README: purity status and QC column descriptions | not applicable (documentation). The corrections are right, checked against the files PURPLE writes; purple-rs's README did not repeat the old descriptions |
 | `4adc014589` | 2026-11-24 | PAVE | special splice regions (MET exon 14, intronic bases -30 to -10), with a new resource file | under review |
 | `91286d6867` | 2026-11-24 | COBALT | panel normalisation builder: a region is also filtered when its 10th percentile ratio is below 0.1 | not applicable (the builder makes a panel resource; oncoanalyser does not run it and it is not ported) |
-| `bc9b187516` | 2026-11-24 | PURPLE | biallelic model for somatic variants | under review |
+| `bc9b187516` | 2026-11-24 | PURPLE | biallelic model for somatic variants: the probability of LOH grows with purity, the no-wildtype test allows for allele-fraction uncertainty and is damped at high depth, and the variant copy number itself counts as evidence | **accepted with a correction** (purple-rs PU10: the threshold read count wrapped when converted to an int, giving the wrong probability in segments with copy number 0 or below). Evidence: every biallelic flag it changes on HG008 (260 of 260 tumor/normal) agrees with the reads alone; on the private pair 7 agree, 25 are inconclusive, none disagrees; PASS variants whose flag contradicts the reads fall from 478 to 361 (HG008) and 10 to 5 (private pair). Noted and kept as upstream (PU11): the copy-number step ignores read depth, so a 5-read variant can score 1.0. Upstream's README still describes the old model. purple-rs tracks `883ab11bba` since 2026-11-27 |
+| `bc9b187516` | 2026-11-24 | ORANGE, PEACH, SAGE, TAUR | pom names | not applicable |
 | `bdceb2302a` | 2026-11-26 | qsee | exon coverage QC | under review |
 | `883ab11bba` | 2026-11-27 | qsee | read strand in the base-quality recalibration plots | under review |
 
@@ -94,6 +104,6 @@ REDUX itself has not changed upstream since `a224a2cd8e`.
 
 | Release tag | Commit | Branch | Changes beyond master | Decision |
 |---|---|---|---|---|
-| `purple-v4.5-beta.6` | `2ed3ac0401` | `AUS522-purple-minors` | TMB-high threshold 10 to 13 (settable as `tmb_high_threshold`); tumor-only TMB from all variants; hotspot SVs in tumor-only mode; one QC warning skipped in targeted mode | waits for master |
+| `purple-v4.5-beta.6` | `2ed3ac0401` | `AUS522-purple-minors` | TMB-high threshold 10 to 13 (settable as `tmb_high_threshold`); tumor-only TMB from all variants; hotspot SVs in tumor-only mode; one QC warning skipped in targeted mode | waits for master. Reviewed ahead: `c5396458be` the option yes, the default of 13 held (no rationale given; the branch README still says 10; no effect on our cases); `8f895807a6` (no copy-number-noise warning for panels) yes; `e2588c9fee` (tumor-only TMB with the panel rules) held: it drops indels from tumor-only TMB though tumor/normal TMB counts them, about -40% on our tumor-only case, and removes `-target_coding_factor`; its int-division fix is right on its own; `2ed3ac0401` (hotspot SVs in the somatic-only fit) yes |
 | `orange-v5.1-beta.3` | `24642c2e1e` | `AUS482-orange-minors` | RNA sample id in the JSON; signatures in the JSON limited to the existing thresholds; unused SAGE germline option removed | waits for master |
 | `esvee-v2.1-beta.4` | `261e6f9f98` | (deleted) | the same fix as `76f6774e65` | covered |

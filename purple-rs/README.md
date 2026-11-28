@@ -89,7 +89,8 @@ colours and labels. `src/plots.rs` holds the plot-specific steps (the R scripts'
 See [REPORT.md](REPORT.md) for each finding. In short: kataegis ids numbered in genome order whatever the
 thread count (PU1); the AMBER points of baf.circos in genome order (PU2); somatic VCFs checked for the
 tumor sample in tumor-only mode (PU4); arm maxima of all-negative arms (PU6); the phased-inframe
-reportability check (PU8); germline amplification drivers typed GERMLINE_AMP (PU9). In the plots: every SNV
+reportability check (PU8); germline amplification drivers typed GERMLINE_AMP (PU9); the biallelic model's threshold read count saturates
+instead of wrapping (PU10). In the plots: every SNV
 point drawn on the Circos plot (PL1), the bar outlines the R scripts ask for (PL2), rainfall distances within
 a chromosome (PL3), and up to 100,000 rainfall SNVs (PL4).
 
@@ -106,5 +107,7 @@ synthetic data.
 
 ## Upstream
 
-Started from hmftools commit `ca04e6c39d` (2026-11-20); `-java_compat` reproduces the Java built at that commit. Changes upstream has made since, and what was decided about each, are in
+Started from hmftools commit `ca04e6c39d` (2026-11-20); follows upstream master `883ab11bba` (2026-11-27), which
+adds the new biallelic model, so `-java_compat` reproduces the Java built at `883ab11bba`. Changes upstream has made,
+and what was decided about each, are in
 [`../UPSTREAM.md`](../UPSTREAM.md).

@@ -6,9 +6,9 @@
 use anyhow::Result;
 use std::collections::{BTreeMap, HashMap};
 
-use hmf_common::commons_math::Poisson;
 use hmf_common::variant_context::{self as vcf, EncodeOptions, Value, VcfHeader, VcfWriter};
 
+use crate::biallelic;
 use crate::config::PurpleConfig;
 use crate::constants::*;
 use crate::copynumber::PurpleCopyNumber;
@@ -53,27 +53,8 @@ impl<T: Clone> RegionLookup<T> {
 // ---------------------------------------------------------------------------------------------
 // SomaticPurityEnrichment
 
-/// SomaticPurityEnrichment.calculateBiallelic
-pub fn calculate_biallelic(cn: &PurpleCopyNumber, allele_read_count: i32, variant_copy_number: f64) -> f64 {
-    if allele_read_count == 0 {
-        return 0.0;
-    }
-    let minor = cn.minor_allele_copy_number();
-    let copy_number = cn.average_tumor_copy_number;
-    let p_loh = 1.0 - 1.0 / (1.0 + jexp(-(BIALLELIC_LOH_GROWTH_RATE as f64) * (minor - 0.5)));
-    let p_no_loh = 1.0 - p_loh;
-    let threshold = jmin(copy_number - 0.5, jmax(BIALLELIC_THRESHOLD_PARAMETER_I, copy_number - BIALLELIC_THRESHOLD_PARAMETER_II));
-    let read_count_at_threshold = (threshold / variant_copy_number) * allele_read_count as f64;
-    let p_assume_loh = 1.0 - Poisson::new(allele_read_count as f64).cumulative_probability(read_count_at_threshold.floor() as i32);
-    let mut p_assume_no_loh = jmax(p_loh, BIALLELIC_LOH_BASE_ERROR_RATE) / ((1.0 - p_assume_loh) + jmax(p_loh, BIALLELIC_LOH_BASE_ERROR_RATE));
-    if p_assume_no_loh.is_nan() {
-        p_assume_no_loh = 0.0;
-    }
-    p_loh * p_assume_loh + p_no_loh * p_assume_no_loh
-}
-
 /// SomaticPurityEnrichment.processVariant for every variant
-pub fn purity_enrich(variants: &mut [Variant], adjuster: &PurityAdjuster, copy_numbers: &[PurpleCopyNumber], fitted: &[ObservedRegion]) {
+pub fn purity_enrich(variants: &mut [Variant], sample_purity: f64, adjuster: &PurityAdjuster, copy_numbers: &[PurpleCopyNumber], fitted: &[ObservedRegion]) {
     let cn_lookup = RegionLookup::new(copy_numbers.iter().enumerate().map(|(i, c)| (c.chromosome.clone(), c.start, c.end, i)));
     let region_lookup = RegionLookup::new(fitted.iter().map(|r| (r.chromosome.clone(), r.start, r.end, r.germline_status)));
     for v in variants.iter_mut() {
@@ -94,9 +75,14 @@ pub fn purity_enrich(variants: &mut [Variant], adjuster: &PurityAdjuster, copy_n
         v.rec.info.put("PURPLE_CN", Value::Double(copy_number));
         v.rec.info.put("PURPLE_AF", Value::Str(hmf_common::fmt::java_fixed(vaf, 4)));
         v.rec.info.put("PURPLE_MACN", Value::Double(cn.minor_allele_copy_number()));
-        let p = calculate_biallelic(cn, v.allele_read_count(), vcn);
+        // BiallelicModel.calculateProbability(samplePurity, copyNumber, variant)
+        let p = if v.allele_read_count() == 0 {
+            0.0
+        } else {
+            biallelic::calculate_probability(sample_purity, v.allele_read_count(), v.total_read_count(), copy_number, vcn, cn.minor_allele_copy_number())
+        };
         v.rec.info.put("BIALLELIC_PROB", Value::Str(hmf_common::fmt::java_fixed(p, 4)));
-        v.rec.info.put("BIALLELIC", Value::Bool(p >= 0.5));
+        v.rec.info.put("BIALLELIC", Value::Bool(biallelic::classify_is_biallelic(p)));
     }
 }
 

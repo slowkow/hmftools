@@ -8,6 +8,7 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod biallelic;
 mod compat;
 mod charts;
 mod config;
@@ -250,7 +251,7 @@ fn run(cb: &ConfigBuilder) -> Result<i32> {
         copy_numbers = result.copy_numbers;
         sv_cache.infer_missing_variants(&copy_numbers);
         gene_copy_numbers = gene::create_gene_copy_numbers(reference.v38, &reference.ensembl, &copy_numbers, best_fit.fit.ploidy);
-        somatic_stream::purity_enrich(&mut somatic_cache.variants, &result.purity_adjuster, &copy_numbers, &fitted_regions);
+        somatic_stream::purity_enrich(&mut somatic_cache.variants, best_fit.fit.purity, &result.purity_adjuster, &copy_numbers, &fitted_regions);
         info!("enriching somatic variants");
         let mut s = somatic_stream::SomaticStream::new(&config, &reference);
         let r = s.process_and_write(
